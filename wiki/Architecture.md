@@ -78,6 +78,10 @@ The Git service queries repository roots, absolute per-repository exclude paths 
 | `sources/` | Install from Git or local folder |
 | `services/` | `Fs`, `Prompter`, `Git` traits and impls |
 
+## Instance resolution
+
+`registry::resolve::InstanceResolver` builds a per-command device/inode index of registered instances while the caller holds the registry lock. Missing instance folders are skipped (doctor reports them); other filesystem failures propagate. Resolving canonicalizes the requested folder and walks its ancestors through `/`, returning the owning project and instance at the first identity match, or `None` for an unattached folder. This handles symlink aliases and case-insensitive filesystem aliases without string-prefix comparisons. The implementation uses the existing Unix file-identity helpers, performs no writes, and works unchanged during dry runs. Rebuild the index after registry changes or directory replacement. Command integration follows in the attach/status work item.
+
 ## Errors and exit codes
 
 `main.rs` is the only place errors become exit codes.

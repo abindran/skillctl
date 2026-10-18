@@ -22,6 +22,8 @@ use crate::{
 };
 
 pub mod lock;
+#[cfg(unix)]
+pub mod resolve;
 
 pub const SCHEMA_VERSION: u32 = 1;
 
