@@ -124,12 +124,18 @@ jobs:
         with:
           name: release
           path: dist
-      - name: Install the formula and run the scenario
+      - name: Install the formula from a local tap and run the scenario
         env:
           HOMEBREW_NO_AUTO_UPDATE: '1'
           HOMEBREW_NO_INSTALL_CLEANUP: '1'
+          HOMEBREW_NO_INSTALL_FROM_API: '1'
         run: |
-          brew install --formula dist/skillctl.rb
+          # Homebrew only installs formulae that live in a tap; a throwaway local
+          # tap exercises exactly what a published tap would do.
+          brew tap-new --no-git local/skillctl
+          cp dist/skillctl.rb "$(brew --repository local/skillctl)/Formula/skillctl.rb"
+          brew install local/skillctl/skillctl
+          brew test local/skillctl/skillctl
           command -v skillctl
           skillctl --version
           scripts/release/smoke.sh skillctl

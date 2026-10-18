@@ -109,13 +109,13 @@ skillctl --help
 
 ### Install a release with Homebrew
 
-Every tagged release publishes a universal tarball, its SHA-256 and a ready-made formula `skillctl.rb` on the [releases page](https://github.com/abindran/skillctl/releases). Install straight from the formula:
+Every tagged release publishes a universal tarball, its SHA-256 and a ready-made formula `skillctl.rb` on the [releases page](https://github.com/abindran/skillctl/releases). Homebrew only installs formulae that live in a tap, so put the formula into a local tap of your own:
 
 ```bash
-curl -fsSLO https://github.com/abindran/skillctl/releases/latest/download/skillctl.rb && brew install --formula ./skillctl.rb
+brew tap-new --no-git local/skillctl && curl -fsSL https://github.com/abindran/skillctl/releases/latest/download/skillctl.rb -o "$(brew --repository local/skillctl)/Formula/skillctl.rb" && brew install local/skillctl/skillctl
 ```
 
-If a Homebrew tap is configured for the repository (see [Releasing](#releasing)), the usual two commands work instead:
+Upgrading means downloading the new formula into the same place and running `brew upgrade skillctl`. If a shared Homebrew tap is configured for the repository (see [Releasing](#releasing)), the usual two commands work instead:
 
 ```bash
 brew tap <owner>/<tap> && brew install skillctl

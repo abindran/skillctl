@@ -1,9 +1,9 @@
 # Rendered by scripts/release/package.sh; do not edit the generated copy by hand.
 class Skillctl < Formula
-  desc "Store Agent Skills once and symlink them into projects for Claude Code, Cursor and ZohoCode"
+  desc "Store Agent Skills once and symlink them into every project and harness"
   homepage "https://github.com/@REPOSITORY@"
-  version "@VERSION@"
   url "@URL@"
+  version "@VERSION@"
   sha256 "@SHA256@"
 
   depends_on :macos
