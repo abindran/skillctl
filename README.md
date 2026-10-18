@@ -430,19 +430,19 @@ cargo fmt --check && cargo clippy --all-targets --locked -- -D warnings && cargo
 
 ## Releasing
 
-A release is a Git tag `vX.Y.Z` whose version matches `Cargo.toml`. Pushing the tag runs [release.yml](.github/workflows/release.yml):
+Changes are tracked in [CHANGELOG.md](CHANGELOG.md) (Keep a Changelog format). Add entries under **Unreleased** as you go; when cutting a release, rename that heading to the version and date. A release is a Git tag `vX.Y.Z` whose version matches `Cargo.toml` **and** has a `## [X.Y.Z]` section in the changelog, which becomes the GitHub release notes. Pushing the tag runs [release.yml](.github/workflows/release.yml):
 
 1. **Checks** on macOS: `cargo fmt --check`, Clippy with `-D warnings`, the locked test suite.
-2. **Build**: both Apple targets, joined with `lipo` into one universal binary; `--version` records the tagged commit. When signing secrets are present the binary is signed with the Developer ID certificate (`codesign --options runtime --timestamp`) and notarized with `notarytool --wait`.
+2. **Build**: refuses a tag without a changelog section; both Apple targets, joined with `lipo` into one universal binary; `--version` records the tagged commit. When signing secrets are present the binary is signed with the Developer ID certificate (`codesign --options runtime --timestamp`) and notarized with `notarytool --wait`.
 3. **Verify** on a separate, clean macOS runner: checksum, unpack, run the end-to-end scenario in `scripts/release/smoke.sh` (init, author, seal, attach two clones, `git clean`, relink, doctor, gc, detach with an unchanged repository).
 4. **Publish** a GitHub release carrying `skillctl-X.Y.Z-macos-universal.tar.gz` and its `.sha256`.
 5. **Publish the crate** `skillctl-cli` to crates.io with `cargo publish --locked`, when the `CARGO_REGISTRY_TOKEN` secret is configured (a dry-run publish is part of the build step regardless).
 6. **Verify the crate** on another clean runner: `cargo install skillctl-cli --locked --version X.Y.Z`, then the same scenario again.
 
-To cut a release:
+To cut a release, move the **Unreleased** notes in `CHANGELOG.md` under a new `## [0.2.0] - YYYY-MM-DD` heading, then:
 
 ```bash
-sed -i '' 's/^version = ".*"/version = "0.2.0"/' Cargo.toml && cargo build --locked && git commit -am "Release 0.2.0" && git tag v0.2.0 && git push origin main v0.2.0
+sed -i '' 's/^version = ".*"/version = "0.2.0"/' Cargo.toml && cargo build --locked && scripts/release/changelog-notes.sh 0.2.0 && git commit -am "Release 0.2.0" && git tag v0.2.0 && git push origin main v0.2.0
 ```
 
 Optional repository configuration:

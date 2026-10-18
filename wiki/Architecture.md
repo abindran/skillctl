@@ -140,7 +140,7 @@ flowchart TD
 
 ```mermaid
 flowchart LR
-    Tag["git tag vX.Y.Z (must equal Cargo.toml)"] --> Checks["fmt, clippy -D warnings, tests (macOS)"]
+    Tag["git tag vX.Y.Z (must equal Cargo.toml and have a CHANGELOG.md section)"] --> Checks["fmt, clippy -D warnings, tests (macOS)"]
     Checks --> Build["cargo build --release for aarch64 + x86_64, lipo → dist/skillctl"]
     Build --> Sign["codesign + notarytool (only when secrets exist)"]
     Sign --> Pack["tar.gz + .sha256; cargo publish --dry-run"]

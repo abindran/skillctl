@@ -62,6 +62,10 @@ jobs:
           fi
           echo "version=$version" >> "$GITHUB_OUTPUT"
           echo "archive=skillctl-$version-macos-universal.tar.gz" >> "$GITHUB_OUTPUT"
+      - name: Extract the release notes from CHANGELOG.md
+        run: |
+          mkdir -p dist
+          scripts/release/changelog-notes.sh "${{ steps.meta.outputs.version }}" | tee dist/RELEASE_NOTES.md
       - name: Build both targets and join them with lipo
         env:
           SKILLCTL_COMMIT: ${{ github.sha }}
@@ -112,11 +116,12 @@ jobs:
           assets="dist/${{ needs.build.outputs.archive }} dist/${{ needs.build.outputs.archive }}.sha256"
           if gh release view "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
             gh release upload "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --clobber $assets
+            gh release edit "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --notes-file dist/RELEASE_NOTES.md
           else
             gh release create "$GITHUB_REF_NAME" \
               --repo "$GITHUB_REPOSITORY" \
               --title "skillctl ${{ needs.build.outputs.version }}" \
-              --generate-notes \
+              --notes-file dist/RELEASE_NOTES.md \
               $assets
           fi
 
