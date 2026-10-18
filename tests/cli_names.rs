@@ -14,9 +14,10 @@ fn invalid_plain_names_are_usage_errors() {
         vec!["remove", "demo", "--project", "Bad"],
         vec!["relink", "--project", "Bad"],
     ] {
+        let temp = tempfile::tempdir().unwrap();
         let output = Command::new(env!("CARGO_BIN_EXE_skillctl"))
             .args(&args)
-            .env_remove("SKILLCTL_HOME")
+            .env("SKILLCTL_HOME", temp.path().join("skills"))
             .stdin(Stdio::null())
             .output()
             .expect("run skillctl");
@@ -42,9 +43,10 @@ fn valid_names_and_versioned_arguments_still_reach_command_stubs() {
         vec!["global", "add", "demo@1.2.0"],
         vec!["relink", "--project", "web-app"],
     ] {
+        let temp = tempfile::tempdir().unwrap();
         let output = Command::new(env!("CARGO_BIN_EXE_skillctl"))
             .args(&args)
-            .env_remove("SKILLCTL_HOME")
+            .env("SKILLCTL_HOME", temp.path().join("skills"))
             .stdin(Stdio::null())
             .output()
             .expect("run skillctl");

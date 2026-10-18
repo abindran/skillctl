@@ -2,9 +2,10 @@
 use std::process::{Command, Output, Stdio};
 
 fn run(args: &[&str]) -> Output {
+    let temp = tempfile::tempdir().unwrap();
     Command::new(env!("CARGO_BIN_EXE_skillctl"))
         .args(args)
-        .env_remove("SKILLCTL_HOME")
+        .env("SKILLCTL_HOME", temp.path().join("skills"))
         .stdin(Stdio::null())
         .output()
         .expect("run skillctl")

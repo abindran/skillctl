@@ -200,7 +200,7 @@ mod tests {
     }
 
     #[test]
-    fn dispatch_receives_context_without_initializing_home() {
+    fn dry_run_dispatch_receives_context_without_creating_home() {
         let temp = tempfile::tempdir().unwrap();
         let home = temp.path().join("missing");
         let prompt = ScriptedPrompter::new([]);
@@ -210,7 +210,10 @@ mod tests {
             Box::new(prompt),
             Vec::new(),
             Vec::new(),
-            Flags::default(),
+            Flags {
+                dry_run: true,
+                ..Flags::default()
+            },
         );
         let err = crate::run(Command::Status, &mut ctx).unwrap_err();
         assert!(matches!(err, Error::NotImplemented { .. }));

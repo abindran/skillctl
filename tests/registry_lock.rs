@@ -38,9 +38,9 @@ fn wait_for_signal(worker: &mut Worker, signal: &str) {
     let (sender, receiver) = std::sync::mpsc::channel();
     std::thread::spawn(move || {
         for line in BufReader::new(output).lines() {
-            if sender.send(line.unwrap()).is_err() {
-                break;
-            }
+            // Keep draining after the readiness receiver is dropped: the child
+            // test harness still writes its result and must not hit a broken pipe.
+            let _ = sender.send(line.unwrap());
         }
     });
     let deadline = std::time::Instant::now() + Duration::from_secs(5);

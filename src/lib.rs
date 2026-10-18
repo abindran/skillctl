@@ -1,4 +1,5 @@
 pub mod cli;
+pub mod commands;
 pub mod context;
 pub mod error;
 pub mod names;
@@ -11,10 +12,10 @@ use crate::context::Context;
 use crate::error::Error;
 
 /// Dispatch a command with the invocation's shared dependencies.
-/// Command bodies remain stubs until their respective work items.
-pub fn run(command: Command, _context: &mut Context<'_>) -> Result<(), Error> {
+/// Unfinished command bodies remain stubs until their respective work items.
+pub fn run(command: Command, context: &mut Context<'_>) -> Result<(), Error> {
     let command = match command {
-        Command::Init => "init",
+        Command::Init => return commands::init::run(context),
         Command::Attach { .. } => "attach",
         Command::Detach { .. } => "detach",
         Command::Status => "status",
@@ -41,6 +42,7 @@ pub fn run(command: Command, _context: &mut Context<'_>) -> Result<(), Error> {
         },
         Command::Completions { .. } => "completions",
     };
+    commands::init::ensure_home(context)?;
 
     Err(Error::NotImplemented {
         command: command.to_owned(),
