@@ -20,6 +20,20 @@ flowchart TD
 
 The skill folder sits **below** the version folder, so its name equals the skill `name` that harnesses require. `meta.json` sits beside it so harnesses never see it.
 
+## Store metadata
+
+`store::meta::Metadata` reads and atomically writes a full `meta.json` path through
+the filesystem service. It records the validated skill name, semver version,
+source (`git`, `local`, or `new`), content hash, UTC installation timestamp, and
+semver `skillctl_version`. Git sources include a URL and resolved commit, with
+optional `ref` and repository-relative `subdir`.
+
+The caller supplies the timestamp and hash and holds the appropriate registry
+lock. Metadata lives beside the skill directory, so writing it does not change
+the content hash. Missing or malformed metadata is an error, not a default;
+dry-run saves record the exact planned atomic write without modifying disk.
+Staging and read-only permissions are handled separately.
+
 ## Registry model
 
 ```mermaid
