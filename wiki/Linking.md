@@ -58,7 +58,7 @@ Atomic replace creates an exclusively named `.skillctl-<pid>-<counter>.tmp` syml
 
 Missing target folders are created one component at a time and recorded for later detach cleanup; pre-existing folders are not recorded. Symlinks and non-directories in the link-target directory chain are skipped as conflicts rather than traversed. Ownership checks normalize relative link destinations without following them, so dangling managed links remain repairable and `store/../../outside` cannot claim ownership. Obsolete `previous_link_targets` are cleaned without touching project-owned entries or deleting directories; only a successful future `relink --all` clears that settings history.
 
-Git exclude editing is implemented separately in work item 22; attach/status command integration follows in work item 23.
+Git exclude editing is provided by `linker::exclude` (item 22); attach/status command integration follows in item 23.
 
 ## Instance resolution
 

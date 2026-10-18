@@ -2,6 +2,8 @@
 //!
 //! Only symlinks into the store or drafts are owned. Git exclude maintenance is
 //! layered on this report by the exclude work item; this module never edits Git.
+pub mod exclude;
+
 use std::{
     collections::BTreeSet,
     io,
