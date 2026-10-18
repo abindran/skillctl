@@ -32,10 +32,8 @@ fn invalid_plain_names_are_usage_errors() {
 #[test]
 fn valid_names_and_versioned_arguments_still_reach_command_stubs() {
     for args in [
-        vec!["new", "org-code-review"],
         vec!["remove", "org-code-review"],
         vec!["global", "remove", "demo"],
-        vec!["seal", "demo", "--bump", "patch"],
         vec!["attach", "--new", "web-app"],
         vec!["attach", "--project", "web-app", "--skills", "a,b@1.2.0"],
         vec!["add", "demo@1.2.0", "--project", "web-app"],

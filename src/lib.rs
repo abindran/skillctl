@@ -9,6 +9,7 @@ pub mod registry;
 pub mod services;
 pub mod skill;
 pub mod store;
+pub mod validate;
 use crate::cli::{Command, ConfigCommand, GlobalCommand};
 use crate::context::Context;
 use crate::error::Error;
@@ -28,12 +29,15 @@ pub fn run(command: Command, context: &mut Context<'_>) -> Result<(), Error> {
             GlobalCommand::Remove { .. } => "global remove",
             GlobalCommand::List => "global list",
         },
-        Command::Projects => "projects",
-        Command::Skills => "skills",
+        Command::Projects => return commands::projects::run(context),
+        Command::Skills => return commands::skills::run(context),
         Command::Relink { .. } => "relink",
-        Command::New { .. } => "new",
+        Command::New {
+            skill,
+            from_template,
+        } => return commands::new::run(context, &skill, from_template.as_deref()),
         Command::Edit { .. } => "edit",
-        Command::Seal { .. } => "seal",
+        Command::Seal { skill, bump } => return commands::seal::run(context, &skill, bump),
         Command::Install { .. } => "install",
         Command::Validate { .. } => "validate",
         Command::Doctor { .. } => "doctor",

@@ -15,6 +15,14 @@
 | Store | `install`, `skills`, `gc` |
 | Quality | `validate`, `doctor [--fix]` |
 
+## Implemented authoring, listing and spec validation
+
+- `new <skill> [--from-template <name>]` creates a writable draft, preserves template fields/body, sets its name and version `0.1.0`, and creates empty `scripts/` and `references/` folders. Existing drafts are never replaced.
+- `seal <skill> [--bump major|minor|patch]` checks S001–S008 and requires a semver `metadata.version`, stages a read-only version with local-source metadata, then removes the draft only after publication succeeds. A requested bump applies to the stored copy; failed publication leaves the draft unchanged. Org/harness checks will be added in work item 29.
+- Both authoring commands hold an exclusive registry lock and support no-write dry runs. `seal --dry-run` never deletes the draft.
+- `skills` lists sorted skill/version rows with project usage and global pins. `projects` lists projects and instances, marking missing folders. Both support JSON arrays, quiet output, shared registry locks, and read-only dry runs.
+- The native `validate` library now supplies a rule interface, findings, S001–S008 and a text report. Missing documents or malformed frontmatter produce only their prerequisite finding; field errors accumulate. The `validate` CLI and org/harness rules remain work item 29.
+
 ## Attach flow
 
 ```mermaid

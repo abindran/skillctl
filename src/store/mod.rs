@@ -12,6 +12,7 @@ use semver::Version;
 
 use crate::{error::Error, names::SkillName, paths::Paths, registry::Pin, services::fs::Fs};
 
+pub mod drafts;
 pub mod hash;
 pub mod meta;
 pub mod stage;

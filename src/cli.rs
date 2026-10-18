@@ -147,7 +147,7 @@ pub enum Command {
 
         /// Version increment.
         #[arg(long, value_enum)]
-        bump: Bump,
+        bump: Option<Bump>,
     },
 
     /// Install a skill from a source.
