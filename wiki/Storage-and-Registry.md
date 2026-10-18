@@ -57,3 +57,18 @@ stateDiagram-v2
 - **Staged installs**: built in `.staging-*`, renamed only after validation and hashing
 - **Read-only store**: dirs `0555`, files `0444`, executables `0555`
 - **Content hash**: SHA-256 over sorted files (path, exec bit, length, bytes); `doctor` detects tampering
+
+### Canonical content hash
+
+`store::hash::content_hash` hashes the skill folder itself, excluding the enclosing
+version folder and its `meta.json`. It returns `sha256:<lowercase hex>`.
+Files are sorted globally by UTF-8 relative path using `/` separators. Each file
+contributes its path, a NUL byte, `0` or `1` for the executable flag, a NUL byte,
+the decimal byte length, a NUL byte, then its exact bytes.
+
+Any Unix execute bit marks a file executable. Other permission bits, timestamps,
+the absolute root location and empty directories do not affect the hash, so
+making a version read-only preserves its identity. Symlinks (including the root),
+special files and non-UTF-8 file paths are rejected. Hashing uses the filesystem
+service and performs no writes, including in dry-run mode. The caller must keep
+the tree unchanged while hashing.

@@ -8,6 +8,7 @@ pub mod paths;
 pub mod registry;
 pub mod services;
 pub mod skill;
+pub mod store;
 use crate::cli::{Command, ConfigCommand, GlobalCommand};
 use crate::context::Context;
 use crate::error::Error;

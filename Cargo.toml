@@ -19,6 +19,9 @@ chrono = { version = "0.4.45", default-features = false, features = ["std", "ser
 tempfile = "3.27.0"
 dialoguer = { version = "0.12.0", default-features = false }
 fd-lock = "4.0.4"
+# 0.11.1 raises the MSRV to 1.88; keep compatibility with Rust 1.85.
+sha2 = "=0.11.0"
+hex = "0.4.3"
 
 [profile.release]
 lto = "thin"
