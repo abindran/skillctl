@@ -135,3 +135,21 @@ flowchart TD
 - Service traits are the seam: `ScriptedPrompter` drives interactive flows, `DryRunFs` asserts zero writes, and `GitCli::with_program` can point at a fake executable.
 - Dry-run coverage snapshots the tree (bytes, modes, symlink destinations) before and after each `--dry-run` invocation and asserts equality.
 - CI runs `cargo fmt --check`, `cargo clippy --all-targets --locked -- -D warnings` and `cargo test --locked` on Ubuntu and macOS 14.
+
+## Build and release
+
+```mermaid
+flowchart LR
+    Tag["git tag vX.Y.Z (must equal Cargo.toml)"] --> Checks["fmt, clippy -D warnings, tests (macOS)"]
+    Checks --> Build["cargo build --release for aarch64 + x86_64, lipo → dist/skillctl"]
+    Build --> Sign["codesign + notarytool (only when secrets exist)"]
+    Sign --> Pack["tar.gz + .sha256 + rendered skillctl.rb"]
+    Pack --> Verify["clean macOS runner: checksum, unpack, smoke.sh scenario"]
+    Verify --> Release["GitHub release with the three assets"]
+    Release --> Formula["clean runner: brew install --formula from the release URL, smoke.sh again"]
+    Release --> Tap["optional: pull request to the Homebrew tap"]
+```
+
+- `build.rs` records the commit (`SKILLCTL_COMMIT` in CI, `git rev-parse` locally) so `--version` prints version, commit and the registry schema the binary supports.
+- The binary has no runtime dependency other than the system `git`; the release profile uses thin LTO, one codegen unit and symbol stripping.
+- `scripts/release/` holds the same steps the workflow runs, so a release can be rebuilt and verified on any Mac: `build-universal.sh`, `sign-and-notarize.sh`, `package.sh`, `smoke.sh`. The formula template lives in `packaging/homebrew/skillctl.rb.in`.

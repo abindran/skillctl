@@ -3,7 +3,9 @@ name = "skillctl"
 edition = "2024"
 version = "0.1.0"
 authors = ["abindran"]
-description = "A CLI tool for managing skills"
+description = "Store Agent Skills once and symlink them into projects for Claude Code, Cursor and ZohoCode"
+repository = "https://github.com/abindran/skillctl"
+homepage = "https://github.com/abindran/skillctl"
 rust-version = "1.85"
 
 [dependencies]

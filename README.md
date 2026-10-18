@@ -99,8 +99,32 @@ A binary that will be downloaded through a browser should additionally be signed
 skillctl --version
 ```
 
+```
+skillctl 0.1.0 (commit 7e88fa5422b0, registry schema 1)
+```
+
 ```bash
 skillctl --help
+```
+
+### Install a release with Homebrew
+
+Every tagged release publishes a universal tarball, its SHA-256 and a ready-made formula `skillctl.rb` on the [releases page](https://github.com/abindran/skillctl/releases). Install straight from the formula:
+
+```bash
+curl -fsSLO https://github.com/abindran/skillctl/releases/latest/download/skillctl.rb && brew install --formula ./skillctl.rb
+```
+
+If a Homebrew tap is configured for the repository (see [Releasing](#releasing)), the usual two commands work instead:
+
+```bash
+brew tap <owner>/<tap> && brew install skillctl
+```
+
+Then:
+
+```bash
+skillctl init && skillctl completions zsh > "$(brew --prefix)/share/zsh/site-functions/_skillctl"
 ```
 
 ## Quick start
@@ -408,6 +432,40 @@ cargo fmt --check && cargo clippy --all-targets --locked -- -D warnings && cargo
 - Every test sets `SKILLCTL_HOME` to a temporary folder and uses explicit temporary global targets, so tests never touch your real store or `~/.claude/skills/`.
 - CI (`.github/workflows/ci.yml`) runs formatting, Clippy and the locked test suite on Ubuntu and macOS 14.
 
+## Releasing
+
+A release is a Git tag `vX.Y.Z` whose version matches `Cargo.toml`. Pushing the tag runs [release.yml](.github/workflows/release.yml):
+
+1. **Checks** on macOS: `cargo fmt --check`, Clippy with `-D warnings`, the locked test suite.
+2. **Build**: both Apple targets, joined with `lipo` into one universal binary; `--version` records the tagged commit. When signing secrets are present the binary is signed with the Developer ID certificate (`codesign --options runtime --timestamp`) and notarized with `notarytool --wait`.
+3. **Verify** on a separate, clean macOS runner: checksum, unpack, run the end-to-end scenario in `scripts/release/smoke.sh` (init, author, seal, attach two clones, `git clean`, relink, doctor, gc, detach with an unchanged repository).
+4. **Publish** a GitHub release carrying `skillctl-X.Y.Z-macos-universal.tar.gz`, its `.sha256` and the rendered `skillctl.rb`.
+5. **Verify the formula** on another clean runner with `brew install --formula` from the published URL, then the same scenario again.
+6. **Tap pull request**, only when configured: copies the formula into `Formula/skillctl.rb` of the tap repository and opens a pull request.
+
+To cut a release:
+
+```bash
+sed -i '' 's/^version = ".*"/version = "0.2.0"/' Cargo.toml && cargo build --locked && git commit -am "Release 0.2.0" && git tag v0.2.0 && git push origin main v0.2.0
+```
+
+Optional repository configuration:
+
+| Setting | Kind | Purpose |
+|---|---|---|
+| `APPLE_CERTIFICATE_P12`, `APPLE_CERTIFICATE_PASSWORD`, `APPLE_SIGNING_IDENTITY` | secrets | Developer ID Application certificate (base64 `.p12`), its password and the identity string |
+| `APPLE_ID`, `APPLE_TEAM_ID`, `APPLE_APP_PASSWORD` | secrets | Notarization account, team and app-specific password |
+| `HOMEBREW_TAP_REPO` | variable | `owner/homebrew-<name>` repository to receive formula pull requests |
+| `HOMEBREW_TAP_TOKEN` | secret | Token with permission to push a branch and open a pull request in the tap |
+
+Without the signing secrets the release is unsigned, which is fine for `cargo install` and Homebrew installs; only binaries downloaded through a browser hit Gatekeeper quarantine. Without the tap settings the formula is still attached to the release.
+
+The same steps run locally:
+
+```bash
+scripts/release/build-universal.sh && scripts/release/package.sh 0.1.0 && scripts/release/smoke.sh dist/skillctl
+```
+
 ## Implementation status
 
 | Area | Status |
@@ -420,8 +478,8 @@ cargo fmt --check && cargo clippy --all-targets --locked -- -D warnings && cargo
 | `attach`, `detach`, `status`, `add`, `remove`, `relink`, `global add/remove/list`, `projects`, `skills` | Implemented |
 | Validation: S, O and H rules; text, JSON and JUnit; allow-lists; `--strict`; `--with-reference` | Implemented |
 | `install` from Git and local folders, `edit`, `doctor --fix`, `gc`, `config`, `completions` | Implemented |
+| Release pipeline: universal build, optional signing and notarization, clean-runner verification, GitHub release, Homebrew formula and optional tap pull request | Implemented (GitHub Actions) |
 | Manual harness compatibility matrix (Claude Code, Cursor, ZohoCode) | Not run; default link targets are provisional |
-| Release pipeline, signing, Homebrew tap | Not set up |
 
 ## License
 

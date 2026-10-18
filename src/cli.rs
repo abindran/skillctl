@@ -4,9 +4,20 @@ use std::path::PathBuf;
 
 use crate::names::{ProjectName, SkillName};
 
+/// `--version` output: version, build commit and the registry schema this
+/// binary reads and writes. `-V` prints the short form.
+pub static LONG_VERSION: std::sync::LazyLock<String> = std::sync::LazyLock::new(|| {
+    format!(
+        "{} (commit {}, registry schema {})",
+        env!("CARGO_PKG_VERSION"),
+        env!("SKILLCTL_COMMIT"),
+        crate::registry::SCHEMA_VERSION
+    )
+});
+
 /// Manage and install reusable skills
 #[derive(Debug, Parser)]
-#[command(name = "skillctl", version, about)]
+#[command(name = "skillctl", version, long_version = LONG_VERSION.as_str(), about)]
 pub struct Cli {
     /// Set the skillctl home directory.
     #[arg(long, env = "SKILLCTL_HOME", global = true)]

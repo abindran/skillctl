@@ -1,0 +1,166 @@
+name: Release
+
+# A tag vX.Y.Z (matching Cargo.toml) produces a signed-when-possible universal
+# macOS binary, verifies it on a clean runner, publishes a GitHub release with
+# the tarball, its SHA-256 and a Homebrew formula, re-verifies the formula from
+# the published URL, and (when a tap is configured) opens a pull request there.
+
+'on':
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  checks:
+    name: Checks
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@1.85.0
+        with:
+          components: rustfmt, clippy
+      - run: cargo fmt --check
+      - run: cargo clippy --all-targets --locked -- -D warnings
+      - run: cargo test --locked --no-fail-fast
+
+  build:
+    name: Universal macOS binary
+    needs: checks
+    runs-on: macos-14
+    outputs:
+      version: ${{ steps.meta.outputs.version }}
+      archive: ${{ steps.meta.outputs.archive }}
+    env:
+      APPLE_CERTIFICATE_P12: ${{ secrets.APPLE_CERTIFICATE_P12 }}
+      APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+      APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+      APPLE_ID: ${{ secrets.APPLE_ID }}
+      APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+      APPLE_APP_PASSWORD: ${{ secrets.APPLE_APP_PASSWORD }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@1.85.0
+        with:
+          targets: aarch64-apple-darwin, x86_64-apple-darwin
+      - name: Check that the tag matches Cargo.toml
+        id: meta
+        run: |
+          version="$(cargo metadata --no-deps --format-version 1 | python3 -c 'import json,sys; print(json.load(sys.stdin)["packages"][0]["version"])')"
+          tag="${GITHUB_REF_NAME#v}"
+          if [ "$version" != "$tag" ]; then
+            echo "::error::Tag v$tag does not match Cargo.toml version $version" >&2
+            exit 1
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "archive=skillctl-$version-macos-universal.tar.gz" >> "$GITHUB_OUTPUT"
+      - name: Build both targets and join them with lipo
+        env:
+          SKILLCTL_COMMIT: ${{ github.sha }}
+        run: scripts/release/build-universal.sh
+      - name: Sign and notarize
+        if: env.APPLE_CERTIFICATE_P12 != ''
+        run: scripts/release/sign-and-notarize.sh dist/skillctl
+      - name: Package tarball, checksum and Homebrew formula
+        env:
+          SKILLCTL_REPOSITORY: ${{ github.repository }}
+        run: scripts/release/package.sh "${{ steps.meta.outputs.version }}"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: release
+          path: dist/
+          if-no-files-found: error
+
+  verify:
+    name: End-to-end scenario on a clean runner
+    needs: build
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: release
+          path: dist
+      - name: Verify checksum, unpack and run the scenario
+        run: |
+          (cd dist && shasum -a 256 -c "${{ needs.build.outputs.archive }}.sha256")
+          tar -xzf "dist/${{ needs.build.outputs.archive }}" -C "$RUNNER_TEMP"
+          "$RUNNER_TEMP/skillctl" --version
+          scripts/release/smoke.sh "$RUNNER_TEMP/skillctl"
+
+  publish:
+    name: GitHub release
+    needs: [build, verify]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: release
+          path: dist
+      - name: Create the release with tarball, checksum and formula
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" \
+            --repo "$GITHUB_REPOSITORY" \
+            --title "skillctl ${{ needs.build.outputs.version }}" \
+            --generate-notes \
+            "dist/${{ needs.build.outputs.archive }}" \
+            "dist/${{ needs.build.outputs.archive }}.sha256" \
+            dist/skillctl.rb
+
+  verify-formula:
+    name: brew install from the published release
+    needs: [build, publish]
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: release
+          path: dist
+      - name: Install the formula and run the scenario
+        env:
+          HOMEBREW_NO_AUTO_UPDATE: '1'
+          HOMEBREW_NO_INSTALL_CLEANUP: '1'
+        run: |
+          brew install --formula dist/skillctl.rb
+          command -v skillctl
+          skillctl --version
+          scripts/release/smoke.sh skillctl
+
+  tap:
+    name: Homebrew tap pull request
+    needs: [build, publish]
+    if: vars.HOMEBREW_TAP_REPO != ''
+    runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+      TAP_REPO: ${{ vars.HOMEBREW_TAP_REPO }}
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: release
+          path: dist
+      - name: Open a pull request updating Formula/skillctl.rb
+        run: |
+          version="${{ needs.build.outputs.version }}"
+          gh repo clone "$TAP_REPO" tap
+          cd tap
+          git config user.name "skillctl release"
+          git config user.email "skillctl-release@users.noreply.github.com"
+          git checkout -b "skillctl-$version"
+          mkdir -p Formula
+          cp ../dist/skillctl.rb Formula/skillctl.rb
+          git add Formula/skillctl.rb
+          git commit -m "skillctl $version"
+          git push -u origin "skillctl-$version"
+          gh pr create --repo "$TAP_REPO" \
+            --title "skillctl $version" \
+            --body "Automated formula update for https://github.com/$GITHUB_REPOSITORY/releases/tag/v$version" \
+            --head "skillctl-$version"

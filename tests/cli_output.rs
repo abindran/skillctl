@@ -84,3 +84,18 @@ fn help_and_version_still_succeed() {
         assert!(output.stderr.is_empty());
     }
 }
+
+#[test]
+fn long_version_names_the_commit_and_registry_schema() {
+    let output = run(&["--version"]);
+    assert_eq!(output.status.code(), Some(0));
+    let text = String::from_utf8(output.stdout).unwrap();
+    assert!(text.starts_with("skillctl "), "{text}");
+    assert!(text.contains("commit "), "{text}");
+    assert!(text.contains("registry schema 1"), "{text}");
+    let short = run(&["-V"]);
+    assert_eq!(
+        String::from_utf8(short.stdout).unwrap().trim(),
+        format!("skillctl {}", env!("CARGO_PKG_VERSION"))
+    );
+}
