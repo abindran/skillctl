@@ -143,13 +143,14 @@ flowchart LR
     Tag["git tag vX.Y.Z (must equal Cargo.toml)"] --> Checks["fmt, clippy -D warnings, tests (macOS)"]
     Checks --> Build["cargo build --release for aarch64 + x86_64, lipo → dist/skillctl"]
     Build --> Sign["codesign + notarytool (only when secrets exist)"]
-    Sign --> Pack["tar.gz + .sha256 + rendered skillctl.rb"]
+    Sign --> Pack["tar.gz + .sha256; cargo publish --dry-run"]
     Pack --> Verify["clean macOS runner: checksum, unpack, smoke.sh scenario"]
-    Verify --> Release["GitHub release with the three assets"]
-    Release --> Formula["clean runner: brew install --formula from the release URL, smoke.sh again"]
-    Release --> Tap["optional: pull request to the Homebrew tap"]
+    Verify --> Release["GitHub release with tarball and checksum"]
+    Verify --> Crate["cargo publish skillctl-cli (when CARGO_REGISTRY_TOKEN exists)"]
+    Crate --> Check["clean runner: cargo install skillctl-cli, smoke.sh again"]
 ```
 
+- The package is `skillctl-cli` on crates.io (the bare name belongs to an unrelated crate); `[lib]` and `[[bin]]` keep the library and binary named `skillctl`.
 - `build.rs` records the commit (`SKILLCTL_COMMIT` in CI, `git rev-parse` locally) so `--version` prints version, commit and the registry schema the binary supports.
 - The binary has no runtime dependency other than the system `git`; the release profile uses thin LTO, one codegen unit and symbol stripping.
-- `scripts/release/` holds the same steps the workflow runs, so a release can be rebuilt and verified on any Mac: `build-universal.sh`, `sign-and-notarize.sh`, `package.sh`, `smoke.sh`. The formula template lives in `packaging/homebrew/skillctl.rb.in`.
+- `scripts/release/` holds the same steps the workflow runs, so a release can be rebuilt and verified on any Mac: `build-universal.sh`, `sign-and-notarize.sh`, `package.sh`, `smoke.sh`.

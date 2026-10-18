@@ -1,12 +1,26 @@
 [package]
-name = "skillctl"
+# crates.io already has an unrelated "skillctl"; the crate is skillctl-cli and
+# the installed binary is still called skillctl.
+name = "skillctl-cli"
 edition = "2024"
 version = "0.1.0"
-authors = ["abindran"]
+authors = ["Abindran <abindranr@gmail.com>"]
 description = "Store Agent Skills once and symlink them into projects for Claude Code, Cursor and ZohoCode"
 repository = "https://github.com/abindran/skillctl"
 homepage = "https://github.com/abindran/skillctl"
+readme = "README.md"
+keywords = ["agent-skills", "claude-code", "cursor", "cli", "symlink"]
+categories = ["command-line-utilities", "development-tools"]
 rust-version = "1.85"
+exclude = ["/.github", "/wiki", "/scripts", "/dist", "/.zcode"]
+
+[lib]
+name = "skillctl"
+path = "src/lib.rs"
+
+[[bin]]
+name = "skillctl"
+path = "src/main.rs"
 
 [dependencies]
 clap = { version = "4.6.7", features = ["derive", "env"] }

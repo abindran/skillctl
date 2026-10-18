@@ -107,25 +107,21 @@ skillctl 0.1.0 (commit 7e88fa5422b0, registry schema 1)
 skillctl --help
 ```
 
-### Install a release with Homebrew
+### Install from crates.io
 
-Every tagged release publishes a universal tarball, its SHA-256 and a ready-made formula `skillctl.rb` on the [releases page](https://github.com/abindran/skillctl/releases). Homebrew only installs formulae that live in a tap, so put the formula into a local tap of your own:
-
-```bash
-brew tap-new --no-git local/skillctl && curl -fsSL https://github.com/abindran/skillctl/releases/latest/download/skillctl.rb -o "$(brew --repository local/skillctl)/Formula/skillctl.rb" && brew install local/skillctl/skillctl
-```
-
-Upgrading means downloading the new formula into the same place and running `brew upgrade skillctl`. If a shared Homebrew tap is configured for the repository (see [Releasing](#releasing)), the usual two commands work instead:
+The crate is published as `skillctl-cli` (the name `skillctl` on crates.io belongs to an unrelated project); the installed binary is `skillctl`.
 
 ```bash
-brew tap <owner>/<tap> && brew install skillctl
+cargo install skillctl-cli --locked
 ```
 
 Then:
 
 ```bash
-skillctl init && skillctl completions zsh > "$(brew --prefix)/share/zsh/site-functions/_skillctl"
+skillctl init && skillctl completions zsh > ~/.zfunc/_skillctl
 ```
+
+Every tagged release also publishes a prebuilt universal macOS tarball and its SHA-256 on the [releases page](https://github.com/abindran/skillctl/releases); unpack it anywhere on your `PATH`.
 
 ## Quick start
 
@@ -439,9 +435,9 @@ A release is a Git tag `vX.Y.Z` whose version matches `Cargo.toml`. Pushing the 
 1. **Checks** on macOS: `cargo fmt --check`, Clippy with `-D warnings`, the locked test suite.
 2. **Build**: both Apple targets, joined with `lipo` into one universal binary; `--version` records the tagged commit. When signing secrets are present the binary is signed with the Developer ID certificate (`codesign --options runtime --timestamp`) and notarized with `notarytool --wait`.
 3. **Verify** on a separate, clean macOS runner: checksum, unpack, run the end-to-end scenario in `scripts/release/smoke.sh` (init, author, seal, attach two clones, `git clean`, relink, doctor, gc, detach with an unchanged repository).
-4. **Publish** a GitHub release carrying `skillctl-X.Y.Z-macos-universal.tar.gz`, its `.sha256` and the rendered `skillctl.rb`.
-5. **Verify the formula** on another clean runner with `brew install --formula` from the published URL, then the same scenario again.
-6. **Tap pull request**, only when configured: copies the formula into `Formula/skillctl.rb` of the tap repository and opens a pull request.
+4. **Publish** a GitHub release carrying `skillctl-X.Y.Z-macos-universal.tar.gz` and its `.sha256`.
+5. **Publish the crate** `skillctl-cli` to crates.io with `cargo publish --locked`, when the `CARGO_REGISTRY_TOKEN` secret is configured (a dry-run publish is part of the build step regardless).
+6. **Verify the crate** on another clean runner: `cargo install skillctl-cli --locked --version X.Y.Z`, then the same scenario again.
 
 To cut a release:
 
@@ -455,10 +451,15 @@ Optional repository configuration:
 |---|---|---|
 | `APPLE_CERTIFICATE_P12`, `APPLE_CERTIFICATE_PASSWORD`, `APPLE_SIGNING_IDENTITY` | secrets | Developer ID Application certificate (base64 `.p12`), its password and the identity string |
 | `APPLE_ID`, `APPLE_TEAM_ID`, `APPLE_APP_PASSWORD` | secrets | Notarization account, team and app-specific password |
-| `HOMEBREW_TAP_REPO` | variable | `owner/homebrew-<name>` repository to receive formula pull requests |
-| `HOMEBREW_TAP_TOKEN` | secret | Token with permission to push a branch and open a pull request in the tap |
+| `CARGO_REGISTRY_TOKEN` | secret | crates.io API token with publish rights for `skillctl-cli` (create one at https://crates.io/settings/tokens) |
 
-Without the signing secrets the release is unsigned, which is fine for `cargo install` and Homebrew installs; only binaries downloaded through a browser hit Gatekeeper quarantine. Without the tap settings the formula is still attached to the release.
+Without the signing secrets the release is unsigned, which is fine for `cargo install`; only binaries downloaded through a browser hit Gatekeeper quarantine. Without the crates.io token the GitHub release is still created and the crate job logs a warning; re-run the workflow for the tag after adding the token:
+
+```bash
+gh workflow run release.yml --ref v0.1.0
+```
+
+Publishing by hand works too: `cargo login` once, then `cargo publish --locked` from the tagged commit.
 
 The same steps run locally:
 
@@ -478,7 +479,7 @@ scripts/release/build-universal.sh && scripts/release/package.sh 0.1.0 && script
 | `attach`, `detach`, `status`, `add`, `remove`, `relink`, `global add/remove/list`, `projects`, `skills` | Implemented |
 | Validation: S, O and H rules; text, JSON and JUnit; allow-lists; `--strict`; `--with-reference` | Implemented |
 | `install` from Git and local folders, `edit`, `doctor --fix`, `gc`, `config`, `completions` | Implemented |
-| Release pipeline: universal build, optional signing and notarization, clean-runner verification, GitHub release, Homebrew formula and optional tap pull request | Implemented (GitHub Actions) |
+| Release pipeline: universal build, optional signing and notarization, clean-runner verification, GitHub release, crates.io publish and verification | Implemented (GitHub Actions) |
 | Manual harness compatibility matrix (Claude Code, Cursor, ZohoCode) | Not run; default link targets are provisional |
 
 ## License

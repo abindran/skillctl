@@ -2,13 +2,16 @@ name: Release
 
 # A tag vX.Y.Z (matching Cargo.toml) produces a signed-when-possible universal
 # macOS binary, verifies it on a clean runner, publishes a GitHub release with
-# the tarball, its SHA-256 and a Homebrew formula, re-verifies the formula from
-# the published URL, and (when a tap is configured) opens a pull request there.
+# the tarball and its SHA-256, and publishes the crate to crates.io when a
+# CARGO_REGISTRY_TOKEN secret is configured.
 
 'on':
   push:
     tags:
       - 'v*'
+  # Re-run for an existing tag (for example after adding CARGO_REGISTRY_TOKEN):
+  # gh workflow run release.yml --ref vX.Y.Z
+  workflow_dispatch:
 
 permissions:
   contents: write
@@ -66,10 +69,10 @@ jobs:
       - name: Sign and notarize
         if: env.APPLE_CERTIFICATE_P12 != ''
         run: scripts/release/sign-and-notarize.sh dist/skillctl
-      - name: Package tarball, checksum and Homebrew formula
-        env:
-          SKILLCTL_REPOSITORY: ${{ github.repository }}
+      - name: Package tarball and checksum
         run: scripts/release/package.sh "${{ steps.meta.outputs.version }}"
+      - name: Check that the crate packages cleanly
+        run: cargo publish --dry-run --locked
       - uses: actions/upload-artifact@v4
         with:
           name: release
@@ -102,71 +105,60 @@ jobs:
         with:
           name: release
           path: dist
-      - name: Create the release with tarball, checksum and formula
+      - name: Create or update the release with tarball and checksum
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release create "$GITHUB_REF_NAME" \
-            --repo "$GITHUB_REPOSITORY" \
-            --title "skillctl ${{ needs.build.outputs.version }}" \
-            --generate-notes \
-            "dist/${{ needs.build.outputs.archive }}" \
-            "dist/${{ needs.build.outputs.archive }}.sha256" \
-            dist/skillctl.rb
+          assets="dist/${{ needs.build.outputs.archive }} dist/${{ needs.build.outputs.archive }}.sha256"
+          if gh release view "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release upload "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --clobber $assets
+          else
+            gh release create "$GITHUB_REF_NAME" \
+              --repo "$GITHUB_REPOSITORY" \
+              --title "skillctl ${{ needs.build.outputs.version }}" \
+              --generate-notes \
+              $assets
+          fi
 
-  verify-formula:
-    name: brew install from the published release
-    needs: [build, publish]
+  crate:
+    name: Publish to crates.io
+    needs: [build, verify]
+    runs-on: ubuntu-latest
+    env:
+      CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
+    outputs:
+      published: ${{ steps.publish.outputs.published }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@1.85.0
+      - name: cargo publish
+        id: publish
+        run: |
+          if [ -z "$CARGO_REGISTRY_TOKEN" ]; then
+            echo "::warning::CARGO_REGISTRY_TOKEN is not configured; the crate was not published"
+            echo "published=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          cargo publish --locked
+          echo "published=true" >> "$GITHUB_OUTPUT"
+
+  verify-crate:
+    name: cargo install from crates.io
+    needs: [build, crate]
+    if: needs.crate.outputs.published == 'true'
     runs-on: macos-15
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/download-artifact@v4
-        with:
-          name: release
-          path: dist
-      - name: Install the formula from a local tap and run the scenario
-        env:
-          HOMEBREW_NO_AUTO_UPDATE: '1'
-          HOMEBREW_NO_INSTALL_CLEANUP: '1'
-          HOMEBREW_NO_INSTALL_FROM_API: '1'
+      - uses: dtolnay/rust-toolchain@1.85.0
+      - name: Install the published crate and run the scenario
         run: |
-          # Homebrew only installs formulae that live in a tap; a throwaway local
-          # tap exercises exactly what a published tap would do.
-          brew tap-new --no-git local/skillctl
-          cp dist/skillctl.rb "$(brew --repository local/skillctl)/Formula/skillctl.rb"
-          brew install local/skillctl/skillctl
-          brew test local/skillctl/skillctl
-          command -v skillctl
+          crate="$(cargo metadata --no-deps --format-version 1 | python3 -c 'import json,sys; print(json.load(sys.stdin)["packages"][0]["name"])')"
+          version="${{ needs.build.outputs.version }}"
+          # crates.io indexes a new version within a minute or so.
+          for attempt in 1 2 3 4 5 6; do
+            if cargo install --locked "$crate" --version "$version"; then break; fi
+            if [ "$attempt" = 6 ]; then exit 1; fi
+            sleep 30
+          done
           skillctl --version
           scripts/release/smoke.sh skillctl
-
-  tap:
-    name: Homebrew tap pull request
-    needs: [build, publish]
-    if: vars.HOMEBREW_TAP_REPO != ''
-    runs-on: ubuntu-latest
-    env:
-      GH_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
-      TAP_REPO: ${{ vars.HOMEBREW_TAP_REPO }}
-    steps:
-      - uses: actions/download-artifact@v4
-        with:
-          name: release
-          path: dist
-      - name: Open a pull request updating Formula/skillctl.rb
-        run: |
-          version="${{ needs.build.outputs.version }}"
-          gh repo clone "$TAP_REPO" tap
-          cd tap
-          git config user.name "skillctl release"
-          git config user.email "skillctl-release@users.noreply.github.com"
-          git checkout -b "skillctl-$version"
-          mkdir -p Formula
-          cp ../dist/skillctl.rb Formula/skillctl.rb
-          git add Formula/skillctl.rb
-          git commit -m "skillctl $version"
-          git push -u origin "skillctl-$version"
-          gh pr create --repo "$TAP_REPO" \
-            --title "skillctl $version" \
-            --body "Automated formula update for https://github.com/$GITHUB_REPOSITORY/releases/tag/v$version" \
-            --head "skillctl-$version"
