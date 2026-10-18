@@ -41,7 +41,7 @@ fn json_stub_error_is_one_document_on_stdout() {
 
 #[test]
 fn quiet_does_not_hide_human_errors() {
-    let output = run(&["--quiet", "status"]);
+    let output = run(&["--quiet", "doctor"]);
     assert_eq!(output.status.code(), Some(1));
     assert!(output.stdout.is_empty());
     assert!(String::from_utf8(output.stderr).unwrap().contains("Hint:"));

@@ -116,13 +116,13 @@ fn other_commands_initialize_only_a_missing_home() {
     let temp = tempfile::tempdir().unwrap();
     let home = temp.path().join("skills");
     let output = invoke(&home, &["--json", "status"]);
-    assert_eq!(output.status.code(), Some(1)); // status is still a separate work item
+    assert_eq!(output.status.code(), Some(0));
     let report: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
-    assert_eq!(report["error"], "not_implemented");
+    assert_eq!(report["attached"], false);
     assert_layout(&home);
     std::fs::remove_file(home.join("templates/default/SKILL.md")).unwrap();
     let output = invoke(&home, &["status"]);
-    assert_eq!(output.status.code(), Some(1));
+    assert_eq!(output.status.code(), Some(0));
     assert!(!home.join("templates/default/SKILL.md").exists());
 }
 

@@ -34,4 +34,5 @@ Auto-detecting projects, Windows support, syncing registries across machines, a 
 | Spec validation S001–S008, `skills`, `projects` | Done |
 | Git service, instance resolution, reconciliation (items 19–21) | Done |
 | Git exclude blocks (item 22) | Done |
-| Attachment and remaining commands (items 23–33) | Pending |
+| Attachment and status (item 23) | Done |
+| Remaining commands and release (items 24–33) | Pending |

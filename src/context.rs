@@ -218,8 +218,7 @@ mod tests {
                 ..Flags::default()
             },
         );
-        let err = crate::run(Command::Status, &mut ctx).unwrap_err();
-        assert!(matches!(err, Error::NotImplemented { .. }));
+        crate::run(Command::Status, &mut ctx).unwrap();
         assert!(!home.exists());
     }
 }

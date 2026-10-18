@@ -20,9 +20,13 @@ use crate::error::Error;
 pub fn run(command: Command, context: &mut Context<'_>) -> Result<(), Error> {
     let command = match command {
         Command::Init => return commands::init::run(context),
-        Command::Attach { .. } => "attach",
+        Command::Attach {
+            project,
+            new,
+            skills,
+        } => return commands::attach::run(context, project.as_ref(), new.as_ref(), &skills),
         Command::Detach { .. } => "detach",
-        Command::Status => "status",
+        Command::Status => return commands::status::run(context),
         Command::Add { .. } => "add",
         Command::Remove { .. } => "remove",
         Command::Global { command } => match command {

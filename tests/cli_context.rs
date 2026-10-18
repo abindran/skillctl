@@ -17,10 +17,10 @@ fn explicit_home_overrides_environment_and_dry_run_leaves_no_state() {
             command.arg("--dry-run");
         }
         let output = command.arg("status").stdin(Stdio::null()).output().unwrap();
-        assert_eq!(output.status.code(), Some(1));
+        assert_eq!(output.status.code(), Some(0));
         assert!(output.stderr.is_empty());
         let report: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
-        assert_eq!(report["error"], "not_implemented");
+        assert_eq!(report["attached"], false);
         assert_eq!(home.exists(), !dry_run);
         assert!(!environment.exists());
     }
@@ -42,10 +42,10 @@ fn relative_home_and_environment_home_are_initialized() {
             .stdin(Stdio::null())
             .output()
             .unwrap();
-        assert_eq!(output.status.code(), Some(1));
+        assert_eq!(output.status.code(), Some(0));
         assert!(output.stderr.is_empty());
         let report: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
-        assert_eq!(report["error"], "not_implemented");
+        assert_eq!(report["attached"], false);
         assert!(temp.path().join("skills/registry.yml").is_file());
     }
 }

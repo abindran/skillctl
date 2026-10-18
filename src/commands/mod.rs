@@ -1,8 +1,10 @@
+pub mod attach;
 pub mod init;
 pub mod new;
 pub mod projects;
 pub mod seal;
 pub mod skills;
+pub mod status;
 
 use crate::{
     context::Context,

@@ -23,6 +23,12 @@
 - `skills` lists sorted skill/version rows with project usage and global pins. `projects` lists projects and instances, marking missing folders. Both support JSON arrays, quiet output, shared registry locks, and read-only dry runs.
 - The native `validate` library now supplies a rule interface, findings, S001–S008 and a text report. Missing documents or malformed frontmatter produce only their prerequisite finding; field errors accumulate. The `validate` CLI and org/harness rules remain work item 29.
 
+## Implemented attachment and status (item 23)
+
+`attach --new <project> --skills demo@1.0.0` creates a project and attaches the canonical current folder; `attach --project <project>` attaches or moves it to an existing project. Interactive mode offers project counts and skill selection. Subfolders of Git repositories offer the repository root. Registry invariants reject nested instances and global/project name clashes before saving. Moves retain created-folder tracking. Desired state is saved before reconciliation; newly created directories are saved even after partial failure. Exclude blocks hide only successfully managed links; conflicts finish with exit 4. Dry runs clone state in memory and route planned writes through the filesystem service.
+
+`status` uses shared locking and identity resolution from any instance subfolder. Text/JSON show project, instance, pins (including drafts), link health and global pins. Outside an instance it prints `Not attached` with success. Status never invokes reconciliation.
+
 ## Attach flow
 
 ```mermaid

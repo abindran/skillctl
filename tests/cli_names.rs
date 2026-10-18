@@ -34,8 +34,6 @@ fn valid_names_and_versioned_arguments_still_reach_command_stubs() {
     for args in [
         vec!["remove", "org-code-review"],
         vec!["global", "remove", "demo"],
-        vec!["attach", "--new", "web-app"],
-        vec!["attach", "--project", "web-app", "--skills", "a,b@1.2.0"],
         vec!["add", "demo@1.2.0", "--project", "web-app"],
         vec!["edit", "demo@1.2.0"],
         vec!["global", "add", "demo@1.2.0"],
