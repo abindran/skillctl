@@ -2,6 +2,7 @@ pub mod cli;
 pub mod commands;
 pub mod context;
 pub mod error;
+pub mod linker;
 pub mod names;
 pub mod output;
 pub mod paths;

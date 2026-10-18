@@ -82,6 +82,20 @@ The Git service queries repository roots, absolute per-repository exclude paths 
 
 `registry::resolve::InstanceResolver` builds a per-command device/inode index of registered instances while the caller holds the registry lock. Missing instance folders are skipped (doctor reports them); other filesystem failures propagate. Resolving canonicalizes the requested folder and walks its ancestors through `/`, returning the owning project and instance at the first identity match, or `None` for an unattached folder. This handles symlink aliases and case-insensitive filesystem aliases without string-prefix comparisons. The implementation uses the existing Unix file-identity helpers, performs no writes, and works unchanged during dry runs. Rebuild the index after registry changes or directory replacement. Command integration follows in the attach/status work item.
 
+## Link reconciliation (item 21)
+
+`linker::reconcile` converges each instance on project pins through `Fs`. Only symlinks into the store or drafts are managed; real files, directories and foreign links are preserved. Directory-chain symlinks are conflicts rather than traversed. The returned report contains per-path outcomes; conflicts do not stop other skills. Missing directories are recorded on the instance for detach cleanup. Callers own registry locking and persistence, including recording directories after partial failures.
+
+```mermaid
+flowchart LR
+    Pins[Registry pins] --> Reconcile
+    Reconcile --> Ownership{Managed link?}
+    Ownership -->|yes| Update[Keep, atomically replace, or remove]
+    Ownership -->|no| Preserve[Preserve project data; report conflicts]
+    Reconcile --> Dirs[Record newly created directories]
+    Reconcile --> Report[Serializable outcomes]
+```
+
 ## Errors and exit codes
 
 `main.rs` is the only place errors become exit codes.
