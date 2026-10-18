@@ -32,7 +32,29 @@ The caller supplies the timestamp and hash and holds the appropriate registry
 lock. Metadata lives beside the skill directory, so writing it does not change
 the content hash. Missing or malformed metadata is an error, not a default;
 dry-run saves record the exact planned atomic write without modifying disk.
-Staging and read-only permissions are handled separately.
+Staging and read-only permissions are handled by `store::stage`.
+
+## Staging and permissions
+
+`stage_version` copies an already validated source into
+`store/<skill>/.staging-<random>/<skill>/`, hashes the exact copied bytes using the
+canonical encoding, and verifies the supplied metadata hash. It writes `meta.json`
+beside the skill, seals the entire version, then atomically renames it to
+`store/<skill>/<version>/`. Existing versions (including empty directories and
+symlinks) are never replaced. Callers must hold the exclusive registry lock and
+keep the source unchanged during staging; validation is the caller's responsibility.
+
+Directories and executable files become `0555`; other files, including metadata,
+become `0444`. Source permissions are not changed, empty directories are retained,
+and symlinks and special files are rejected. Failed stages restore permissions and
+remove their staging entries without publishing a version. Cleanup failures report
+the abandoned staging path. The source or draft is never deleted by staging.
+
+All mutations use the filesystem service. Dry runs hash the planned copy and record
+creation, writes, permission changes and publication without creating staged files.
+`restore_write_mode` restores `0755` throughout a version for later garbage
+collection; it refuses symlinks before changing permissions and does not delete
+anything itself.
 
 ## Registry model
 

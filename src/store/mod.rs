@@ -2,3 +2,4 @@
 
 pub mod hash;
 pub mod meta;
+pub mod stage;

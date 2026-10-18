@@ -31,7 +31,7 @@ pub fn content_hash(fs: &dyn Fs, dir: &Path) -> Result<String, Error> {
     collect_files(fs, dir, dir, &mut files)?;
     files.sort_by(|left, right| left.0.cmp(&right.0));
 
-    let mut digest = Sha256::new();
+    let mut digest = ContentHasher::new();
     for (relative, path) in files {
         let metadata = fs
             .symlink_metadata(&path)
@@ -48,15 +48,33 @@ pub fn content_hash(fs: &dyn Fs, dir: &Path) -> Result<String, Error> {
         let bytes = fs
             .read(&path)
             .map_err(|source| io_error("Read", &path, source))?;
-        digest.update(relative.as_bytes());
-        digest.update(b"\0");
-        digest.update(if executable { b"1" } else { b"0" });
-        digest.update(b"\0");
-        digest.update(bytes.len().to_string().as_bytes());
-        digest.update(b"\0");
-        digest.update(&bytes);
+        digest.file(&relative, executable, &bytes);
     }
-    Ok(format!("sha256:{}", hex::encode(digest.finalize())))
+    Ok(digest.finish())
+}
+
+/// Shared canonical encoding for hashing existing trees and the exact staged bytes.
+pub(crate) struct ContentHasher(Sha256);
+
+impl ContentHasher {
+    pub(crate) fn new() -> Self {
+        Self(Sha256::new())
+    }
+
+    /// Call in globally sorted relative-path order.
+    pub(crate) fn file(&mut self, relative: &str, executable: bool, bytes: &[u8]) {
+        self.0.update(relative.as_bytes());
+        self.0.update(b"\0");
+        self.0.update(if executable { b"1" } else { b"0" });
+        self.0.update(b"\0");
+        self.0.update(bytes.len().to_string().as_bytes());
+        self.0.update(b"\0");
+        self.0.update(bytes);
+    }
+
+    pub(crate) fn finish(self) -> String {
+        format!("sha256:{}", hex::encode(self.0.finalize()))
+    }
 }
 
 fn collect_files(
