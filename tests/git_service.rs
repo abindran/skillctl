@@ -204,6 +204,6 @@ fn unexpected_command_failures_are_not_non_repository_results() {
     let error = GitCli::with_program(executable)
         .toplevel(temp.path())
         .unwrap_err();
-    assert!(error.to_string().contains("dubious ownership"));
+    assert!(error.to_string().contains("dubious ownership"), "{error:?}");
     assert_eq!(error.exit_code(), 1);
 }

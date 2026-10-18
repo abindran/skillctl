@@ -38,4 +38,6 @@ Auto-detecting projects, Windows support, syncing registries across machines, a 
 | Project pin changes and relinking (item 24) | Done |
 | Detach and safe cleanup (item 25) | Done |
 | Global skills (item 26) | Done |
-| End-to-end coverage and remaining work (items 27–33) | Pending |
+| End-to-end coverage and macOS CI (item 27) | Implemented; remote CI result pending |
+| Manual harness compatibility (item 28) | Blocked: requires actual harnesses and macOS |
+| Full validation, installation, maintenance, release (items 29–33) | Pending |

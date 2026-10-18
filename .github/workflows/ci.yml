@@ -6,7 +6,11 @@ name: Rust CI
 jobs:
   rust-checks:
     name: Rust Checks
-    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-14]
+    runs-on: ${{ matrix.os }}
 
     steps:
       - name: Checkout repository
@@ -21,7 +25,7 @@ jobs:
         run: cargo fmt --check
 
       - name: Run Clippy
-        run: cargo clippy --all-targets -- -D warnings
+        run: cargo clippy --all-targets --locked -- -D warnings
 
       - name: Run tests
         run: cargo test --locked
