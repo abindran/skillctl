@@ -37,4 +37,5 @@ Auto-detecting projects, Windows support, syncing registries across machines, a 
 | Attachment and status (item 23) | Done |
 | Project pin changes and relinking (item 24) | Done |
 | Detach and safe cleanup (item 25) | Done |
-| Remaining commands and release (items 26–33) | Pending |
+| Global skills (item 26) | Done |
+| End-to-end coverage and remaining work (items 27–33) | Pending |

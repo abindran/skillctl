@@ -13,11 +13,11 @@ fn run(args: &[&str]) -> Output {
 
 #[test]
 fn human_stub_error_has_readable_command_hint_and_failure_status() {
-    let output = run(&["global", "add", "demo"]);
+    let output = run(&["install", "demo"]);
     assert_eq!(output.status.code(), Some(1));
     assert!(output.stdout.is_empty());
     let stderr = String::from_utf8(output.stderr).unwrap();
-    assert!(stderr.starts_with("Error: Command 'global add' is not implemented\nHint: "));
+    assert!(stderr.starts_with("Error: Command 'install' is not implemented\nHint: "));
     assert!(stderr.contains("skillctl --help"));
     assert!(!stderr.contains("Add {"));
 }
@@ -25,15 +25,15 @@ fn human_stub_error_has_readable_command_hint_and_failure_status() {
 #[test]
 fn json_stub_error_is_one_document_on_stdout() {
     for args in [
-        vec!["--json", "global", "add", "demo"],
-        vec!["global", "add", "demo", "--json", "--quiet"],
+        vec!["--json", "install", "demo"],
+        vec!["install", "demo", "--json", "--quiet"],
     ] {
         let output = run(&args);
         assert_eq!(output.status.code(), Some(1));
         assert!(output.stderr.is_empty());
         let report: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
         assert_eq!(report["error"], "not_implemented");
-        assert_eq!(report["message"], "Command 'global add' is not implemented");
+        assert_eq!(report["message"], "Command 'install' is not implemented");
         assert_eq!(report["exit_code"], 1);
         assert!(report["hint"].as_str().unwrap().contains("skillctl --help"));
     }

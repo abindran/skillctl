@@ -48,7 +48,10 @@ pub(super) fn reconcile_instance(
     name: &ProjectName,
     index: usize,
 ) -> Result<linker::ReconcileReport, Error> {
-    let project = registry.projects[name].clone();
+    let mut project = registry.projects[name].clone();
+    if registry.settings.global_in_instances {
+        project.skills.extend(registry.global.skills.clone());
+    }
     let instance = &mut registry
         .projects
         .get_mut(name)

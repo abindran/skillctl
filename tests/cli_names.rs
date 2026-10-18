@@ -5,7 +5,6 @@ use std::process::{Command, Stdio};
 fn invalid_plain_names_are_usage_errors() {
     for args in [
         vec!["new", "Invalid"],
-        vec!["global", "remove", "a_b"],
         vec!["seal", "bad.name", "--bump", "patch"],
         vec!["attach", "--new", "Bad"],
         vec!["attach", "--project", "bad.name"],
@@ -27,11 +26,8 @@ fn invalid_plain_names_are_usage_errors() {
 
 #[test]
 fn valid_names_and_versioned_arguments_still_reach_command_stubs() {
-    for args in [
-        vec!["global", "remove", "demo"],
-        vec!["edit", "demo@1.2.0"],
-        vec!["global", "add", "demo@1.2.0"],
-    ] {
+    {
+        let args = vec!["edit", "demo@1.2.0"];
         let temp = tempfile::tempdir().unwrap();
         let output = Command::new(env!("CARGO_BIN_EXE_skillctl"))
             .args(&args)

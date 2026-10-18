@@ -39,6 +39,10 @@
 
 `detach` resolves the current instance (including from subfolders), saves its removal under the exclusive lock, then reconciles against empty pins, removes its exclude block, and removes recorded directories deepest-first only if empty. Real project content, foreign links and directory-chain symlinks are preserved. `--keep-links` skips all filesystem cleanup (including exclude removal); `--delete-project` removes the project only after its last instance leaves. Dry runs leave the registry, links, exclude bytes and folders unchanged.
 
+## Global skills (item 26)
+
+`global add <skill>[@version]`, `global remove <skill>` and `global list` manage user-level pins and per-target link health. Global and project skill names cannot overlap in either direction. Mutations save intended state under the exclusive lock, reconcile user-level targets without Git excludes, and reconcile all project instances when `global_in_instances` is enabled. `relink --all` repairs globals first. The same ownership engine preserves personal skills and reports conflicts with exit 4. Global target directory symlinks resolve before per-skill linking; whole-folder links are never created. Tests use explicit temporary global targets, never the developer's personal folders.
+
 ## Attach flow
 
 ```mermaid

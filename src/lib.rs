@@ -11,7 +11,7 @@ pub mod services;
 pub mod skill;
 pub mod store;
 pub mod validate;
-use crate::cli::{Command, ConfigCommand, GlobalCommand};
+use crate::cli::{Command, ConfigCommand};
 use crate::context::Context;
 use crate::error::Error;
 
@@ -38,11 +38,7 @@ pub fn run(command: Command, context: &mut Context<'_>) -> Result<(), Error> {
         Command::Remove { skill, project } => {
             return commands::pins::remove(context, &skill, project.as_ref());
         }
-        Command::Global { command } => match command {
-            GlobalCommand::Add { .. } => "global add",
-            GlobalCommand::Remove { .. } => "global remove",
-            GlobalCommand::List => "global list",
-        },
+        Command::Global { command } => return commands::global::run(context, command),
         Command::Projects => return commands::projects::run(context),
         Command::Skills => return commands::skills::run(context),
         Command::Relink { all, project } => {

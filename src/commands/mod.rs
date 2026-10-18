@@ -1,5 +1,6 @@
 pub mod attach;
 pub mod detach;
+pub mod global;
 pub mod init;
 pub mod new;
 pub mod pins;

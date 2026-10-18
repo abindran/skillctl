@@ -123,7 +123,12 @@ pub fn relink(
 ) -> Result<(), Error> {
     write_locked(context, |context| {
         let mut registry = super::load_registry(context)?;
-        let reports = if all {
+        let global_reports = if all {
+            super::global::reconcile(context, &registry)?
+        } else {
+            vec![]
+        };
+        let mut reports = if all {
             let names = registry.projects.keys().cloned().collect::<Vec<_>>();
             reconcile_projects(context, &mut registry, &names)?
         } else if let Some(project) = project {
@@ -148,6 +153,7 @@ pub fn relink(
                 index,
             )?]
         };
+        reports.extend(global_reports);
         if all && !reports.iter().any(ReconcileReport::has_conflicts) {
             registry.settings.previous_link_targets.clear();
             if !context.flags.dry_run {
