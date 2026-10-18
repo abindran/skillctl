@@ -35,4 +35,5 @@ Auto-detecting projects, Windows support, syncing registries across machines, a 
 | Git service, instance resolution, reconciliation (items 19–21) | Done |
 | Git exclude blocks (item 22) | Done |
 | Attachment and status (item 23) | Done |
-| Remaining commands and release (items 24–33) | Pending |
+| Project pin changes and relinking (item 24) | Done |
+| Remaining commands and release (items 25–33) | Pending |

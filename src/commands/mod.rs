@@ -1,6 +1,7 @@
 pub mod attach;
 pub mod init;
 pub mod new;
+pub mod pins;
 pub mod projects;
 pub mod seal;
 pub mod skills;

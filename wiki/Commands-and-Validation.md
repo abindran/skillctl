@@ -29,6 +29,12 @@
 
 `status` uses shared locking and identity resolution from any instance subfolder. Text/JSON show project, instance, pins (including drafts), link health and global pins. Outside an instance it prints `Not attached` with success. Status never invokes reconciliation.
 
+## Project pins and relinking (item 24)
+
+`add <skill>[@version] [--project name]` resolves an explicit version or the highest stable store version. `remove <skill> [--project name]` unpins it. Both hold the exclusive lock across load, save and reconciliation of every project instance, so concurrent additions cannot lose changes. Global/project name clashes are rejected. `add --draft` resolves an existing draft. Without `--project`, identity resolution finds the current instance.
+
+`relink` repairs only the current instance; `--project` repairs every instance of that project, and `--all` visits all projects. Conflicts are accumulated and reported with exit 4. Only a successful conflict-free `--all` clears obsolete-target history. Missing pinned content fails explicitly rather than silently changing a pin. Global convergence is added in item 26. Every mode supports zero-write dry runs.
+
 ## Attach flow
 
 ```mermaid

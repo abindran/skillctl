@@ -27,8 +27,14 @@ pub fn run(command: Command, context: &mut Context<'_>) -> Result<(), Error> {
         } => return commands::attach::run(context, project.as_ref(), new.as_ref(), &skills),
         Command::Detach { .. } => "detach",
         Command::Status => return commands::status::run(context),
-        Command::Add { .. } => "add",
-        Command::Remove { .. } => "remove",
+        Command::Add {
+            skill,
+            project,
+            draft,
+        } => return commands::pins::add(context, &skill, project.as_ref(), draft),
+        Command::Remove { skill, project } => {
+            return commands::pins::remove(context, &skill, project.as_ref());
+        }
         Command::Global { command } => match command {
             GlobalCommand::Add { .. } => "global add",
             GlobalCommand::Remove { .. } => "global remove",
@@ -36,7 +42,9 @@ pub fn run(command: Command, context: &mut Context<'_>) -> Result<(), Error> {
         },
         Command::Projects => return commands::projects::run(context),
         Command::Skills => return commands::skills::run(context),
-        Command::Relink { .. } => "relink",
+        Command::Relink { all, project } => {
+            return commands::pins::relink(context, all, project.as_ref());
+        }
         Command::New {
             skill,
             from_template,
