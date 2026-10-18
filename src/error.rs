@@ -22,6 +22,9 @@ pub enum Error {
         hint: String,
     },
 
+    #[error("Invalid registry: {message}")]
+    Registry { message: String, hint: String },
+
     #[error("Command '{command}' is not implemented")]
     NotImplemented { command: String, hint: String },
 }
@@ -34,7 +37,8 @@ impl Error {
             | Error::Validation { hint, .. }
             | Error::Conflicts { hint, .. }
             | Error::Io { hint, .. }
-            | Error::NotImplemented { hint, .. } => hint,
+            | Error::NotImplemented { hint, .. }
+            | Error::Registry { hint, .. } => hint,
         }
     }
     /// Stable machine-readable category, independent of the display message.
@@ -46,6 +50,7 @@ impl Error {
             Self::Conflicts { .. } => "conflicts",
             Self::Io { .. } => "io",
             Self::NotImplemented { .. } => "not_implemented",
+            Self::Registry { .. } => "registry",
         }
     }
 
@@ -58,6 +63,7 @@ impl Error {
             Error::Conflicts { .. } => 4,
             Error::Io { .. } => 1,
             Error::NotImplemented { .. } => 1,
+            Error::Registry { .. } => 1,
         }
     }
 }

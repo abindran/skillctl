@@ -7,6 +7,11 @@ use std::path::{Path, PathBuf};
 
 /// Object-safe filesystem boundary. Mutations never create missing parents implicitly.
 pub trait Fs {
+    /// Read bytes; dry runs read through to disk. Fakes may override this.
+    fn read(&self, path: &Path) -> io::Result<Vec<u8>> {
+        std::fs::read(path)
+    }
+
     fn symlink_metadata(&self, path: &Path) -> io::Result<Metadata>;
     fn read_link(&self, path: &Path) -> io::Result<PathBuf>;
     fn read_dir(&self, path: &Path) -> io::Result<Vec<PathBuf>>;
