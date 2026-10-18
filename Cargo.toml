@@ -9,6 +9,7 @@ description = "Store Agent Skills once and symlink them into projects for Claude
 repository = "https://github.com/abindran/skillctl"
 homepage = "https://github.com/abindran/skillctl"
 readme = "README.md"
+license = "Apache-2.0"
 keywords = ["agent-skills", "claude-code", "cursor", "cli", "symlink"]
 categories = ["command-line-utilities", "development-tools"]
 rust-version = "1.85"

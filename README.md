@@ -484,4 +484,4 @@ scripts/release/build-universal.sh && scripts/release/package.sh 0.1.0 && script
 
 ## License
 
-No license file is present yet.
+Apache License, Version 2.0. See [LICENSE](LICENSE).
