@@ -35,6 +35,10 @@
 
 `relink` repairs only the current instance; `--project` repairs every instance of that project, and `--all` visits all projects. Conflicts are accumulated and reported with exit 4. Only a successful conflict-free `--all` clears obsolete-target history. Missing pinned content fails explicitly rather than silently changing a pin. Global convergence is added in item 26. Every mode supports zero-write dry runs.
 
+## Detach (item 25)
+
+`detach` resolves the current instance (including from subfolders), saves its removal under the exclusive lock, then reconciles against empty pins, removes its exclude block, and removes recorded directories deepest-first only if empty. Real project content, foreign links and directory-chain symlinks are preserved. `--keep-links` skips all filesystem cleanup (including exclude removal); `--delete-project` removes the project only after its last instance leaves. Dry runs leave the registry, links, exclude bytes and folders unchanged.
+
 ## Attach flow
 
 ```mermaid
