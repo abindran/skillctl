@@ -2,6 +2,8 @@ use clap::{Parser, Subcommand, ValueEnum};
 use clap_complete::Shell;
 use std::path::PathBuf;
 
+use crate::names::{ProjectName, SkillName};
+
 /// Manage and install reusable skills
 #[derive(Debug, Parser)]
 #[command(name = "skillctl", version, about)]
@@ -45,11 +47,11 @@ pub enum Command {
     Attach {
         /// Attach to an existing project.
         #[arg(long, conflicts_with = "new")]
-        project: Option<String>,
+        project: Option<ProjectName>,
 
         /// Create and attach to a new project.
         #[arg(long, conflicts_with = "project")]
-        new: Option<String>,
+        new: Option<ProjectName>,
 
         /// Comma-separated list of skills.
         #[arg(long, value_delimiter = ',')]
@@ -77,7 +79,7 @@ pub enum Command {
 
         /// Target project.
         #[arg(long)]
-        project: Option<String>,
+        project: Option<ProjectName>,
 
         /// Create a draft instead of a sealed skill.
         #[arg(long)]
@@ -87,11 +89,11 @@ pub enum Command {
     /// Remove a skill from a project.
     Remove {
         /// Name of the skill to remove.
-        skill: String,
+        skill: SkillName,
 
         /// Target project.
         #[arg(long)]
-        project: Option<String>,
+        project: Option<ProjectName>,
     },
 
     /// Manage globally installed skills.
@@ -115,13 +117,13 @@ pub enum Command {
 
         /// Relink a specific project.
         #[arg(long, conflicts_with = "all")]
-        project: Option<String>,
+        project: Option<ProjectName>,
     },
 
     /// Create a new skill.
     New {
         /// Name of the skill to create.
-        skill: String,
+        skill: SkillName,
 
         /// Create from a template.
         #[arg(long)]
@@ -141,7 +143,7 @@ pub enum Command {
     /// Seal a skill as a versioned release.
     Seal {
         /// Name of the skill to seal.
-        skill: String,
+        skill: SkillName,
 
         /// Version increment.
         #[arg(long, value_enum)]
@@ -228,7 +230,7 @@ pub enum GlobalCommand {
     /// Remove a globally installed skill.
     Remove {
         /// Name of the skill to remove.
-        skill: String,
+        skill: SkillName,
     },
 
     /// List globally installed skills.
