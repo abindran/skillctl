@@ -13,7 +13,7 @@ use super::{hash::ContentHasher, meta::Metadata};
 use crate::{error::Error, paths::Paths, services::fs::Fs};
 
 /// Copy a validated skill into a private staging directory, verify its hash,
-/// write metadata, seal the entire version and atomically rename it into place.
+/// write metadata, seal its contents, atomically rename it and seal the root.
 /// The source (including a draft) is never modified or deleted.
 ///
 /// `paths.store()` must already exist. Validation belongs to the caller; the
@@ -96,9 +96,10 @@ pub fn stage_version(
         for (path, mode) in modes {
             operation(fs.set_mode(&path, mode), "Seal", &path)?;
         }
-        // Seal directories after their children, including the version root.
+        // Seal children first, but keep the root writable: macOS requires
+        // write permission on a directory being renamed.
         for (path, directory) in created.iter().rev() {
-            if *directory {
+            if *directory && path != &staging {
                 operation(fs.set_mode(path, 0o555), "Seal", path)?;
             }
         }
@@ -106,6 +107,11 @@ pub fn stage_version(
         // protect even an existing empty version from rename's replace behavior.
         ensure_missing(fs, &destination)?;
         operation(fs.rename(&staging, &destination), "Publish", &destination)?;
+        // Rollback must use the published paths if sealing the root fails.
+        for (path, _) in &mut created {
+            *path = destination.join(path.strip_prefix(&staging).expect("staged path"));
+        }
+        operation(fs.set_mode(&destination, 0o555), "Seal", &destination)?;
         Ok(destination)
     })();
     match result {
@@ -113,11 +119,14 @@ pub fn stage_version(
         Err(error) => {
             if let Err(cleanup) = cleanup(fs, &created) {
                 return Err(Error::Io {
-                    operation: format!("Clean staging {} after: {error}", staging.display()),
+                    operation: format!(
+                        "Clean staged version {} after: {error}",
+                        created[0].0.display()
+                    ),
                     source: io::Error::other(cleanup.to_string()),
                     hint: format!(
-                        "Remove the abandoned staging directory {} after restoring write permissions.",
-                        staging.display()
+                        "Remove the abandoned version directory {} after restoring write permissions.",
+                        created[0].0.display()
                     ),
                 });
             }

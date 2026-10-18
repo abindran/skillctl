@@ -247,7 +247,12 @@ fn dry_run_records_full_plan_without_creating_staged_paths() {
             .exists()
     );
     let actions = dry.actions();
-    assert!(matches!(actions.last(), Some(FsAction::Rename { to, .. }) if to == &destination));
+    assert!(
+        matches!(actions.last(), Some(FsAction::SetMode { path, mode: 0o555 }) if path == &destination)
+    );
+    assert!(
+        matches!(actions.get(actions.len() - 2), Some(FsAction::Rename { to, .. }) if to == &destination)
+    );
     assert_eq!(
         actions
             .iter()
@@ -335,6 +340,10 @@ impl Fs for FailFs {
         RealFs.symlink(target, link)
     }
     fn rename(&self, from: &Path, to: &Path) -> io::Result<()> {
+        // Model macOS even on Linux: read-only directory roots cannot be renamed.
+        if mode(from) & 0o200 == 0 {
+            return Err(io::Error::from(io::ErrorKind::PermissionDenied));
+        }
         self.fail("rename")?;
         RealFs.rename(from, to)
     }
@@ -354,17 +363,27 @@ impl Fs for FailFs {
         self.fail("after-write")
     }
     fn set_mode(&self, path: &Path, mode: u32) -> io::Result<()> {
-        if mode == 0o555
-            && path
-                .file_name()
-                .unwrap()
-                .to_string_lossy()
-                .starts_with(".staging-")
-        {
+        if mode == 0o555 && path.file_name().is_some_and(|n| n == "demo") {
             self.fail("permissions")?;
+        }
+        if mode == 0o555 && path.file_name().is_some_and(|n| n == "1.0.0") {
+            self.fail("published-permissions")?;
         }
         RealFs.set_mode(path, mode)
     }
+}
+
+#[test]
+fn publishes_with_macos_rename_permissions() {
+    let fixture = Fixture::new();
+    let fs = FailFs {
+        point: "none",
+        failed: Cell::new(false),
+    };
+    let version = stage_version(&fs, &fixture.paths, &fixture.source, &fixture.metadata).unwrap();
+    assert_eq!(version, fixture.destination());
+    assert_eq!(mode(&version), 0o555);
+    restore_write_mode(&RealFs, &version).unwrap();
 }
 
 #[test]
@@ -376,6 +395,7 @@ fn failures_at_each_stage_roll_back_even_after_sealing_or_committed_write() {
         "after-write",
         "permissions",
         "rename",
+        "published-permissions",
     ] {
         let fixture = Fixture::new();
         let failing = FailFs {
