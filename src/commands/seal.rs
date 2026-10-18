@@ -5,7 +5,16 @@ use crate::{
 
 pub fn run(context: &mut Context<'_>, name: &SkillName, bump: Option<Bump>) -> Result<(), Error> {
     super::init::ensure_home(context)?;
-    let operation = || drafts::seal(context.fs.as_ref(), &context.home, name, bump);
+    let operation = || {
+        let registry = super::load_registry(context)?;
+        drafts::seal_with_allow(
+            context.fs.as_ref(),
+            &context.home,
+            name,
+            bump,
+            &registry.settings.validate.allow,
+        )
+    };
     let path = if context.flags.dry_run {
         operation()?
     } else {

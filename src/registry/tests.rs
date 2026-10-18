@@ -22,6 +22,9 @@ fn populated(root: &Path) -> Registry {
                 root.join("global").try_into().unwrap(),
             ],
             global_in_instances: true,
+            validate: ValidationSettings {
+                allow: vec!["O102".into(), "H201".into()],
+            },
             previous_link_targets: vec![".claude/skills".parse().unwrap()],
         },
         ..Registry::default()

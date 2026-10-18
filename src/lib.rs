@@ -51,7 +51,20 @@ pub fn run(command: Command, context: &mut Context<'_>) -> Result<(), Error> {
         Command::Edit { .. } => "edit",
         Command::Seal { skill, bump } => return commands::seal::run(context, &skill, bump),
         Command::Install { .. } => "install",
-        Command::Validate { .. } => "validate",
+        Command::Validate {
+            target,
+            format,
+            strict,
+            with_reference,
+        } => {
+            return commands::validate::run(
+                context,
+                target.as_deref(),
+                format,
+                strict,
+                with_reference,
+            );
+        }
         Command::Doctor { .. } => "doctor",
         Command::Gc { .. } => "gc",
         Command::Config { command } => match command {

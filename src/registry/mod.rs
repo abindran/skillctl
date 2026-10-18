@@ -114,6 +114,7 @@ pub struct Settings {
     pub git_exclude: bool,
     pub global_link_targets: Vec<HomePath>,
     pub global_in_instances: bool,
+    pub validate: ValidationSettings,
     /// Retained until a successful relink --all cleans obsolete targets.
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub previous_link_targets: Vec<RelPath>,
@@ -129,9 +130,17 @@ impl Default for Settings {
             git_exclude: true,
             global_link_targets: vec!["~/.claude/skills".parse().expect("valid home target")],
             global_in_instances: false,
+            validate: ValidationSettings::default(),
             previous_link_targets: Vec::new(),
         }
     }
+}
+
+/// Globally suppressed org/harness rule IDs. Spec rules are never suppressed.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default, deny_unknown_fields)]
+pub struct ValidationSettings {
+    pub allow: Vec<String>,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]

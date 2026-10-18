@@ -96,6 +96,28 @@ flowchart LR
     Reconcile --> Report[Serializable outcomes]
 ```
 
+## Validation pipeline (item 29)
+
+```mermaid
+flowchart TD
+    Targets[Path, pinned version, draft, or all contents] --> Lock[Shared registry lock]
+    Lock --> Parse[SKILL.md structural prerequisites]
+    Parse --> Spec[S001-S008]
+    Parse --> Org[O101-O133: metadata, resources, static safety]
+    Parse --> Harness[H201-H205: centralized field knowledge]
+    Org --> FS[Read-only Fs traversal; do not follow interior symlinks]
+    Spec --> Filter[Union of global and skill allow-lists; spec cannot be disabled]
+    Org --> Filter
+    Harness --> Filter
+    Filter --> Strict[Optional warning promotion]
+    Strict --> Report[Text / JSON array / JUnit cases per skill]
+    Report --> Exit[Exit 0 or already-reported validation exit 3]
+```
+
+`Rule::check_fs` extends pure rules with injectable filesystem inspection without breaking existing `Rule` implementations. `run` is the spec-only API; `run_all` composes all groups and suppression/strict policy. Resource references use a CommonMark parser; safety linting uses precompiled regular expressions. Inspection never executes bundled scripts and findings do not contain matched secrets. Filesystem failures propagate separately from findings. `seal` invokes this same full runner with the registry allow-list before staging.
+
+The validation command writes a complete document before returning `ReportedValidation`; only the binary maps it to exit 3 without adding a second JSON object or corrupting XML. JUnit uses `quick-junit` XML string sanitization plus a small renderer because its single-status testcase model cannot represent the required multiple failure elements per skill. Optional reference validation executes directly without a shell and merges a redacted failed verdict as R001.
+
 ## Errors and exit codes
 
 `main.rs` is the only place errors become exit codes.

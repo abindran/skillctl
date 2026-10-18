@@ -1,5 +1,8 @@
 //! Native validation. Structural failures suppress dependent field checks, not I/O errors.
 
+pub mod fields;
+pub mod harness;
+pub mod org;
 pub mod report;
 pub mod spec;
 
@@ -53,10 +56,68 @@ impl Finding {
 /// The runner handles S001/S002 prerequisites before invoking field-level rules.
 pub trait Rule {
     fn check(&self, skill: &Skill) -> Vec<Finding>;
+
+    /// Filesystem-dependent rules use the same injectable read service as commands.
+    fn check_fs(&self, _fs: &dyn Fs, skill: &Skill) -> Result<Vec<Finding>, Error> {
+        Ok(self.check(skill))
+    }
 }
 
 pub fn run(fs: &dyn Fs, dir: &Path) -> Result<Vec<Finding>, Error> {
     run_with_rules(fs, dir, &[&spec::SpecRules])
+}
+
+/// Run all native groups, suppress allowed O/H IDs, then promote remaining warnings.
+/// `run` remains the spec-only API for callers that need structural validation.
+pub fn run_all(
+    fs: &dyn Fs,
+    dir: &Path,
+    allow: &[String],
+    strict: bool,
+) -> Result<Vec<Finding>, Error> {
+    // Never read a linked document outside the skill boundary.
+    let document = dir.join("SKILL.md");
+    if fs
+        .symlink_metadata(&document)
+        .is_ok_and(|info| info.is_symlink())
+    {
+        return Ok(vec![Finding::error(
+            "O122",
+            document,
+            "Symlinks are not allowed inside a skill",
+            "Replace SKILL.md with a regular file inside the skill.",
+        )]);
+    }
+    let mut findings = run_with_rules(
+        fs,
+        dir,
+        &[&spec::SpecRules, &org::OrgRules, &harness::HarnessRules],
+    )?;
+    let local = if findings
+        .iter()
+        .any(|finding| matches!(finding.rule.as_str(), "S001" | "S002"))
+    {
+        String::new()
+    } else {
+        Skill::load(fs, dir)?
+            .frontmatter
+            .metadata
+            .value()
+            .and_then(|metadata| metadata.get("skillctl-allow"))
+            .cloned()
+            .unwrap_or_default()
+    };
+    findings.retain(|finding| {
+        finding.rule.starts_with('S')
+            || !(allow.iter().any(|id| id == &finding.rule)
+                || local.split(',').any(|id| id.trim() == finding.rule))
+    });
+    if strict {
+        for finding in &mut findings {
+            finding.severity = Severity::Error;
+        }
+    }
+    Ok(findings)
 }
 
 pub fn run_with_rules(fs: &dyn Fs, dir: &Path, rules: &[&dyn Rule]) -> Result<Vec<Finding>, Error> {
@@ -98,7 +159,7 @@ pub fn run_with_rules(fs: &dyn Fs, dir: &Path, rules: &[&dyn Rule]) -> Result<Ve
     };
     let mut findings = Vec::new();
     for rule in rules {
-        findings.extend(rule.check(&skill));
+        findings.extend(rule.check_fs(fs, &skill)?);
     }
     Ok(findings)
 }

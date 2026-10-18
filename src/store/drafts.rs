@@ -103,10 +103,21 @@ pub fn seal(
     name: &SkillName,
     bump: Option<Bump>,
 ) -> Result<PathBuf, Error> {
+    seal_with_allow(fs, paths, name, bump, &[])
+}
+
+/// Seal with the registry's global org/harness suppression list.
+pub fn seal_with_allow(
+    fs: &dyn Fs,
+    paths: &Paths,
+    name: &SkillName,
+    bump: Option<Bump>,
+    allow: &[String],
+) -> Result<PathBuf, Error> {
     real_dir(fs, &paths.drafts(), false)?;
     let draft = paths.draft_dir(name);
     real_dir(fs, &draft, false)?;
-    let findings = validate::run(fs, &draft)?;
+    let findings = validate::run_all(fs, &draft, allow, false)?;
     require_valid(&findings)?;
     let skill = Skill::load(fs, &draft)?;
     let mut version = skill.version()?.ok_or_else(|| Error::Validation {

@@ -22,6 +22,9 @@ fd-lock = "4.0.4"
 # 0.11.1 raises the MSRV to 1.88; keep compatibility with Rust 1.85.
 sha2 = "=0.11.0"
 hex = "0.4.3"
+regex = "1.13.1"
+pulldown-cmark = { version = "0.13.4", default-features = false }
+quick-junit = "0.8.0"
 
 [profile.release]
 lto = "thin"

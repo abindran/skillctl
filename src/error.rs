@@ -11,6 +11,10 @@ pub enum Error {
     #[error("Validation failed: {summary}")]
     Validation { summary: String, hint: String },
 
+    /// A complete validation report has already been written to stdout.
+    #[error("Validation found errors (see report)")]
+    ReportedValidation,
+
     #[error("Conflicts detected: {summary}")]
     Conflicts { summary: String, hint: String },
 
@@ -32,6 +36,7 @@ pub enum Error {
 impl Error {
     pub fn hint(&self) -> &str {
         match self {
+            Error::ReportedValidation => "Fix the findings in the validation report.",
             Error::Usage { hint, .. }
             | Error::MissingAnswer { hint, .. }
             | Error::Validation { hint, .. }
@@ -46,7 +51,7 @@ impl Error {
         match self {
             Self::Usage { .. } => "usage",
             Self::MissingAnswer { .. } => "missing_answer",
-            Self::Validation { .. } => "validation",
+            Self::Validation { .. } | Self::ReportedValidation => "validation",
             Self::Conflicts { .. } => "conflicts",
             Self::Io { .. } => "io",
             Self::NotImplemented { .. } => "not_implemented",
@@ -59,7 +64,7 @@ impl Error {
         match self {
             Error::Usage { .. } => 2,
             Error::MissingAnswer { .. } => 2,
-            Error::Validation { .. } => 3,
+            Error::Validation { .. } | Error::ReportedValidation => 3,
             Error::Conflicts { .. } => 4,
             Error::Io { .. } => 1,
             Error::NotImplemented { .. } => 1,

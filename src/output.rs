@@ -58,6 +58,15 @@ impl<Out: Write, Err: Write> Output<Out, Err> {
         }
     }
 
+    /// Write a pre-rendered validation document without wrapping XML/JSON in JSON.
+    pub fn document(&mut self, document: &str, machine_readable: bool) -> io::Result<()> {
+        if machine_readable || !self.quiet {
+            writeln!(self.stdout, "{document}")?;
+            self.stdout.flush()?;
+        }
+        Ok(())
+    }
+
     /// Optional progress or diagnostic information never contaminates JSON stdout.
     pub fn message(&mut self, message: &str) -> io::Result<()> {
         if !self.quiet {

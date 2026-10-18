@@ -18,10 +18,10 @@
 ## Implemented authoring, listing and spec validation
 
 - `new <skill> [--from-template <name>]` creates a writable draft, preserves template fields/body, sets its name and version `0.1.0`, and creates empty `scripts/` and `references/` folders. Existing drafts are never replaced.
-- `seal <skill> [--bump major|minor|patch]` checks S001–S008 and requires a semver `metadata.version`, stages a read-only version with local-source metadata, then removes the draft only after publication succeeds. A requested bump applies to the stored copy; failed publication leaves the draft unchanged. Org/harness checks will be added in work item 29.
+- `seal <skill> [--bump major|minor|patch]` checks S001–S008 and requires a semver `metadata.version`, stages a read-only version with local-source metadata, then removes the draft only after publication succeeds. A requested bump applies to the stored copy; failed publication leaves the draft unchanged. Full org/harness validation runs before publication; warnings do not block sealing, while unsuppressed errors leave the draft intact.
 - Both authoring commands hold an exclusive registry lock and support no-write dry runs. `seal --dry-run` never deletes the draft.
 - `skills` lists sorted skill/version rows with project usage and global pins. `projects` lists projects and instances, marking missing folders. Both support JSON arrays, quiet output, shared registry locks, and read-only dry runs.
-- The native `validate` library now supplies a rule interface, findings, S001–S008 and a text report. Missing documents or malformed frontmatter produce only their prerequisite finding; field errors accumulate. The `validate` CLI and org/harness rules remain work item 29.
+- The native `validate` library supplies S001–S008 and full org/harness rules. Missing documents or malformed frontmatter produce only their prerequisite finding; field errors accumulate. `run` remains spec-only for backward compatibility; `run_all` runs all groups, combines allow-lists, then applies strict mode.
 
 ## Implemented attachment and status (item 23)
 
@@ -92,6 +92,30 @@ flowchart LR
 - Rules have stable IDs, severities and fix hints
 - `--strict` turns warnings into errors; exit code 3 on errors
 - Spec rules can't be disabled; others via `metadata.skillctl-allow` or `settings.validate.allow`
+
+## Full validation (item 29)
+
+```sh
+skillctl validate                         # every draft and installed version
+skillctl validate demo@1.0.0 --strict --format json
+skillctl validate demo@draft
+skillctl validate ./skills/demo --format junit > validation.xml
+skillctl validate ./skills/demo --with-reference
+```
+
+An unversioned name selects the highest stable installed version. Paths are resolved to their real directory. The command holds a shared registry lock and only reads skills; implicit initialization still applies to a missing home. `--dry-run` writes nothing. Warnings exit 0; errors exit 3. Strict mode promotes remaining warnings after suppression. Failure reports remain exactly one JSON array or XML document, without an appended error object. `--format` overrides the global `--json` flag; quiet hides text but preserves machine reports.
+
+- **O101–O104:** semver version, 80-character description, case-insensitive `use when`, no angle brackets.
+- **O110–O112:** body line/token budgets and individual reference-file budgets, estimated using Unicode characters ÷ 4.
+- **O120–O123:** CommonMark links/images/reference links and backtick resource paths must exist; bundled files must be referenced; no symlinks or `..` references (including percent-encoded traversal). Traversal never follows interior symlinks.
+- **O130–O133:** scripts require shebang/executable status; flag interactive input, download-to-shell pipelines and `sudo`; scan every regular file for likely credentials. Secret diagnostics identify a path and line but never echo a value. These are static heuristics, not a sandbox or exhaustive security audit; scripts are never executed.
+- **H201–H205:** Claude-only fields, tool permissions, substitutions, forked user interactions and unknown fields. Compatibility lists live in `validate/fields.rs`; manual item 28 remains deferred and defaults provisional.
+
+Suppress only org/harness IDs with `metadata.skillctl-allow: "O102,H201"` or registry YAML `settings.validate.allow: [O102, H201]`. Lists combine; spec findings cannot be suppressed. Existing registries default to an empty allow-list. `seal` uses the same lists under its exclusive lock.
+
+JUnit emits one testcase per skill, including passing skills, and one failure element per error, with escaped locations, hints and a full report in `system-out`. Set a GitLab job's `artifacts:reports:junit` to the redirected XML path. XML is tested locally; live GitLab widget verification still requires a GitLab pipeline.
+
+`--with-reference` runs `skills-ref validate <directory>` if the executable is on PATH. Missing tools are optional. A failed external verdict is merged as error `R001`; native findings remain intact. Raw external output is not copied into reports because its format is not stable and it may disclose secrets. Run the reference command directly for its original details.
 
 ## Doctor checks
 

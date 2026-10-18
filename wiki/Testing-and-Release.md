@@ -20,6 +20,14 @@ CI runs `cargo fmt --check`, `cargo clippy -- -D warnings` and `cargo test --loc
 
 CI runs the locked suite, formatting and Clippy on Linux and macOS 14 (Apple silicon). Local Linux success does not certify the remote macOS job or real harness behavior.
 
+## Full validation coverage (item 29)
+
+`full_validation` creates isolated fixtures for every O/H rule (H204 suppresses the unavoidable accompanying H201 field warning), plus valid bundled resources, character budgets, percent-encoded paths, symlink cycles, secret redaction, suppression/strict policy and read-only filesystem inspection. `cli_validate` exercises arbitrary paths, explicit versions, drafts, all-target reports, single-document failures, JUnit parsing/escaping and multiple error elements, registry allow-lists during sealing, no-write dry runs, quiet/format precedence and optional reference-tool behavior. Registry round trips include the new nested validation setting. These tests use temporary homes and never invoke scripts bundled in skills. Real GitLab JUnit ingestion remains unverified locally.
+
+Item 28 is explicitly deferred at the developer's request; implementation proceeds with item 29 without claiming harness compatibility results.
+
+Local item-29 verification: the complete serial suite passes (211 tests, three intentionally ignored subprocess helpers), as do all new validation tests with normal parallel execution, formatting and all-target Clippy. Normal full-suite runs can still intermittently fail in the pre-existing Git-service fake-executable test with OS error 26 (`Text file busy`); this is not treated as a validation success or fixed by this work item. macOS CI and live GitLab JUnit widgets remain externally unverified.
+
 ## Manual compatibility gate (item 28)
 
 Not executable in the current Linux workspace. No harness versions or results have been inferred. Record a version and result for each cell before declaring this item complete:

@@ -20,6 +20,7 @@ fn main() -> ExitCode {
     };
     match skillctl::run(cli.command, &mut context) {
         Ok(()) => ExitCode::SUCCESS,
+        Err(Error::ReportedValidation) => ExitCode::from(Error::ReportedValidation.exit_code()),
         Err(error) => {
             let result = context.output.error(&error);
             reported_error(&error, result)
