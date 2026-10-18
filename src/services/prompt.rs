@@ -29,12 +29,15 @@ pub trait Prompter {
         validate: &dyn Fn(&str) -> std::result::Result<(), String>,
     ) -> Result<String>;
     fn confirm(&self, question: &str, default: bool) -> Result<bool>;
+    /// Name the flag that answers the next question, so a missing answer
+    /// without a terminal points at the right option. Test doubles ignore it.
+    fn set_answer_flag(&self, _flag: &str) {}
 }
 
 /// Terminal UI. `yes` accepts confirmations, never inventing other answers.
 #[derive(Debug, Clone)]
 pub struct TermPrompter {
-    answer_flag: String,
+    answer_flag: RefCell<String>,
     yes: bool,
 }
 
@@ -42,7 +45,7 @@ impl TermPrompter {
     /// Name the CLI flag that supplies the answer to this prompt.
     pub fn new(answer_flag: impl Into<String>) -> Self {
         Self {
-            answer_flag: answer_flag.into(),
+            answer_flag: RefCell::new(answer_flag.into()),
             yes: false,
         }
     }
@@ -54,8 +57,8 @@ impl TermPrompter {
     }
 
     /// Set the answer flag before asking a different command-specific question.
-    pub fn with_answer_flag(mut self, answer_flag: impl Into<String>) -> Self {
-        self.answer_flag = answer_flag.into();
+    pub fn with_answer_flag(self, answer_flag: impl Into<String>) -> Self {
+        *self.answer_flag.borrow_mut() = answer_flag.into();
         self
     }
 
@@ -63,11 +66,11 @@ impl TermPrompter {
         if io::stdin().is_terminal() {
             Ok(())
         } else {
+            let flag = self.answer_flag.borrow();
             Err(Error::MissingAnswer {
-                missing: format!("{question} ({})", self.answer_flag),
+                missing: format!("{question} ({flag})"),
                 hint: format!(
-                    "Pass {} to answer without a terminal; see skillctl <command> --help.",
-                    self.answer_flag
+                    "Pass {flag} to answer without a terminal; see skillctl <command> --help."
                 ),
             })
         }
@@ -75,6 +78,10 @@ impl TermPrompter {
 }
 
 impl Prompter for TermPrompter {
+    fn set_answer_flag(&self, flag: &str) {
+        *self.answer_flag.borrow_mut() = flag.to_owned();
+    }
+
     fn select(&self, question: &str, items: &[String], default: usize) -> Result<usize> {
         self.require_terminal(question)?;
         check_select(items, default)?;

@@ -1,4 +1,6 @@
-use crate::{context::Context, error::Error, registry::resolve::InstanceResolver, store};
+use crate::{
+    context::Context, error::Error, linker::normalize, registry::resolve::InstanceResolver, store,
+};
 use std::{io, path::Path};
 
 /// Inspect without calling reconcile: status never repairs or writes links.
@@ -20,9 +22,17 @@ pub(super) fn health(
                 source,
                 hint: "Check link permissions.".into(),
             })?;
-            let target = path.parent().expect("link parent").join(target);
-            if target != want {
-                return Ok("wrong");
+            let target = normalize(&path.parent().expect("link parent").join(target));
+            if target != normalize(want) {
+                // Same ownership rule as reconcile: only links into the store or
+                // drafts are ours to call wrong; anything else is a conflict.
+                let managed = [context.home.store(), context.home.drafts()]
+                    .iter()
+                    .any(|root| {
+                        let root = normalize(root);
+                        target != root && target.starts_with(&root)
+                    });
+                return Ok(if managed { "wrong" } else { "conflict" });
             }
             match context.fs.symlink_metadata(want) {
                 Ok(_) => Ok("ok"),

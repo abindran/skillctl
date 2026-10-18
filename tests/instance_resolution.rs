@@ -112,6 +112,8 @@ fn cached_identity_survives_directory_rename() {
     let old = temp.path().join("old");
     let new = temp.path().join("new");
     fs::create_dir_all(old.join("src")).unwrap();
+    // Registered paths are canonical (/var -> /private/var on macOS); capture before renaming.
+    let registered = fs::canonicalize(&old).unwrap();
     let mut registry = Registry::default();
     register(&mut registry, "web", &old);
     let resolver = InstanceResolver::new(&registry).unwrap();
@@ -119,7 +121,7 @@ fn cached_identity_survives_directory_rename() {
     // A textual path match or re-reading registered paths would fail here.
     let resolved = resolver.resolve(&new.join("src")).unwrap().unwrap();
     assert_eq!(resolved.project_name.as_str(), "web");
-    assert_eq!(resolved.instance.path, old);
+    assert_eq!(resolved.instance.path, registered);
     assert!(
         InstanceResolver::new(&registry)
             .unwrap()

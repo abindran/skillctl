@@ -89,7 +89,9 @@ fn real_repo_hides_only_links_and_is_idempotent_and_removable() {
 #[test]
 fn dry_run_and_non_repo_do_not_write() {
     let temp = tempfile::tempdir().unwrap();
-    let root = temp.path();
+    // Git reports the canonical top level; instance paths are canonical in production.
+    let canonical = temp.path().canonicalize().unwrap();
+    let root = canonical.as_path();
     let dry = DryRunFs::new();
     assert_eq!(update(&dry, &GitCli::new(), root, []).unwrap(), None);
     assert!(dry.actions().is_empty());

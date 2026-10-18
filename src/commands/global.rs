@@ -22,12 +22,18 @@ pub(super) fn reconcile(
     let mut reports = Vec::new();
     for target in &registry.settings.global_link_targets {
         let target = target.expand()?;
-        let target = if std::fs::symlink_metadata(&target).is_ok_and(|m| m.file_type().is_symlink())
+        // Resolve the deepest existing ancestor so symlinked parents (for example
+        // a dotfiles `~/.claude`) still receive per-skill links in the real folder.
+        let mut existing = target.as_path();
+        while std::fs::symlink_metadata(existing)
+            .is_err_and(|error| error.kind() == std::io::ErrorKind::NotFound)
         {
-            crate::paths::canonicalize(&target)?
-        } else {
-            target
-        };
+            existing = existing
+                .parent()
+                .ok_or_else(|| super::attach::usage("Global target has no existing parent"))?;
+        }
+        let target = crate::paths::canonicalize(existing)?
+            .join(target.strip_prefix(existing).expect("ancestor"));
         let mut root = target.as_path();
         while !root.is_dir() {
             root = root
@@ -126,11 +132,25 @@ fn list(context: &mut Context<'_>) -> Result<(), Error> {
     } else {
         rows.iter()
             .map(|r| {
+                let links = r["links"]
+                    .as_array()
+                    .map(|links| {
+                        links
+                            .iter()
+                            .map(|l| {
+                                format!(
+                                    "\n  {}: {}",
+                                    l["path"].as_str().unwrap_or(""),
+                                    l["status"].as_str().unwrap_or("")
+                                )
+                            })
+                            .collect::<String>()
+                    })
+                    .unwrap_or_default();
                 format!(
-                    "{}@{}\n  {}",
+                    "{}@{}{links}",
                     r["name"].as_str().unwrap_or(""),
-                    r["pin"].as_str().unwrap_or(""),
-                    r["links"]
+                    r["pin"].as_str().unwrap_or("")
                 )
             })
             .collect::<Vec<_>>()

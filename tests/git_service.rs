@@ -182,6 +182,11 @@ fn non_utf8_repository_path_is_preserved() {
     let root = temp
         .path()
         .join(std::ffi::OsString::from_vec(b"repo-\xff".to_vec()));
+    // APFS refuses non-UTF-8 names (EILSEQ); only Linux filesystems can exercise this.
+    if let Err(error) = std::fs::create_dir_all(&root) {
+        eprintln!("skipping: filesystem rejects non-UTF-8 names: {error}");
+        return;
+    }
     repo(&root);
     assert_eq!(
         GitCli::new().toplevel(&root).unwrap(),

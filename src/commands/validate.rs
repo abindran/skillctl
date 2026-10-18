@@ -23,7 +23,7 @@ pub fn run(
 ) -> Result<(), Error> {
     super::init::ensure_home(context)?;
     let reports = super::read_locked(context, || {
-        let registry = super::load_registry(context)?;
+        let registry = super::load_registry_or_default(context)?;
         let mut reports = Vec::new();
         for dir in targets(context, target)? {
             let mut findings = validate::run_all(

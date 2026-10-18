@@ -56,6 +56,14 @@ pub enum Command {
         /// Comma-separated list of skills.
         #[arg(long, value_delimiter = ',')]
         skills: Vec<String>,
+
+        /// Inside a Git subfolder, attach the repository top level.
+        #[arg(long, conflicts_with = "here")]
+        top_level: bool,
+
+        /// Inside a Git subfolder, attach the current folder itself.
+        #[arg(long, conflicts_with = "top_level")]
+        here: bool,
     },
 
     /// Detach from a project.

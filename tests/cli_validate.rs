@@ -219,3 +219,13 @@ fn reference_verdict_is_merged_without_disclosing_its_output() {
     assert_eq!(findings[0]["rule"], "R001");
     assert!(!String::from_utf8_lossy(&output.stdout).contains("secret-should-not-leak"));
 }
+#[test]
+fn validate_works_in_a_home_without_a_registry() {
+    let temp = tempfile::tempdir().unwrap();
+    let home = temp.path().join("home");
+    fs::create_dir(&home).unwrap();
+    let dir = temp.path().join("demo");
+    skill(&dir, DESCRIPTION);
+    ok(&home, &["validate", dir.to_str().unwrap(), "--strict"]);
+    assert!(!home.join("registry.yml").exists());
+}

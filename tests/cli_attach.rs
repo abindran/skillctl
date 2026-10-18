@@ -113,3 +113,67 @@ fn dry_run_does_not_change_registry_or_links_and_unattached_status_is_success() 
     let o = ok(&home, &root, &["status"]);
     assert!(String::from_utf8_lossy(&o.stdout).contains("Not attached"));
 }
+#[test]
+fn subfolder_attach_is_answered_by_flags_and_nesting_is_a_usage_error() {
+    let (_tmp, home, root) = fixture();
+    let nested = root.join("nested");
+    fs::create_dir(&nested).unwrap();
+    let out = cli(
+        &home,
+        &nested,
+        &["attach", "--new", "web", "--skills", "demo"],
+    );
+    assert_eq!(out.status.code(), Some(2));
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        stderr.contains("--top-level") && stderr.contains("--here"),
+        "{stderr}"
+    );
+    ok(
+        &home,
+        &nested,
+        &["attach", "--new", "web", "--skills", "demo", "--here"],
+    );
+    let registry =
+        skillctl::registry::Registry::from_yaml(&fs::read(home.join("registry.yml")).unwrap())
+            .unwrap();
+    assert_eq!(
+        registry.projects["web"].instances[0].path,
+        nested.canonicalize().unwrap()
+    );
+    assert!(nested.join(".agents/skills/demo").is_symlink());
+    // The repository root would now contain an instance: a usage error, not a corrupt registry.
+    let out = cli(&home, &root, &["attach", "--new", "api"]);
+    assert_eq!(out.status.code(), Some(2));
+    assert!(String::from_utf8_lossy(&out.stderr).contains("nested"));
+    ok(&home, &nested, &["detach"]);
+    ok(
+        &home,
+        &nested,
+        &["attach", "--project", "web", "--top-level"],
+    );
+    let registry =
+        skillctl::registry::Registry::from_yaml(&fs::read(home.join("registry.yml")).unwrap())
+            .unwrap();
+    assert_eq!(
+        registry.projects["web"].instances[0].path,
+        root.canonicalize().unwrap()
+    );
+}
+#[test]
+fn json_conflict_output_is_a_single_stdout_document() {
+    let (_tmp, home, root) = fixture();
+    fs::create_dir_all(root.join(".agents/skills/demo")).unwrap();
+    let out = cli(
+        &home,
+        &root,
+        &["--json", "attach", "--new", "web", "--skills", "demo"],
+    );
+    assert_eq!(out.status.code(), Some(4));
+    let result: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
+    assert_eq!(result["project"], "web");
+    let error: serde_json::Value = serde_json::from_slice(&out.stderr).unwrap();
+    assert_eq!(error["exit_code"], 4);
+    let out = ok(&home, &root, &["status"]);
+    assert!(String::from_utf8_lossy(&out.stdout).contains(".agents/skills: conflict"));
+}

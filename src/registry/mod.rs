@@ -301,35 +301,9 @@ impl Registry {
                         path.display()
                     )));
                 }
-                match std::fs::canonicalize(path) {
-                    Ok(canonical) => {
-                        if canonical.as_os_str() != path.as_os_str() {
-                            return Err(invalid(format!(
-                                "Instance path is not canonical: {}; use {}",
-                                path.display(),
-                                canonical.display()
-                            )));
-                        }
-                        if !std::fs::metadata(path)
-                            .map_err(|error| {
-                                io_error(format!("Inspect {}", path.display()), error)
-                            })?
-                            .is_dir()
-                        {
-                            return Err(invalid(format!(
-                                "Instance is not a directory: {}",
-                                path.display()
-                            )));
-                        }
-                    }
-                    Err(error) if error.kind() == io::ErrorKind::NotFound => {}
-                    Err(error) => {
-                        return Err(io_error(
-                            format!("Canonicalize instance {}", path.display()),
-                            error,
-                        ));
-                    }
-                }
+                // Filesystem drift (a folder later replaced by a symlink or file, or
+                // removed) is diagnosed by doctor and tolerated by identity-based
+                // resolution; it must never make the registry unloadable.
                 for (other_project, other) in &paths {
                     if path.starts_with(other) || other.starts_with(path) {
                         return Err(invalid(format!(

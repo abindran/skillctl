@@ -156,7 +156,9 @@ fn io_error(operation: &str, path: &Path, source: io::Error) -> Error {
 
 // Normalize without following links, so dangling links remain recognizable and
 // a misleading store/../../outside prefix never grants ownership.
-fn normalize(path: &Path) -> PathBuf {
+/// Lexical normalization of `.` and `..` without touching the filesystem, so
+/// dangling links can still be classified.
+pub(crate) fn normalize(path: &Path) -> PathBuf {
     let mut result = PathBuf::new();
     for component in path.components() {
         match component {

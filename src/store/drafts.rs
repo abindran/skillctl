@@ -237,6 +237,16 @@ fn rewrite(
 }
 
 fn remove_tree(fs: &dyn Fs, dir: &Path) -> Result<(), Error> {
+    // Drafts copied from the read-only store keep 0555 folders; restore write
+    // permission before deleting children so cleanup cannot stop halfway.
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let info = op(fs.symlink_metadata(dir), dir)?;
+        if info.is_dir() && info.permissions().mode() & 0o200 == 0 {
+            op(fs.set_mode(dir, 0o755), dir)?;
+        }
+    }
     for path in op(fs.read_dir(dir), dir)? {
         let info = op(fs.symlink_metadata(&path), &path)?;
         if info.is_dir() {

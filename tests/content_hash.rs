@@ -163,7 +163,11 @@ fn missing_root_preserves_io_error_and_path() {
 fn rejects_non_utf8_paths_without_lossy_collisions() {
     let temp = tempfile::tempdir().unwrap();
     let name = std::ffi::OsString::from_vec(vec![0xff]);
-    fs::write(temp.path().join(name), b"data").unwrap();
+    // APFS refuses non-UTF-8 names (EILSEQ); the rejection path is Linux-only testable.
+    if let Err(error) = fs::write(temp.path().join(name), b"data") {
+        eprintln!("skipping: filesystem rejects non-UTF-8 names: {error}");
+        return;
+    }
     let error = content_hash(&RealFs, temp.path()).unwrap_err();
     assert!(error.to_string().contains("UTF-8"));
 }

@@ -88,3 +88,28 @@ fn personal_data_is_a_conflict_not_overwritten() {
     assert!(personal.join("demo").is_dir());
     assert!(!personal.join("demo").is_symlink());
 }
+#[test]
+#[cfg(unix)]
+fn symlinked_parent_of_a_global_target_receives_per_skill_links() {
+    let tmp = tempfile::tempdir().unwrap();
+    let home = tmp.path().join("home");
+    let real = tmp.path().join("dotfiles/claude");
+    fs::create_dir_all(real.join("skills")).unwrap();
+    std::os::unix::fs::symlink(&real, tmp.path().join(".claude")).unwrap();
+    let target = tmp.path().join(".claude/skills");
+    ok(&home, tmp.path(), &["new", "demo"]);
+    ok(&home, tmp.path(), &["seal", "demo"]);
+    let file = home.join("registry.yml");
+    let mut registry = skillctl::registry::Registry::from_yaml(&fs::read(&file).unwrap()).unwrap();
+    registry.settings.global_link_targets = vec![skillctl::paths::HomePath::new(target).unwrap()];
+    fs::write(&file, registry.to_yaml().unwrap()).unwrap();
+    ok(&home, tmp.path(), &["global", "add", "demo"]);
+    assert!(real.join("skills/demo").is_symlink());
+    assert!(!real.join("skills").is_symlink());
+    let out = ok(&home, tmp.path(), &["global", "list"]);
+    let text = String::from_utf8_lossy(&out.stdout);
+    assert!(
+        text.starts_with("demo@0.1.0\n  ") && text.contains(": ok"),
+        "{text}"
+    );
+}

@@ -34,6 +34,8 @@ pub struct Output<Out, Err> {
     stderr: Err,
     json: bool,
     quiet: bool,
+    /// A machine-readable document already occupies stdout.
+    emitted: bool,
 }
 
 impl<Out: Write, Err: Write> Output<Out, Err> {
@@ -43,12 +45,14 @@ impl<Out: Write, Err: Write> Output<Out, Err> {
             stderr,
             json,
             quiet,
+            emitted: false,
         }
     }
 
     /// Write one command result. JSON remains available even in quiet mode.
     pub fn result<T: Serialize>(&mut self, value: &T, human: &str) -> io::Result<()> {
         if self.json {
+            self.emitted = true;
             self.write_json(value)
         } else if !self.quiet {
             writeln!(self.stdout, "{human}")?;
@@ -61,6 +65,7 @@ impl<Out: Write, Err: Write> Output<Out, Err> {
     /// Write a pre-rendered validation document without wrapping XML/JSON in JSON.
     pub fn document(&mut self, document: &str, machine_readable: bool) -> io::Result<()> {
         if machine_readable || !self.quiet {
+            self.emitted |= machine_readable;
             writeln!(self.stdout, "{document}")?;
             self.stdout.flush()?;
         }
@@ -76,8 +81,17 @@ impl<Out: Write, Err: Write> Output<Out, Err> {
         Ok(())
     }
 
+    /// JSON errors go to stdout, unless a result document is already there (for
+    /// example a conflict report followed by exit 4): then stdout stays exactly
+    /// one document and the error object goes to stderr.
     pub fn error(&mut self, error: &Error) -> io::Result<()> {
-        if self.json {
+        if self.json && self.emitted {
+            let document =
+                serde_json::to_vec(&ErrorReport::from(error)).map_err(io::Error::other)?;
+            self.stderr.write_all(&document)?;
+            writeln!(self.stderr)?;
+            self.stderr.flush()
+        } else if self.json {
             self.write_json(&ErrorReport::from(error))
         } else {
             writeln!(self.stderr, "Error: {error}")?;
@@ -230,5 +244,19 @@ mod tests {
                     .is_err()
             );
         }
+    }
+
+    #[test]
+    fn json_error_after_a_result_keeps_stdout_a_single_document() {
+        let (mut stdout, mut stderr) = (Vec::new(), Vec::new());
+        let mut output = Output::new(&mut stdout, &mut stderr, true, false);
+        output.result(&json!({"ok": true}), "Done").unwrap();
+        output.error(&error()).unwrap();
+        assert_eq!(
+            serde_json::from_slice::<serde_json::Value>(&stdout).unwrap(),
+            json!({"ok": true})
+        );
+        let report: serde_json::Value = serde_json::from_slice(&stderr).unwrap();
+        assert_eq!(report["exit_code"], 2);
     }
 }

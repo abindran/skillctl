@@ -204,3 +204,30 @@ fn concurrent_new_and_seal_never_replace_an_existing_version() {
     #[cfg(unix)]
     skillctl::store::stage::restore_write_mode(&RealFs, &home.join("store/demo/0.1.0")).unwrap();
 }
+#[test]
+#[cfg(unix)]
+fn seal_removes_drafts_containing_read_only_folders() {
+    use std::os::unix::fs::PermissionsExt;
+    let temp = tempfile::tempdir().unwrap();
+    let home = temp.path().join("skills");
+    ok(&home, &["new", "demo"]);
+    let draft = home.join("drafts/demo");
+    let script = draft.join("scripts/run.sh");
+    std::fs::write(&script, "#!/bin/sh\necho hi\n").unwrap();
+    std::fs::set_permissions(&script, std::fs::Permissions::from_mode(0o555)).unwrap();
+    let text = std::fs::read_to_string(draft.join("SKILL.md"))
+        .unwrap()
+        .replace(
+            "## Instructions",
+            "Run `scripts/run.sh`.\n\n## Instructions",
+        );
+    std::fs::write(draft.join("SKILL.md"), text).unwrap();
+    std::fs::set_permissions(
+        draft.join("scripts"),
+        std::fs::Permissions::from_mode(0o555),
+    )
+    .unwrap();
+    ok(&home, &["seal", "demo"]);
+    assert!(!draft.exists());
+    assert!(home.join("store/demo/0.1.0/demo/scripts/run.sh").is_file());
+}

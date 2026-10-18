@@ -35,6 +35,14 @@ fn read_locked<T>(
     }
 }
 
+/// Read-only commands tolerate a home folder whose registry was never written.
+fn load_registry_or_default(context: &Context<'_>) -> Result<Registry, Error> {
+    match context.fs.symlink_metadata(&context.home.registry()) {
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(Registry::default()),
+        _ => Registry::load(context.fs.as_ref(), &context.home.registry()),
+    }
+}
+
 fn load_registry(context: &Context<'_>) -> Result<Registry, Error> {
     if context.flags.dry_run
         && matches!(context.fs.symlink_metadata(&context.home.registry()), Err(error) if error.kind() == std::io::ErrorKind::NotFound)

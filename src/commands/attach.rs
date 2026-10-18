@@ -102,13 +102,15 @@ pub fn run(
     project: Option<&ProjectName>,
     new: Option<&ProjectName>,
     skills: &[String],
+    top_level: bool,
+    here: bool,
 ) -> Result<(), Error> {
     super::init::ensure_home(context)?;
     if context.flags.dry_run {
-        attach(context, project, new, skills)
+        attach(context, project, new, skills, top_level, here)
     } else {
         RegistryLock::open(&context.home.registry_lock())?
-            .with_exclusive(|| attach(context, project, new, skills))
+            .with_exclusive(|| attach(context, project, new, skills, top_level, here))
     }
 }
 
@@ -117,20 +119,39 @@ fn attach(
     chosen: Option<&ProjectName>,
     new: Option<&ProjectName>,
     skills: &[String],
+    top_level: bool,
+    here: bool,
 ) -> Result<(), Error> {
     let mut registry = super::load_registry(context)?;
     let mut path = crate::paths::canonicalize(&cwd()?)?;
     if let Some(root) = context.git.toplevel(&path)? {
-        if root != path
-            && context.prompt.confirm(
-                &format!(
-                    "Inside Git worktree {}. Attach its top level instead?",
-                    root.display()
-                ),
-                true,
-            )?
-        {
-            path = crate::paths::canonicalize(&root)?;
+        if root != path && !here {
+            context.prompt.set_answer_flag("--top-level or --here");
+            if top_level
+                || context.prompt.confirm(
+                    &format!(
+                        "Inside Git worktree {}. Attach its top level instead?",
+                        root.display()
+                    ),
+                    true,
+                )?
+            {
+                path = crate::paths::canonicalize(&root)?;
+            }
+        }
+    }
+    // Refuse nesting with a usage error before touching the registry.
+    for (other_name, other) in &registry.projects {
+        for instance in &other.instances {
+            if instance.path != path
+                && (path.starts_with(&instance.path) || instance.path.starts_with(&path))
+            {
+                return Err(usage(format!(
+                    "{} is nested with instance {} of project '{other_name}'",
+                    path.display(),
+                    instance.path.display()
+                )));
+            }
         }
     }
     let existing = registry.projects.iter().find_map(|(name, p)| {
@@ -156,8 +177,10 @@ fn attach(
             })
             .collect();
         choices.push("Create a new project".into());
+        context.prompt.set_answer_flag("--project or --new");
         let selected = context.prompt.select("Choose a project", &choices, 0)?;
         if selected == choices.len() - 1 {
+            context.prompt.set_answer_flag("--new");
             let value = context.prompt.input("Project name", &|v| {
                 v.parse::<ProjectName>()
                     .map(|_| ())
@@ -205,6 +228,7 @@ fn attach(
                     .iter()
                     .map(|(n, p)| format!("{n}@{p}"))
                     .collect::<Vec<_>>();
+                context.prompt.set_answer_flag("--skills");
                 for index in context.prompt.multi_select(
                     "Select skills",
                     &items,
@@ -222,6 +246,12 @@ fn attach(
                 pins.insert(n, p);
             }
         }
+    }
+    if let Some(skill) = pins
+        .keys()
+        .find(|k| registry.global.skills.contains_key(*k))
+    {
+        return Err(usage(format!("Skill '{skill}' is pinned globally")));
     }
     // Retain recorded folders when moving an instance between projects.
     let instance = if let Some((old, index)) = existing {

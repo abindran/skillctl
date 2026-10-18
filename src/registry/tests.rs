@@ -194,17 +194,14 @@ fn global_project_name_clashes_are_rejected() {
 }
 
 #[test]
-fn noncanonical_relative_and_file_instances_are_rejected() {
+fn noncanonical_and_relative_instances_are_rejected() {
     let temp = tempfile::tempdir().unwrap();
     let root = temp.path().canonicalize().unwrap();
-    let file = root.join("file");
-    std::fs::write(&file, b"not a folder").unwrap();
     for path in [
         PathBuf::from("relative"),
         root.join("../escape"),
         root.join("./missing"),
         root.join("missing//child"),
-        file,
     ] {
         let mut registry = Registry::default();
         registry.projects.insert(
@@ -220,11 +217,13 @@ fn noncanonical_relative_and_file_instances_are_rejected() {
 
 #[cfg(unix)]
 #[test]
-fn existing_symlink_instances_are_not_canonical() {
+fn instances_replaced_by_symlinks_or_files_remain_loadable() {
+    // Drift after attachment is a doctor finding, never a load error.
     let temp = tempfile::tempdir().unwrap();
     let root = temp.path().canonicalize().unwrap();
     std::fs::create_dir(root.join("actual")).unwrap();
     std::os::unix::fs::symlink(root.join("actual"), root.join("alias")).unwrap();
+    std::fs::write(root.join("file"), b"").unwrap();
     let mut registry = Registry::default();
     registry.projects.insert(
         "web".parse().unwrap(),
@@ -233,9 +232,16 @@ fn existing_symlink_instances_are_not_canonical() {
             ..Project::default()
         },
     );
-    assert!(registry.validate().is_err());
-    registry.projects.get_mut("web").unwrap().instances[0].path = root.join("actual");
+    registry.projects.insert(
+        "api".parse().unwrap(),
+        Project {
+            instances: vec![instance(root.join("file"))],
+            ..Project::default()
+        },
+    );
     registry.validate().unwrap();
+    let yaml = registry.to_yaml().unwrap();
+    assert_eq!(Registry::from_yaml(yaml.as_bytes()).unwrap(), registry);
 }
 
 #[test]

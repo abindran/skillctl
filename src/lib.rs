@@ -24,7 +24,18 @@ pub fn run(command: Command, context: &mut Context<'_>) -> Result<(), Error> {
             project,
             new,
             skills,
-        } => return commands::attach::run(context, project.as_ref(), new.as_ref(), &skills),
+            top_level,
+            here,
+        } => {
+            return commands::attach::run(
+                context,
+                project.as_ref(),
+                new.as_ref(),
+                &skills,
+                top_level,
+                here,
+            );
+        }
         Command::Detach {
             keep_links,
             delete_project,
