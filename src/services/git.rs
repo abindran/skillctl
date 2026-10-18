@@ -12,13 +12,30 @@ use semver::Version;
 
 use crate::error::Error;
 
-/// Swappable Git queries. Non-work-tree folders (including bare repositories)
+/// Swappable Git operations. Non-work-tree folders (including bare repositories)
 /// return `None`; missing Git, invalid directories and other failures are errors.
-/// Cloning is added with the install work item, not this read-only interface.
 pub trait Git {
     fn toplevel(&self, dir: &Path) -> Result<Option<PathBuf>, Error>;
     fn exclude_file(&self, dir: &Path) -> Result<Option<PathBuf>, Error>;
     fn version(&self) -> Result<Version, Error>;
+
+    /// `git clone --depth 1 [--branch <reference>] <url> <into>`, reusing the
+    /// developer's SSH keys and credential helpers. Returns the checked-out
+    /// commit. `into` must not exist yet.
+    fn shallow_clone(
+        &self,
+        _url: &str,
+        _reference: Option<&str>,
+        _into: &Path,
+    ) -> Result<String, Error> {
+        Err(invalid_output("clone support"))
+    }
+
+    /// A boolean `git config` value for the repository containing `dir`, or
+    /// `None` when unset or outside a work tree.
+    fn config_bool(&self, _dir: &Path, _key: &str) -> Result<Option<bool>, Error> {
+        Ok(None)
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -60,6 +77,10 @@ impl GitCli {
             command.env_remove(key);
         }
         command.env("LC_ALL", "C").env("GIT_OPTIONAL_LOCKS", "0");
+        // Never hang on a username/password prompt when no terminal can answer it.
+        if !std::io::IsTerminal::is_terminal(&std::io::stdin()) {
+            command.env("GIT_TERMINAL_PROMPT", "0");
+        }
         if let Some(dir) = dir {
             command.arg("-C").arg(dir);
         }
@@ -134,6 +155,63 @@ impl Git for GitCli {
             return Err(command_error(Path::new("."), &output));
         }
         parse_version(&output.stdout)
+    }
+
+    fn shallow_clone(
+        &self,
+        url: &str,
+        reference: Option<&str>,
+        into: &Path,
+    ) -> Result<String, Error> {
+        let into_text = into
+            .to_str()
+            .ok_or_else(|| invalid_output("UTF-8 clone destination"))?;
+        let mut args = vec!["clone", "--quiet", "--depth", "1"];
+        if let Some(reference) = reference {
+            args.extend(["--branch", reference]);
+        }
+        args.extend(["--", url, into_text]);
+        let output = self.execute(None, &args)?;
+        if !output.status.success() {
+            return Err(Error::Io {
+                operation: format!("clone {url}"),
+                source: io::Error::other(format!(
+                    "Git exited with {}: {}",
+                    output.status,
+                    String::from_utf8_lossy(&output.stderr).trim_end()
+                )),
+                hint: "Check the URL, the reference, network access and your Git credentials"
+                    .into(),
+            });
+        }
+        let output = self.execute(Some(into), &["rev-parse", "HEAD"])?;
+        if !output.status.success() {
+            return Err(command_error(into, &output));
+        }
+        let commit = String::from_utf8_lossy(line(&output.stdout)).into_owned();
+        if commit.len() < 7 || !commit.chars().all(|c| c.is_ascii_hexdigit()) {
+            return Err(invalid_output("commit hash"));
+        }
+        Ok(commit)
+    }
+
+    fn config_bool(&self, dir: &Path, key: &str) -> Result<Option<bool>, Error> {
+        if !self.in_work_tree(dir)? {
+            return Ok(None);
+        }
+        let output = self.execute(Some(dir), &["config", "--type=bool", "--get", key])?;
+        // Exit status 1 means the key is unset.
+        if output.status.code() == Some(1) && output.stdout.is_empty() {
+            return Ok(None);
+        }
+        if !output.status.success() {
+            return Err(command_error(dir, &output));
+        }
+        match line(&output.stdout) {
+            b"true" => Ok(Some(true)),
+            b"false" => Ok(Some(false)),
+            _ => Err(invalid_output(&format!("boolean config {key}"))),
+        }
     }
 }
 

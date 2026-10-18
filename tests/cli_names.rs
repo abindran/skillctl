@@ -25,23 +25,20 @@ fn invalid_plain_names_are_usage_errors() {
 }
 
 #[test]
-fn valid_names_and_versioned_arguments_still_reach_command_stubs() {
-    {
-        let args = vec!["edit", "demo@1.2.0"];
-        let temp = tempfile::tempdir().unwrap();
-        let output = Command::new(env!("CARGO_BIN_EXE_skillctl"))
-            .args(&args)
-            .env("SKILLCTL_HOME", temp.path().join("skills"))
-            .stdin(Stdio::null())
-            .output()
-            .expect("run skillctl");
-        assert_eq!(output.status.code(), Some(1), "{args:?}");
-        assert!(output.stdout.is_empty(), "{args:?}");
-        assert!(
-            String::from_utf8(output.stderr)
-                .unwrap()
-                .contains("not implemented"),
-            "{args:?}"
-        );
-    }
+fn valid_names_and_versioned_arguments_reach_the_command() {
+    // A valid name with a version passes argument validation and fails only
+    // because nothing is installed yet.
+    let args = vec!["edit", "demo@1.2.0"];
+    let temp = tempfile::tempdir().unwrap();
+    let output = Command::new(env!("CARGO_BIN_EXE_skillctl"))
+        .args(&args)
+        .env("SKILLCTL_HOME", temp.path().join("skills"))
+        .stdin(Stdio::null())
+        .output()
+        .expect("run skillctl");
+    assert_eq!(output.status.code(), Some(1), "{args:?}");
+    assert!(output.stdout.is_empty(), "{args:?}");
+    let stderr = String::from_utf8(output.stderr).unwrap();
+    assert!(stderr.contains("demo@1.2.0"), "{stderr}");
+    assert!(stderr.contains("skillctl install"), "{stderr}");
 }

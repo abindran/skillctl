@@ -116,6 +116,23 @@ pub fn remove(
         finish(context, &reports, "Removed project pin")
     })
 }
+/// `relink --all`: globals first, then every instance. Obsolete-target history is
+/// cleared only after a conflict-free pass. Shared with doctor --fix and config.
+pub(super) fn reconcile_everything(
+    context: &Context<'_>,
+    registry: &mut Registry,
+) -> Result<Vec<ReconcileReport>, Error> {
+    let mut reports = super::global::reconcile(context, registry)?;
+    let names = registry.projects.keys().cloned().collect::<Vec<_>>();
+    reports.extend(reconcile_projects(context, registry, &names)?);
+    if !reports.iter().any(ReconcileReport::has_conflicts) {
+        registry.settings.previous_link_targets.clear();
+        if !context.flags.dry_run {
+            registry.save(context.fs.as_ref(), &context.home.registry())?;
+        }
+    }
+    Ok(reports)
+}
 pub fn relink(
     context: &mut Context<'_>,
     all: bool,
@@ -123,14 +140,8 @@ pub fn relink(
 ) -> Result<(), Error> {
     write_locked(context, |context| {
         let mut registry = super::load_registry(context)?;
-        let global_reports = if all {
-            super::global::reconcile(context, &registry)?
-        } else {
-            vec![]
-        };
-        let mut reports = if all {
-            let names = registry.projects.keys().cloned().collect::<Vec<_>>();
-            reconcile_projects(context, &mut registry, &names)?
+        let reports = if all {
+            reconcile_everything(context, &mut registry)?
         } else if let Some(project) = project {
             let name = selected(&registry, Some(project))?;
             reconcile_projects(context, &mut registry, &[name])?
@@ -153,13 +164,6 @@ pub fn relink(
                 index,
             )?]
         };
-        reports.extend(global_reports);
-        if all && !reports.iter().any(ReconcileReport::has_conflicts) {
-            registry.settings.previous_link_targets.clear();
-            if !context.flags.dry_run {
-                registry.save(context.fs.as_ref(), &context.home.registry())?;
-            }
-        }
         finish(context, &reports, "Reconciled links")
     })
 }

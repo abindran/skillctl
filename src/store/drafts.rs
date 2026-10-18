@@ -159,6 +159,94 @@ pub fn seal_with_allow(
     Ok(destination)
 }
 
+/// Copy a stored version into a writable draft with its patch version bumped.
+/// Without an explicit version the highest stable release is used (falling back
+/// to the highest prerelease). An existing draft is replaced only with `force`.
+pub fn edit(
+    fs: &dyn Fs,
+    paths: &Paths,
+    name: &SkillName,
+    version: Option<&Version>,
+    force: bool,
+) -> Result<PathBuf, Error> {
+    let version = match version {
+        Some(version) => version.clone(),
+        None => super::latest_stable(fs, paths, name)
+            .or_else(|error| super::list_versions(fs, paths, name)?.pop().ok_or(error))?,
+    };
+    super::resolve_pin(
+        fs,
+        paths,
+        name,
+        Some(&crate::registry::Pin::Version(version.clone())),
+    )?;
+    let source = paths.store_dir(name, &version);
+    real_dir(fs, &paths.drafts(), false)?;
+    let draft = paths.draft_dir(name);
+    match fs.symlink_metadata(&draft) {
+        Ok(_) if !force => {
+            return Err(Error::Usage {
+                message: format!("Draft {name} already exists at {}", draft.display()),
+                hint: "Pass --force to replace it, or seal or remove the existing draft first."
+                    .into(),
+            });
+        }
+        Ok(_) => remove_tree(fs, &draft)?,
+        Err(error) if error.kind() == io::ErrorKind::NotFound => {}
+        Err(error) => return Err(io_error(&draft, error)),
+    }
+    let next = bumped(version, Bump::Patch)?;
+    let document_path = source.join("SKILL.md");
+    let text = String::from_utf8(op(fs.read(&document_path), &document_path)?)
+        .map_err(|_| invalid("SKILL.md is not valid UTF-8"))?;
+    let document = rewrite(&text, None, Some(&next), false)?;
+    let result = (|| {
+        copy_tree(fs, &source, &draft)?;
+        let path = draft.join("SKILL.md");
+        op(fs.write_atomic(&path, document.as_bytes()), &path)?;
+        op(fs.set_mode(&path, 0o644), &path)?;
+        Ok(draft.clone())
+    })();
+    if result.is_err() {
+        // Best effort: never leave a half-copied draft behind the error.
+        let _ = remove_tree(fs, &draft);
+    }
+    result
+}
+
+/// Writable copy of a (read-only) store tree: folders 0755, files 0644 or 0755.
+fn copy_tree(fs: &dyn Fs, from: &Path, to: &Path) -> Result<(), Error> {
+    op(fs.create_dir(to), to)?;
+    for entry in op(fs.read_dir(from), from)? {
+        let info = op(fs.symlink_metadata(&entry), &entry)?;
+        let target = to.join(entry.file_name().expect("directory entry"));
+        if info.file_type().is_symlink() {
+            return Err(invalid(format!(
+                "{} is a symlink; stored versions never contain links",
+                entry.display()
+            )));
+        } else if info.is_dir() {
+            copy_tree(fs, &entry, &target)?;
+        } else if info.is_file() {
+            let bytes = op(fs.read(&entry), &entry)?;
+            op(fs.write_atomic(&target, &bytes), &target)?;
+            #[cfg(unix)]
+            let mode = {
+                use std::os::unix::fs::PermissionsExt;
+                if info.permissions().mode() & 0o111 != 0 {
+                    0o755
+                } else {
+                    0o644
+                }
+            };
+            #[cfg(not(unix))]
+            let mode = 0o644;
+            op(fs.set_mode(&target, mode), &target)?;
+        }
+    }
+    Ok(())
+}
+
 fn require_valid(findings: &[validate::Finding]) -> Result<(), Error> {
     if findings
         .iter()
@@ -172,7 +260,7 @@ fn require_valid(findings: &[validate::Finding]) -> Result<(), Error> {
     Ok(())
 }
 
-fn bumped(mut version: Version, bump: Bump) -> Result<Version, Error> {
+pub(crate) fn bumped(mut version: Version, bump: Bump) -> Result<Version, Error> {
     let increment = |number: u64| {
         number
             .checked_add(1)
@@ -195,7 +283,7 @@ fn bumped(mut version: Version, bump: Bump) -> Result<Version, Error> {
     Ok(version)
 }
 
-fn rewrite(
+pub(crate) fn rewrite(
     document: &str,
     name: Option<&SkillName>,
     version: Option<&Version>,
@@ -236,7 +324,7 @@ fn rewrite(
     Ok(format!("---\n{yaml}---\n{body}"))
 }
 
-fn remove_tree(fs: &dyn Fs, dir: &Path) -> Result<(), Error> {
+pub(crate) fn remove_tree(fs: &dyn Fs, dir: &Path) -> Result<(), Error> {
     // Drafts copied from the read-only store keep 0555 folders; restore write
     // permission before deleting children so cleanup cannot stop halfway.
     #[cfg(unix)]
@@ -293,10 +381,13 @@ fn invalid(message: impl Into<String>) -> Error {
     Error::Usage { message: message.into(), hint: "Check the template, draft and version; existing drafts and store versions are never overwritten.".into() }
 }
 
-struct DocumentFs<'a> {
-    fs: &'a dyn Fs,
-    path: PathBuf,
-    document: Option<Vec<u8>>,
+/// Read overlay: one document is served from memory, everything else passes
+/// through. Lets sealing and installing hash and copy a rewritten `SKILL.md`
+/// without editing the source.
+pub(crate) struct DocumentFs<'a> {
+    pub(crate) fs: &'a dyn Fs,
+    pub(crate) path: PathBuf,
+    pub(crate) document: Option<Vec<u8>>,
 }
 impl Fs for DocumentFs<'_> {
     fn read(&self, path: &Path) -> io::Result<Vec<u8>> {

@@ -28,7 +28,15 @@ pub fn stage_version(
 ) -> Result<PathBuf, Error> {
     let parent = paths.skill_versions(&metadata.name);
     let destination = paths.version_dir(&metadata.name, &metadata.version);
-    real_directory(fs, &paths.store())?;
+    // A dry run on a fresh home has only a planned store folder; create it through
+    // the service so the plan stays complete and real runs never need it.
+    match fs.symlink_metadata(&paths.store()) {
+        Ok(_) => real_directory(fs, &paths.store())?,
+        Err(error) if error.kind() == io::ErrorKind::NotFound => {
+            operation(fs.create_dir(&paths.store()), "Create", &paths.store())?;
+        }
+        Err(error) => return Err(io_error("Inspect", &paths.store(), error)),
+    }
     ensure_missing(fs, &destination)?;
     real_directory(fs, source)?;
     let mut directories = vec![PathBuf::new()];

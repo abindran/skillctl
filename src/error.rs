@@ -31,6 +31,10 @@ pub enum Error {
 
     #[error("Command '{command}' is not implemented")]
     NotImplemented { command: String, hint: String },
+
+    /// `doctor` finished its report and problems remain unfixed.
+    #[error("{problems} problem(s) found")]
+    Doctor { problems: usize, hint: String },
 }
 
 impl Error {
@@ -43,6 +47,7 @@ impl Error {
             | Error::Conflicts { hint, .. }
             | Error::Io { hint, .. }
             | Error::NotImplemented { hint, .. }
+            | Error::Doctor { hint, .. }
             | Error::Registry { hint, .. } => hint,
         }
     }
@@ -55,6 +60,7 @@ impl Error {
             Self::Conflicts { .. } => "conflicts",
             Self::Io { .. } => "io",
             Self::NotImplemented { .. } => "not_implemented",
+            Self::Doctor { .. } => "doctor",
             Self::Registry { .. } => "registry",
         }
     }
@@ -68,6 +74,7 @@ impl Error {
             Error::Conflicts { .. } => 4,
             Error::Io { .. } => 1,
             Error::NotImplemented { .. } => 1,
+            Error::Doctor { .. } => 1,
             Error::Registry { .. } => 1,
         }
     }
@@ -135,6 +142,24 @@ mod tests {
                 1,
                 "not_implemented",
                 "global add",
+            ),
+            (
+                Error::Registry {
+                    message: "nested instances".into(),
+                    hint: "next step".into(),
+                },
+                1,
+                "registry",
+                "nested instances",
+            ),
+            (
+                Error::Doctor {
+                    problems: 3,
+                    hint: "next step".into(),
+                },
+                1,
+                "doctor",
+                "3 problem(s)",
             ),
         ];
         for (error, code, kind, message) in cases {

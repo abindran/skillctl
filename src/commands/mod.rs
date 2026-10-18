@@ -1,7 +1,13 @@
 pub mod attach;
+pub mod completions;
+pub mod config;
 pub mod detach;
+pub mod doctor;
+pub mod edit;
+pub mod gc;
 pub mod global;
 pub mod init;
+pub mod install;
 pub mod new;
 pub mod pins;
 pub mod projects;

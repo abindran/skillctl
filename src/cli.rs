@@ -89,7 +89,7 @@ pub enum Command {
         #[arg(long)]
         project: Option<ProjectName>,
 
-        /// Create a draft instead of a sealed skill.
+        /// Link the writable draft instead of a store version.
         #[arg(long)]
         draft: bool,
     },
@@ -138,12 +138,12 @@ pub enum Command {
         from_template: Option<String>,
     },
 
-    /// Edit an existing skill.
+    /// Copy a stored version into a writable draft with a patch bump.
     Edit {
-        /// Name of the skill to edit.
+        /// Skill name, optionally followed by @version (default: highest stable).
         skill: String,
 
-        /// Force editing even if checks fail.
+        /// Replace an existing draft.
         #[arg(long)]
         force: bool,
     },
@@ -158,24 +158,24 @@ pub enum Command {
         bump: Option<Bump>,
     },
 
-    /// Install a skill from a source.
+    /// Install skills from a Git URL or a local folder into the store.
     Install {
-        /// Source of the skill.
+        /// Git clone URL (git@…, https://…, ssh://…, file://…) or an existing folder.
         source: String,
 
-        /// Git reference or branch.
+        /// Git tag or branch to clone (default: the remote's default branch).
         #[arg(long = "ref")]
         reference: Option<String>,
 
-        /// Local filesystem path.
+        /// Only this subfolder of the source (relative), instead of searching for SKILL.md.
         #[arg(long)]
         path: Option<PathBuf>,
 
-        /// Install all skills from the source.
+        /// Install every discovered skill without asking.
         #[arg(long)]
         all: bool,
 
-        /// Specific skill version to install.
+        /// Version to record when SKILL.md has no metadata.version.
         #[arg(long = "version")]
         version: Option<String>,
     },

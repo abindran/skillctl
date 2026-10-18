@@ -11,19 +11,21 @@ fn run(args: &[&str]) -> Output {
         .expect("run skillctl")
 }
 
+// `install demo` with no folder called demo is a Git URL that cannot be cloned:
+// a real, offline, deterministic failure.
 #[test]
-fn human_stub_error_has_readable_command_hint_and_failure_status() {
+fn human_error_has_readable_message_hint_and_failure_status() {
     let output = run(&["install", "demo"]);
     assert_eq!(output.status.code(), Some(1));
     assert!(output.stdout.is_empty());
     let stderr = String::from_utf8(output.stderr).unwrap();
-    assert!(stderr.starts_with("Error: Command 'install' is not implemented\nHint: "));
-    assert!(stderr.contains("skillctl --help"));
-    assert!(!stderr.contains("Add {"));
+    assert!(stderr.starts_with("Error: clone demo"), "{stderr}");
+    assert!(stderr.contains("\nHint: "), "{stderr}");
+    assert!(!stderr.contains("Io {"), "{stderr}");
 }
 
 #[test]
-fn json_stub_error_is_one_document_on_stdout() {
+fn json_error_is_one_document_on_stdout() {
     for args in [
         vec!["--json", "install", "demo"],
         vec!["install", "demo", "--json", "--quiet"],
@@ -32,26 +34,33 @@ fn json_stub_error_is_one_document_on_stdout() {
         assert_eq!(output.status.code(), Some(1));
         assert!(output.stderr.is_empty());
         let report: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
-        assert_eq!(report["error"], "not_implemented");
-        assert_eq!(report["message"], "Command 'install' is not implemented");
+        assert_eq!(report["error"], "io");
+        assert!(
+            report["message"]
+                .as_str()
+                .unwrap()
+                .starts_with("clone demo")
+        );
         assert_eq!(report["exit_code"], 1);
-        assert!(report["hint"].as_str().unwrap().contains("skillctl --help"));
+        assert!(!report["hint"].as_str().unwrap().is_empty());
     }
 }
 
 #[test]
 fn quiet_does_not_hide_human_errors() {
-    let output = run(&["--quiet", "doctor"]);
+    let output = run(&["--quiet", "edit", "demo"]);
     assert_eq!(output.status.code(), Some(1));
     assert!(output.stdout.is_empty());
     assert!(String::from_utf8(output.stderr).unwrap().contains("Hint:"));
 }
 
 #[test]
-fn config_stub_uses_nested_command_name() {
-    let output = run(&["--json", "config", "get", "link_targets"]);
+fn config_get_reports_defaults_as_json() {
+    let output = run(&["--json", "config", "get", "git_exclude"]);
+    assert_eq!(output.status.code(), Some(0));
     let report: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
-    assert_eq!(report["message"], "Command 'config get' is not implemented");
+    assert_eq!(report["key"], "git_exclude");
+    assert_eq!(report["value"], true);
 }
 
 #[test]
