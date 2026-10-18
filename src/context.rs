@@ -1,7 +1,7 @@
 //! Per-invocation dependencies shared by command handlers.
 //!
 //! Construction resolves paths but does not initialize the home or touch state.
-//! The Git service is added in work item 19, when its interface is implemented.
+//! Git queries use the real binary by default and can be replaced in tests.
 
 use std::io::{self, Write};
 
@@ -10,6 +10,7 @@ use crate::error::Error;
 use crate::output::Output;
 use crate::paths::Paths;
 use crate::services::fs::{DryRunFs, Fs, RealFs};
+use crate::services::git::{Git, GitCli};
 use crate::services::prompt::{Prompter, TermPrompter};
 
 /// Global execution policy, independent of command-specific arguments.
@@ -45,6 +46,7 @@ pub struct Context<'a> {
     pub home: Paths,
     pub fs: Box<dyn Fs + 'a>,
     pub prompt: Box<dyn Prompter + 'a>,
+    pub git: Box<dyn Git + 'a>,
     pub output: ContextOutput<'a>,
     pub flags: Flags,
 }
@@ -64,6 +66,7 @@ impl<'a> Context<'a> {
             home,
             fs,
             prompt,
+            git: Box::new(GitCli::new()),
             output: Output::new(Box::new(stdout), Box::new(stderr), flags.json, flags.quiet),
             flags,
         }

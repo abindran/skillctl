@@ -36,12 +36,13 @@ classDiagram
         home: Paths
         fs: Fs
         prompt: Prompter
+        git: Git
         output: Output
         flags: Flags
     }
     class Fs { <<trait>> }
     class Prompter { <<trait>> }
-    class Git { <<trait, planned>> }
+    class Git { <<trait>> }
     Context --> Fs
     Context --> Prompter
     Context --> Git
@@ -56,7 +57,9 @@ classDiagram
 |---|---|---|
 | `Fs` | `RealFs` | `DryRunFs` records writes instead of performing them |
 | `Prompter` | `TermPrompter` (fails with exit 2 if stdin isn't a TTY) | `ScriptedPrompter` (queued answers) |
-| `Git` | `GitCli` (shells out to `git`) | fake |
+| `Git` | `GitCli` (shells out to `git`) | Replace `Context.git` with a fake; read-only queries also run during dry runs |
+
+The Git service queries repository roots, absolute per-repository exclude paths (including linked worktrees), and the installed Git version. It requires Git 2.31+ for `--path-format=absolute`. Non-repository and bare-repository folders return no worktree; other Git failures retain stderr and an actionable hint. Commands execute directly without a shell and ignore inherited repository-selection variables so queries describe the requested directory. Context construction does not invoke Git. Clone support remains part of the install work item.
 
 ## Modules
 
