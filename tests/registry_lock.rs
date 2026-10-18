@@ -21,22 +21,36 @@ impl Drop for Worker {
 }
 
 fn worker(root: &Path, name: &str) -> Worker {
-    Worker(Command::new(std::env::current_exe().unwrap())
-        .args(["--ignored", "--exact", "lock_worker", "--nocapture"])
-        .env("SKILLCTL_LOCK_TEST_ROOT", root)
-        .env("SKILLCTL_LOCK_TEST_NAME", name)
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .spawn().unwrap())
+    Worker(
+        Command::new(std::env::current_exe().unwrap())
+            .args(["--ignored", "--exact", "lock_worker", "--nocapture"])
+            .env("SKILLCTL_LOCK_TEST_ROOT", root)
+            .env("SKILLCTL_LOCK_TEST_NAME", name)
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .spawn()
+            .unwrap(),
+    )
 }
 
-fn wait_until_locked(worker: &mut Worker) {
-    let mut output = BufReader::new(worker.0.stdout.take().unwrap());
-    let mut line = String::new();
+fn wait_for_signal(worker: &mut Worker, signal: &str) {
+    let output = worker.0.stdout.take().unwrap();
+    let (sender, receiver) = std::sync::mpsc::channel();
+    std::thread::spawn(move || {
+        for line in BufReader::new(output).lines() {
+            if sender.send(line.unwrap()).is_err() {
+                break;
+            }
+        }
+    });
+    let deadline = std::time::Instant::now() + Duration::from_secs(5);
     loop {
-        assert_ne!(output.read_line(&mut line).unwrap(), 0, "worker exited before locking");
-        if line.trim() == "LOCKED" { break; }
-        line.clear();
+        let line = receiver
+            .recv_timeout(deadline.saturating_duration_since(std::time::Instant::now()))
+            .expect("worker did not signal before the deadline");
+        if line.trim() == signal {
+            break;
+        }
     }
 }
 
@@ -44,30 +58,43 @@ fn wait_until_locked(worker: &mut Worker) {
 fn concurrent_writers_preserve_both_registry_changes() {
     let temp = tempfile::tempdir().unwrap();
     let root = temp.path();
-    Registry::default().save(&RealFs, &root.join("registry.yml")).unwrap();
+    Registry::default()
+        .save(&RealFs, &root.join("registry.yml"))
+        .unwrap();
     let mut first = worker(root, "first");
-    wait_until_locked(&mut first);
-    // Start the second writer while the first still holds the exclusive lock.
+    wait_for_signal(&mut first, "LOCKED");
+    // The second writer must observe contention before the first can proceed.
     let mut second = worker(root, "second");
-    first.0.stdin.take().unwrap().write_all(b"continue\n").unwrap();
+    wait_for_signal(&mut second, "CONTENDED");
+    first
+        .0
+        .stdin
+        .take()
+        .unwrap()
+        .write_all(b"continue\n")
+        .unwrap();
     assert!(first.0.wait().unwrap().success());
     assert!(second.0.wait().unwrap().success());
     let registry = Registry::load(&RealFs, &root.join("registry.yml")).unwrap();
-    assert!(registry.projects.contains_key(&"first".parse().unwrap()));
-    assert!(registry.projects.contains_key(&"second".parse().unwrap()));
+    assert!(registry.projects.contains_key("first"));
+    assert!(registry.projects.contains_key("second"));
 }
 
 #[test]
 fn process_termination_releases_lock_without_deleting_lock_file() {
     let temp = tempfile::tempdir().unwrap();
     let mut child = worker(temp.path(), "first");
-    wait_until_locked(&mut child);
+    wait_for_signal(&mut child, "LOCKED");
     let path = temp.path().join("registry.lock");
     let mut lock = RegistryLock::open(&path).unwrap();
-    assert!(lock.with_exclusive_timeout(Duration::ZERO, || Ok(())).is_err());
+    assert!(
+        lock.with_exclusive_timeout(Duration::ZERO, || Ok(()))
+            .is_err()
+    );
     child.0.kill().unwrap();
     child.0.wait().unwrap();
-    lock.with_exclusive_timeout(Duration::from_secs(1), || Ok(())).unwrap();
+    lock.with_exclusive_timeout(Duration::from_secs(1), || Ok(()))
+        .unwrap();
     assert!(path.exists());
 }
 
@@ -78,6 +105,15 @@ fn lock_worker() {
     let root = Path::new(&root);
     let name = std::env::var("SKILLCTL_LOCK_TEST_NAME").unwrap();
     let mut lock = RegistryLock::open(&root.join("registry.lock")).unwrap();
+    if name == "second" {
+        let error = lock
+            .with_exclusive_timeout(Duration::ZERO, || Ok(()))
+            .expect_err("second writer must encounter the first writer's lock");
+        assert!(matches!(error, skillctl::error::Error::Io { source, .. }
+            if source.kind() == std::io::ErrorKind::TimedOut));
+        println!("CONTENDED");
+        std::io::stdout().flush().unwrap();
+    }
     lock.with_exclusive(|| {
         if name == "first" {
             println!("LOCKED");
@@ -86,7 +122,10 @@ fn lock_worker() {
             std::io::stdin().read_line(&mut line).unwrap();
         }
         let mut registry = Registry::load(&RealFs, &root.join("registry.yml"))?;
-        registry.projects.insert(name.parse().unwrap(), Project::default());
+        registry
+            .projects
+            .insert(name.parse().unwrap(), Project::default());
         registry.save(&RealFs, &root.join("registry.yml"))
-    }).unwrap();
+    })
+    .unwrap();
 }

@@ -1,6 +1,7 @@
 //! Versioned registry model and atomic persistence.
 //!
-//! Callers must hold the registry lock around read-modify-write operations (item 9).
+//! Callers must hold a shared registry lock for reads or an exclusive lock around
+//! the complete read-modify-write/reconcile operation; see [`lock::RegistryLock`].
 //! Missing instances remain loadable for doctor; existing paths must be canonical.
 use std::{
     collections::BTreeMap,

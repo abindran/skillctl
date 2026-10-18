@@ -54,10 +54,7 @@ impl RegistryLock {
     }
 
     /// Run a read-only operation under a shared lock, waiting up to 10 seconds.
-    pub fn with_shared<T>(
-        &self,
-        operation: impl FnOnce() -> Result<T, Error>,
-    ) -> Result<T, Error> {
+    pub fn with_shared<T>(&self, operation: impl FnOnce() -> Result<T, Error>) -> Result<T, Error> {
         self.with_shared_timeout(LOCK_TIMEOUT, operation)
     }
 
@@ -117,7 +114,9 @@ fn wait_or_fail(
         io::ErrorKind::Interrupted if elapsed < timeout => return Ok(()),
         io::ErrorKind::WouldBlock | io::ErrorKind::Interrupted => io::Error::new(
             io::ErrorKind::TimedOut,
-            format!("Timed out after {timeout:?} waiting for a {mode} registry lock; another skillctl process may be running"),
+            format!(
+                "Timed out after {timeout:?} waiting for a {mode} registry lock; another skillctl process may be running"
+            ),
         ),
         _ => error,
     };
@@ -140,7 +139,7 @@ mod tests {
         let second = RegistryLock::open(&path).unwrap();
         let mut writer = RegistryLock::open(&path).unwrap();
         first.with_shared(|| second.with_shared(|| {
-            let error = writer.with_exclusive_timeout(Duration::ZERO, || panic!("writer entered")).unwrap_err();
+            let error = writer.with_exclusive_timeout::<()>(Duration::ZERO, || panic!("writer entered")).unwrap_err();
             assert!(matches!(error, Error::Io { source, .. } if source.kind() == io::ErrorKind::TimedOut));
             Ok(())
         })).unwrap();
@@ -153,16 +152,24 @@ mod tests {
         let path = temp.path().join("registry.lock");
         let mut owner = RegistryLock::open(&path).unwrap();
         let mut other = RegistryLock::open(&path).unwrap();
-        owner.with_exclusive(|| {
-            let start = Instant::now();
-            let error = other.with_shared_timeout(Duration::from_millis(60), || Ok(())).unwrap_err();
-            assert!(start.elapsed() >= Duration::from_millis(60));
-            assert_eq!(error.exit_code(), 1);
-            assert!(error.to_string().contains("another skillctl process"));
-            assert!(error.hint().contains("Do not delete"));
-            assert!(other.with_exclusive_timeout(Duration::ZERO, || Ok(())).is_err());
-            Ok(())
-        }).unwrap();
+        owner
+            .with_exclusive(|| {
+                let start = Instant::now();
+                let error = other
+                    .with_shared_timeout(Duration::from_millis(60), || Ok(()))
+                    .unwrap_err();
+                assert!(start.elapsed() >= Duration::from_millis(60));
+                assert_eq!(error.exit_code(), 1);
+                assert!(error.to_string().contains("another skillctl process"));
+                assert!(error.hint().contains("Do not delete"));
+                assert!(
+                    other
+                        .with_exclusive_timeout(Duration::ZERO, || Ok(()))
+                        .is_err()
+                );
+                Ok(())
+            })
+            .unwrap();
         other.with_shared(|| Ok(())).unwrap();
     }
 
@@ -173,17 +180,74 @@ mod tests {
         std::fs::write(&path, b"existing").unwrap();
         let mut owner = RegistryLock::open(&path).unwrap();
         let mut other = RegistryLock::open(&path).unwrap();
-        assert!(owner.with_exclusive::<()>(|| Err(Error::Registry {
-            message: "test failure".into(), hint: "test".into(),
-        })).is_err());
-        other.with_exclusive_timeout(Duration::ZERO, || Ok(())).unwrap();
+        assert!(
+            owner
+                .with_exclusive::<()>(|| Err(Error::Registry {
+                    message: "test failure".into(),
+                    hint: "test".into(),
+                }))
+                .is_err()
+        );
+        other
+            .with_exclusive_timeout(Duration::ZERO, || Ok(()))
+            .unwrap();
         let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
             let _ = owner.with_exclusive::<()>(|| panic!("test panic"));
         }));
         assert!(result.is_err());
-        other.with_exclusive_timeout(Duration::ZERO, || Ok(())).unwrap();
+        other
+            .with_exclusive_timeout(Duration::ZERO, || Ok(()))
+            .unwrap();
         assert_eq!(std::fs::read(&path).unwrap(), b"existing");
         assert_eq!(LOCK_TIMEOUT, Duration::from_secs(10));
+    }
+
+    #[test]
+    fn waiting_reader_and_writer_acquire_after_release() {
+        for shared in [true, false] {
+            let temp = tempfile::tempdir().unwrap();
+            let path = temp.path().join("registry.lock");
+            let mut owner = RegistryLock::open(&path).unwrap();
+            let (contended_tx, contended_rx) = std::sync::mpsc::channel();
+            let waiter = owner
+                .with_exclusive(|| {
+                    let waiter = std::thread::spawn(move || {
+                        let mut lock = RegistryLock::open(&path).unwrap();
+                        let error = if shared {
+                            lock.with_shared_timeout(Duration::ZERO, || Ok(()))
+                        } else {
+                            lock.with_exclusive_timeout(Duration::ZERO, || Ok(()))
+                        }
+                        .unwrap_err();
+                        assert!(matches!(error, Error::Io { source, .. }
+                        if source.kind() == io::ErrorKind::TimedOut));
+                        contended_tx.send(()).unwrap();
+                        if shared {
+                            lock.with_shared(|| Ok(42))
+                        } else {
+                            lock.with_exclusive(|| Ok(42))
+                        }
+                    });
+                    contended_rx.recv_timeout(Duration::from_secs(2)).unwrap();
+                    Ok(waiter)
+                })
+                .unwrap();
+            assert_eq!(waiter.join().unwrap().unwrap(), 42);
+        }
+    }
+
+    #[test]
+    fn non_contention_errors_fail_immediately() {
+        let error = wait_or_fail(
+            Path::new("registry.lock"),
+            "exclusive",
+            Instant::now(),
+            LOCK_TIMEOUT,
+            io::Error::new(io::ErrorKind::PermissionDenied, "test denial"),
+        )
+        .unwrap_err();
+        assert!(matches!(error, Error::Io { source, .. }
+            if source.kind() == io::ErrorKind::PermissionDenied));
     }
 
     #[test]
@@ -191,7 +255,9 @@ mod tests {
         let temp = tempfile::tempdir().unwrap();
         let path = temp.path().join("missing/registry.lock");
         let error = RegistryLock::open(&path).unwrap_err();
-        assert!(matches!(error, Error::Io { source, .. } if source.kind() == io::ErrorKind::NotFound));
+        assert!(
+            matches!(error, Error::Io { source, .. } if source.kind() == io::ErrorKind::NotFound)
+        );
         assert!(!path.parent().unwrap().exists());
     }
 }
