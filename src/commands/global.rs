@@ -130,31 +130,22 @@ fn list(context: &mut Context<'_>) -> Result<(), Error> {
     let text = if rows.is_empty() {
         "No global skills.".into()
     } else {
-        rows.iter()
-            .map(|r| {
-                let links = r["links"]
-                    .as_array()
-                    .map(|links| {
-                        links
-                            .iter()
-                            .map(|l| {
-                                format!(
-                                    "\n  {}: {}",
-                                    l["path"].as_str().unwrap_or(""),
-                                    l["status"].as_str().unwrap_or("")
-                                )
-                            })
-                            .collect::<String>()
-                    })
-                    .unwrap_or_default();
-                format!(
-                    "{}@{}{links}",
-                    r["name"].as_str().unwrap_or(""),
-                    r["pin"].as_str().unwrap_or("")
-                )
-            })
-            .collect::<Vec<_>>()
-            .join("\n")
+        let mut text = String::new();
+        for (index, r) in rows.iter().enumerate() {
+            if index > 0 {
+                text.push('\n');
+            }
+            text.push_str(r["name"].as_str().unwrap_or(""));
+            text.push('@');
+            text.push_str(r["pin"].as_str().unwrap_or(""));
+            for l in r["links"].as_array().into_iter().flatten() {
+                text.push_str("\n  ");
+                text.push_str(l["path"].as_str().unwrap_or(""));
+                text.push_str(": ");
+                text.push_str(l["status"].as_str().unwrap_or(""));
+            }
+        }
+        text
     };
     context
         .output
