@@ -20,6 +20,27 @@ flowchart TD
 
 The skill folder sits **below** the version folder, so its name equals the skill `name` that harnesses require. `meta.json` sits beside it so harnesses never see it.
 
+## Store queries
+
+`store::list_skills` lists valid skill directories in name order;
+`list_versions` lists semver directories in ascending order, including prereleases
+and build metadata. The directory tree is the index: queries do not parse
+`meta.json` or `SKILL.md`, so damaged versions remain visible for diagnosis.
+Missing stores or skill directories yield empty lists. Staging directories,
+invalid names/versions, files and symlink entries are ignored; other filesystem
+errors are reported with their paths. Empty skill directories remain listed.
+
+`latest_stable` selects the highest release with no prerelease component, never
+falling back to a prerelease. Semver build metadata is retained and breaks ties
+deterministically when release precedence is equal. `resolve_pin` accepts an
+explicit version or draft, or selects latest stable when omitted, and checks that
+the target and managed ancestors are real directories. Missing explicit pins are
+errors, not requests to select a different version. `store_dir` computes a pin's
+store or draft target without requiring it to exist, for dangling-link handling.
+
+Queries perform no writes, including during dry runs. Callers hold the registry
+lock for a consistent view; validation and integrity checks are separate concerns.
+
 ## Store metadata
 
 `store::meta::Metadata` reads and atomically writes a full `meta.json` path through
