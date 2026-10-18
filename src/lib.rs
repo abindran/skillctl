@@ -2,6 +2,7 @@ pub mod cli;
 pub mod error;
 pub mod names;
 pub mod output;
+pub mod paths;
 use crate::cli::{Cli, Command, ConfigCommand, GlobalCommand};
 use crate::error::Error;
 
