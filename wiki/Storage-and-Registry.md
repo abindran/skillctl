@@ -140,7 +140,29 @@ flowchart TD
 
 ## Drafts
 
-`~/.skills/drafts/<skill>/` is an ordinary writable folder. `new` scaffolds it from `templates/<name>/SKILL.md`, replacing `{{name}}` and setting `metadata.version: 0.1.0`, and creates empty `scripts/` and `references/`. `seal` runs the full validator, stages the draft into the store with `source.kind: local` (applying `--bump` to the stored copy's frontmatter), and removes the draft only after the version is published. A draft can be pinned with `add <skill> --draft`, in which case links point at the draft folder and `status` shows the pin as `draft`.
+`~/.skills/drafts/<skill>/` is an ordinary writable folder. `new` scaffolds it from `templates/<name>/SKILL.md`, replacing `{{name}}` and setting `metadata.version: 0.1.0`, and creates empty `scripts/` and `references/`. `edit` copies a stored version into a draft (folders `0755`, files `0644` or `0755`) and bumps the patch version in the copy's frontmatter; an existing draft is replaced only with `--force`. `seal` runs the full validator, stages the draft into the store with `source.kind: local` (applying `--bump` to the stored copy's frontmatter), and removes the draft only after the version is published. A draft can be pinned with `add <skill> --draft`, in which case links point at the draft folder and `status` shows the pin as `draft`.
+
+## Install flow
+
+```mermaid
+flowchart LR
+    S["Git URL or local folder"] --> C["Checkout: git clone --depth 1 [--branch ref] into a temp folder"]
+    S -. "existing folder" .-> D
+    C --> D["discover: folders holding SKILL.md, or only --path"]
+    D --> P["multi-select unless --all"]
+    P --> V["validate each with the registry allow-list (through a read overlay when --version fills a missing metadata.version)"]
+    V --> H["content_hash of the overlay"]
+    H --> X{"version exists?"}
+    X -- "same hash" --> A["already installed, exit 0"]
+    X -- "different hash" --> E["error: bump the version"]
+    X -- no --> ST["stage_version with meta.json (git: url, ref, commit, subdir)"]
+```
+
+The clone happens before the exclusive registry lock is taken; everything selected is validated before anything is staged, so a multi-skill install never stops halfway.
+
+## Garbage collection and doctor
+
+`gc` deletes versions that no project or global pin references and that are not among a skill's newest `--keep` versions. It restores write permission (`restore_write_mode`), removes the version folder, and removes the skill folder when it becomes empty. `doctor` recomputes every stored version's content hash against `meta.json`, walks each version for entries that gained write permission (`--fix` restores `0444`/`0555`), and reports pins whose folders are missing.
 
 ## Locking and atomic writes
 

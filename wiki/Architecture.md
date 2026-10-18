@@ -36,7 +36,8 @@ Dependencies only point downward. Core modules never print, never prompt and nev
 | `linker/` | `mod.rs`: `reconcile`, `LinkStatus`, `LinkOutcome`, `ReconcileReport`. `exclude.rs`: per-instance managed block in Git's `info/exclude`. |
 | `validate/` | `mod.rs`: `Rule` trait, `Finding`, `Severity`, `run`, `run_all`, suppression and strict policy. `spec.rs`, `org.rs`, `harness.rs`: rule groups. `fields.rs`: known frontmatter fields per harness. `report.rs`: text, JSON and JUnit renderers. |
 | `services/` | `fs.rs`: `Fs` trait, `RealFs`, `DryRunFs`. `prompt.rs`: `Prompter` trait, `TermPrompter`, `ScriptedPrompter`. `git.rs`: `Git` trait and `GitCli`. |
-| `commands/` | `init`, `attach`, `detach`, `status`, `pins` (`add`, `remove`, `relink`), `global`, `projects`, `skills`, `new`, `seal`, `validate`. Shared helpers `read_locked` and `load_registry` live in `commands/mod.rs`. A `sources/` module (Git clone and skill discovery for `install`) is part of the design but not present yet. |
+| `sources/` | `mod.rs`: `Source::classify` (existing folder → local, anything else → Git URL) and `discover` (every folder holding `SKILL.md`, or only `--path`, never following symlinks or entering dot-folders). `git.rs`: `Checkout`, a shallow clone in a temporary folder that is deleted on drop. |
+| `commands/` | `init`, `attach`, `detach`, `status`, `pins` (`add`, `remove`, `relink`, and `reconcile_everything` shared with `doctor --fix` and `config`), `global`, `projects`, `skills`, `new`, `edit`, `seal`, `install`, `validate`, `doctor`, `gc`, `config`, `completions`. Shared helpers `read_locked`, `load_registry` and `load_registry_or_default` live in `commands/mod.rs`. |
 
 ## Context and swappable services
 
@@ -52,7 +53,7 @@ classDiagram
     }
     class Fs { <<trait>> read(); symlink_metadata(); read_link(); read_dir(); create_dir(); symlink(); rename(); remove_file(); remove_dir(); write_atomic(); set_mode() }
     class Prompter { <<trait>> select(); multi_select(); input(); confirm(); set_answer_flag() }
-    class Git { <<trait>> toplevel(); exclude_file(); version() }
+    class Git { <<trait>> toplevel(); exclude_file(); version(); shallow_clone(); config_bool() }
     Context --> Fs
     Context --> Prompter
     Context --> Git
@@ -67,7 +68,7 @@ classDiagram
 |---|---|---|---|
 | `Fs` | `RealFs` | `DryRunFs` | `DryRunFs` reads through to the real filesystem but records every write (`create_dir`, `symlink`, `rename`, `remove_*`, `write_atomic`, `set_mode`) as a planned action instead of performing it. Because reads are real, a dry-run plan reflects the actual disk state. `write_atomic` in `RealFs` writes a temporary file in the same directory, `fsync`s it, and renames it over the target. |
 | `Prompter` | `TermPrompter` (dialoguer) | `ScriptedPrompter` | `TermPrompter` honours `--yes` for confirmations only; it never invents answers to selections or inputs. Commands call `set_answer_flag` before each question, so when stdin is not a terminal the resulting `Error::MissingAnswer` names the exact flag that would supply the answer (exit code 2). `ScriptedPrompter` returns queued answers and fails the test if a prompt arrives unexpectedly. |
-| `Git` | `GitCli` | any `impl Git` | Shells out to the `git` binary without a shell, clears inherited repository-selection variables (`GIT_DIR` and friends) so queries describe the requested directory, and requires Git ≥ 2.31 for `rev-parse --path-format=absolute --git-path info/exclude`, which returns the right file for linked worktrees. Non-repository and bare-repository folders yield `None`; other failures keep stderr and add a hint. |
+| `Git` | `GitCli` | any `impl Git` | Shells out to the `git` binary without a shell, clears inherited repository-selection variables (`GIT_DIR` and friends) so queries describe the requested directory, disables terminal credential prompts when stdin is not a terminal, and requires Git ≥ 2.31 for `rev-parse --path-format=absolute --git-path info/exclude`, which returns the right file for linked worktrees. `shallow_clone` runs `git clone --quiet --depth 1 [--branch <ref>]` and returns the checked-out commit; `config_bool` reads a boolean `git config` key (used by `doctor` for `core.symlinks`). Non-repository and bare-repository folders yield `None`; other failures keep stderr and add a hint. |
 
 Commands never call `std::fs` for writes. All mutations, including those in the store and the exclude file, go through `context.fs`, which is what makes `--dry-run` a zero-write guarantee rather than a convention.
 
@@ -83,11 +84,12 @@ pub enum Error {
     Io { operation, source, hint },     // 1
     Registry { message, hint },         // 1
     NotImplemented { command, hint },   // 1
+    Doctor { problems, hint },          // 1, report already on stdout
 }
 ```
 
 - Every variant carries a hint naming the next command to run. Text output prints `Error: …` then `Hint: …`; JSON output emits `{ "error", "kind", "hint" }`.
-- `kind()` is a stable string (`usage`, `missing_answer`, `validation`, `conflicts`, `io`, `registry`, `not_implemented`) so scripts do not have to parse messages.
+- `kind()` is a stable string (`usage`, `missing_answer`, `validation`, `conflicts`, `io`, `registry`, `not_implemented`, `doctor`) so scripts do not have to parse messages.
 - In `--json` mode stdout always holds exactly one document. If a command has already written its result (for example a link report that ends in conflicts and exit 4), the error object goes to stderr instead.
 - `ReportedValidation` exists so that `validate --format json|junit` can write exactly one well-formed document and still exit 3; `main.rs` does not print anything further for it.
 - Clap owns usage errors, `--help` and `--version`, including in `--json` mode.

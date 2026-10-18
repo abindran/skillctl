@@ -199,6 +199,27 @@ demo
   0.1.0 — web
 ```
 
+Install skills published in a Git repository, for example an organisation skills repo tagged per release. Several skills in one repository prompt for a selection; `--all` takes them all.
+
+```bash
+skillctl install git@gitlab.example.com:platform/org-skills.git --ref v1.4.0 --all
+```
+
+```
+Installed org-code-review@1.4.0 at /Users/me/.skills/store/org-code-review/1.4.0
+Installed payments-deploy@0.3.0 at /Users/me/.skills/store/payments-deploy/0.3.0
+```
+
+Check the whole setup, and let skillctl repair what it safely can:
+
+```bash
+skillctl doctor --fix
+```
+
+```
+No problems found.
+```
+
 ## Command reference
 
 Every command that asks a question also accepts flags that answer it, so all of them can run non-interactively. Commands that change state take an exclusive advisory lock on `~/.skills/registry.lock` for their whole run; read-only commands take a shared lock. A second process waits up to 10 seconds.
@@ -235,24 +256,24 @@ Every command that asks a question also accepts flags that answer it, so all of 
 |---|---|---|
 | `skillctl new <skill> [--from-template <name>]` | anywhere | Scaffolds `~/.skills/drafts/<skill>/` from `templates/<name>/SKILL.md` (default template by default) with the name filled in, `metadata.version: 0.1.0`, and empty `scripts/` and `references/` folders. Never replaces an existing draft. |
 | `skillctl seal <skill> [--bump major\|minor\|patch]` | anywhere | Runs the full validator with the registry allow-list; errors leave the draft intact. Stages a read-only copy under `store/<skill>/<version>/<skill>/`, writes `meta.json` with `source.kind: local`, then deletes the draft. Fails if the version already exists. |
-| `skillctl edit <skill>[@<version>] [--force]` | anywhere | *Not implemented yet.* Will copy a stored version into a draft with a patch bump. Until then, copy the stored folder into `~/.skills/drafts/<skill>/` by hand and restore write permission. |
+| `skillctl edit <skill>[@<version>] [--force]` | anywhere | Copies a stored version (default: highest stable) into a writable draft with its patch version bumped, restoring write permission on the copy. Refuses to replace an existing draft unless `--force` is given. Link the draft into a project with `add <skill> --draft`, then `seal` it as the next version. |
 
 ### Store
 
 | Command | Run from | What it changes |
 |---|---|---|
 | `skillctl skills` | anywhere | Lists every skill and version in the store with the projects pinning it and whether it is global. |
-| `skillctl install <source> [--ref <tag>] [--path <subdir>] [--all] [--version <semver>]` | anywhere | *Not implemented yet.* Will shallow-clone a Git URL or read a local folder, discover `SKILL.md` folders, validate and stage them. Until then, scaffold with `new` and `seal`. |
-| `skillctl gc [--keep <n>]` | anywhere | *Not implemented yet.* Will delete unpinned store versions beyond the newest `n`. |
+| `skillctl install <source> [--ref <tag>] [--path <subdir>] [--all] [--version <semver>]` | anywhere | Installs from a Git URL (`git@…`, `https://…`, `ssh://…`, `file://…`, shallow-cloned with `--depth 1` using your own SSH keys and credential helpers) or from an existing local folder. Discovers every folder containing `SKILL.md` (or only `--path`), asks which to install when there are several (`--all` answers), validates each with the registry allow-list, and stages the selected ones with `meta.json` recording the URL, ref, commit and subfolder. The same version with the same content reports "already installed" and exits 0; the same version with different content is refused. `--version` fills in a missing `metadata.version` in the stored copy. |
+| `skillctl gc [--keep <n>]` | anywhere | Lists store versions that no project or global pin uses and that are not among a skill's newest `n` (default 1), asks for confirmation (`--yes` answers), restores write permission and deletes them. Empty skill folders are removed too. |
 
 ### Quality and maintenance
 
 | Command | Run from | What it changes |
 |---|---|---|
 | `skillctl validate [<skill>[@<version>\|@draft] \| <path>] [--format text\|json\|junit] [--strict] [--with-reference]` | anywhere | Validates one store version, a draft, any folder, or with no argument every draft and every store version. Nothing is written. |
-| `skillctl doctor [--fix]` | anywhere | *Not implemented yet.* Will report missing instance folders, wrong or dangling links, missing pinned versions, hash mismatches, writable store files, shadowing user-level skills, `core.symlinks=false` and a missing `git`. |
-| `skillctl config get\|set <key> [<value>]` | anywhere | *Not implemented yet.* Edit `~/.skills/registry.yml` by hand (see [Configuration](#configuration)) and run `skillctl relink --all`. |
-| `skillctl completions <shell>` | anywhere | *Not implemented yet.* |
+| `skillctl doctor [--fix]` | anywhere | Reports, each with the command that fixes it: a missing or too-old `git`; instance folders that no longer exist or were replaced; pinned versions missing from the store; missing, wrong, dangling or conflicting links in every instance and user-level folder; store versions whose content no longer matches `meta.json` or that gained write permission; personal copies in `~/.claude/skills`, `~/.agents/skills` or `~/.cursor/skills` that shadow a project skill; symlinked or repository-resident global targets; repositories with `core.symlinks=false`. `--fix` removes vanished instances from the registry, relinks everything and restores read-only modes. Exits 1 while problems remain. |
+| `skillctl config get\|set <key> [<value>]` | anywhere | Reads or changes `link_targets`, `global_link_targets`, `git_exclude`, `global_in_instances` and `validate.allow` (lists are comma-separated). After changing link targets it offers to run `relink --all` (`--yes` answers), which also removes managed links from targets that were dropped. |
+| `skillctl completions <shell>` | anywhere | Prints a completion script for bash, zsh, fish, elvish or PowerShell. Touches nothing else. |
 
 ## Global flags and exit codes
 
@@ -321,7 +342,7 @@ settings:
 
 ## Configuration
 
-All settings live in `~/.skills/registry.yml`. Until `config set` is implemented, edit the file and run `skillctl relink --all`.
+All settings live in `~/.skills/registry.yml`. Read or change them with `config get <key>` and `config set <key> <value>`; editing the file by hand and running `skillctl relink --all` works too.
 
 ```yaml
 schema: 1
@@ -344,7 +365,19 @@ projects: {}
 | `.zcode/skills/` | ZohoCode | off |
 | `.cursor/skills/` | Cursor | off |
 
-If a harness lists a skill twice because two targets resolve to the same store folder, drop one target from `link_targets` and run `relink --all`; the previous targets are remembered so their managed links get cleaned up.
+If a harness lists a skill twice because two targets resolve to the same store folder, drop one target and let `config set` relink:
+
+```bash
+skillctl --yes config set link_targets .claude/skills,.zcode/skills
+```
+
+Dropped targets are remembered until the next conflict-free `relink --all`, so their managed links get cleaned up.
+
+Shell completions:
+
+```bash
+skillctl completions zsh > "$(brew --prefix)/share/zsh/site-functions/_skillctl"
+```
 
 ## Home folder layout
 
@@ -386,7 +419,7 @@ cargo fmt --check && cargo clippy --all-targets --locked -- -D warnings && cargo
 | Linking: instance resolution, reconcile, Git exclude block | Implemented |
 | `attach`, `detach`, `status`, `add`, `remove`, `relink`, `global add/remove/list`, `projects`, `skills` | Implemented |
 | Validation: S, O and H rules; text, JSON and JUnit; allow-lists; `--strict`; `--with-reference` | Implemented |
-| `install`, `edit`, `doctor`, `gc`, `config`, `completions` | Not implemented (exit 1 with a "not implemented" message) |
+| `install` from Git and local folders, `edit`, `doctor --fix`, `gc`, `config`, `completions` | Implemented |
 | Manual harness compatibility matrix (Claude Code, Cursor, ZohoCode) | Not run; default link targets are provisional |
 | Release pipeline, signing, Homebrew tap | Not set up |
 
