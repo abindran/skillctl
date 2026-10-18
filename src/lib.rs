@@ -1,14 +1,18 @@
 pub mod cli;
+pub mod context;
 pub mod error;
 pub mod names;
 pub mod output;
 pub mod paths;
 pub mod services;
-use crate::cli::{Cli, Command, ConfigCommand, GlobalCommand};
+use crate::cli::{Command, ConfigCommand, GlobalCommand};
+use crate::context::Context;
 use crate::error::Error;
 
-pub fn run(cli: Cli) -> Result<(), Error> {
-    let command = match cli.command {
+/// Dispatch a command with the invocation's shared dependencies.
+/// Command bodies remain stubs until their respective work items.
+pub fn run(command: Command, _context: &mut Context<'_>) -> Result<(), Error> {
+    let command = match command {
         Command::Init => "init",
         Command::Attach { .. } => "attach",
         Command::Detach { .. } => "detach",
