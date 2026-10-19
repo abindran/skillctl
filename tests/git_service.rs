@@ -206,9 +206,24 @@ fn unexpected_command_failures_are_not_non_repository_results() {
     )
     .unwrap();
     std::fs::set_permissions(&executable, std::fs::Permissions::from_mode(0o755)).unwrap();
-    let error = GitCli::with_program(executable)
-        .toplevel(temp.path())
-        .unwrap_err();
+    // On Linux a sibling test thread may fork while the script is still open
+    // for writing, and the child holds that descriptor until it execs; running
+    // the script in that window fails with ETXTBSY. Retry briefly rather than
+    // fail on a race that is unrelated to what this test checks.
+    let git = GitCli::with_program(executable);
+    let mut error = git.toplevel(temp.path()).unwrap_err();
+    for _ in 0..50 {
+        let busy = matches!(
+            &error,
+            skillctl::error::Error::Io { source, .. }
+                if source.kind() == std::io::ErrorKind::ExecutableFileBusy
+        );
+        if !busy {
+            break;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(20));
+        error = git.toplevel(temp.path()).unwrap_err();
+    }
     assert!(error.to_string().contains("dubious ownership"), "{error:?}");
     assert_eq!(error.exit_code(), 1);
 }
