@@ -114,6 +114,15 @@ Decisions:
 4. **Validates clean** under K101–K111, like the logger.
 5. **A Cursor companion.** `companions: [skill-check]` makes `hook add` pin the bundled always-apply rule `rules/skill-check/` (`RULE.mdc`, linked as `.cursor/rules/skill-check.mdc`) into every project, and `hook remove` unpins it, so Cursor's agent gets the same instruction the hook injects in Claude Code. The companion must be in the store first; a missing one is a refusal naming the install step.
 
+## The `subagent-schema` hook
+
+`hooks/subagent-schema/` (strategy W20): `events: [SubagentStop]`, Python `hook.py`. Claude Code's `SubagentStop` payload carries `agent_type`, `agent_id` and `last_assistant_message`, and exit 2 blocks the subagent from stopping with stderr as its next instruction; Cursor maps the event to `subagentStop` with the same exit-code semantics but applies no `loop_limit` to imported hooks.
+
+1. **Schema lookup through the link.** `.claude/agents/<agent_type>.md` (matched case-insensitively, since skillctl links `explore.md` for `name: Explore`) is resolved with `realpath` to the store folder, and `schema.json` beside it is the contract. No link or no schema means no check, so only agents that declare a contract are ever judged.
+2. **A deliberate schema subset.** `type` (object, array, string, boolean, integer, number, null), `required`, `properties` with per-property `type` and `enum`, recursively. Enough for the bundled agents' contracts; not a JSON Schema implementation.
+3. **Bounded retries.** A counter file `$TMPDIR/skillctl-subagent-schema-<agent_id>.count` makes exit 2 happen at most `MAX_ATTEMPTS` (3) times per agent run; the fourth failure exits 0 with a `systemMessage` so the lead treats the result as `partial` rather than looping. The counter is keyed by `agent_id`, which is unique per spawn.
+4. **Never fail otherwise.** Malformed input, missing fields, an unreadable schema or an auxiliary agent (no `agent_type`) all exit 0 silently; `SKILLCTL_SUBAGENT_SCHEMA_DEBUG=1` logs the decision.
+
 ## doctor
 
 With at least one hook pinned, `doctor` adds to its usual checks:

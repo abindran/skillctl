@@ -13,6 +13,12 @@ heading when cutting a release.
 
 ### Added
 
+- The bundled `hooks/subagent-schema/` hook (strategy work item W20): on
+  `SubagentStop` it validates the agent's `last_assistant_message` against
+  the `schema.json` beside the agent definition the project links, exits 2
+  with the problems (so the subagent is sent back for the required JSON) at
+  most three times per agent run, then reports a `systemMessage`. Silent for
+  agents without a schema and for Claude Code's auxiliary agents.
 - Agent artifacts (strategy work items W17, W18 and W19). A folder with
   `AGENT.md` is a subagent, linked as `.claude/agents/<name>.md` and, when
   the folder carries a `cursor.md` override, `.cursor/agents/<name>.md`. Rules

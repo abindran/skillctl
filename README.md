@@ -576,6 +576,16 @@ skillctl install ./hooks/skill-forced-eval && skillctl hook add skill-forced-eva
 
 It stays silent, and costs nothing, when there is nothing to say: in Cursor (`CURSOR_VERSION` is set; Cursor cannot inject text from a prompt hook and gets the same check as an always-apply rule instead), in folders with no `.claude/skills/`, `.agents/skills/` or `~/.claude/skills/` entries, and for prompts that match no skill. It reads the same `SKILL.md` files the harness lists, so it needs no `skillctl` binary at run time. Set `SKILLCTL_FORCED_EVAL_DEBUG=1` to see its shortlist reasoning in the transcript.
 
+### The subagent-schema hook
+
+[`hooks/subagent-schema/`](hooks/subagent-schema/) is Story 3's output validation (work item W20). When a subagent finishes, it checks the agent's final message against the `schema.json` shipped with that agent (found through the project's `.claude/agents/<name>.md` link) and, when the message is prose or JSON of the wrong shape, exits 2 with the problems on stderr, which both Claude Code and Cursor turn into an instruction for the subagent to continue and return the required JSON. A counter under `$TMPDIR` caps that at three attempts per agent run, because Cursor applies no loop limit to imported hooks; after that the hook exits 0 and tells the lead, through a `systemMessage`, to treat the result as partial. Agents without a `schema.json`, and Claude Code's own auxiliary agents, are never checked.
+
+```bash
+skillctl install ./hooks/subagent-schema && skillctl hook add subagent-schema
+```
+
+The schema subset it understands is what the bundled agents use: `type`, `required`, per-property `type` and `enum`.
+
 **Upgrading, pausing, removing.** A new version of the logger is `skillctl install …` followed by `skillctl hook add skillctl-logger@<version>`; the link moves, the settings stay. To pause logging without losing the registration history, `skillctl hook remove skillctl-logger` and `hook add` it again later. The log file is plain JSONL; rotate or delete it whenever you like, the hook recreates it.
 
 ## Validation
