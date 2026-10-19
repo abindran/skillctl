@@ -82,6 +82,10 @@ impl LinkPlan {
 
 const RULES_DIR: &str = ".cursor/rules";
 const COMMAND_DIRS: [&str; 2] = [".claude/commands", ".cursor/commands"];
+const CLAUDE_AGENTS_DIR: &str = ".claude/agents";
+const CURSOR_AGENTS_DIR: &str = ".cursor/agents";
+/// The Cursor override an agent folder may carry beside `AGENT.md`.
+pub const AGENT_CURSOR_OVERRIDE: &str = "cursor.md";
 
 /// The links a set of pins needs. A pin whose kind cannot be read (version
 /// missing from the store) is planned as a skill so its dangling links still
@@ -126,6 +130,26 @@ pub fn plans(
                     });
                 }
             }
+            Kind::Agent => {
+                plans.push(LinkPlan {
+                    dir: RelPath::new(CLAUDE_AGENTS_DIR)?,
+                    name: format!("{name}.md"),
+                    target: dir.join(Kind::Agent.document()),
+                });
+                // Cursor imports .claude/agents itself; a cursor.md override
+                // exists only when the model or skill preload must differ.
+                let cursor = dir.join(AGENT_CURSOR_OVERRIDE);
+                if fs
+                    .symlink_metadata(&cursor)
+                    .is_ok_and(|info| info.is_file())
+                {
+                    plans.push(LinkPlan {
+                        dir: RelPath::new(CURSOR_AGENTS_DIR)?,
+                        name: format!("{name}.md"),
+                        target: cursor,
+                    });
+                }
+            }
             // Hooks are registered with `hook add`, never linked into a project.
             Kind::Hook => {}
         }
@@ -160,7 +184,10 @@ pub fn reconcile(
     if layout == Layout::Kinds {
         // Visit every kind folder even with no plan for it, so the links of
         // an unpinned rule or command are removed.
-        for dir in std::iter::once(RULES_DIR).chain(COMMAND_DIRS) {
+        for dir in [RULES_DIR, CLAUDE_AGENTS_DIR, CURSOR_AGENTS_DIR]
+            .into_iter()
+            .chain(COMMAND_DIRS)
+        {
             active.insert(RelPath::new(dir)?);
         }
     }

@@ -4,7 +4,7 @@ A hook is the second artifact kind in the store: a folder with `HOOK.md` and the
 
 ## Artifact model
 
-`artifact::Kind` is `Skill`, `Hook`, `Rule` or `Command`. The kind is **detected from the folder**: `SKILL.md`, `HOOK.md`, `RULE.mdc` or `COMMAND.md`; more than one is an error (`Kind::detect`). It is also written to `meta.json` as `kind` so listings can read it without opening the folder; a missing `kind` means `skill`, which is how stores created before hooks existed keep working.
+`artifact::Kind` is `Skill`, `Hook`, `Rule`, `Command` or `Agent`. The kind is **detected from the folder**: `SKILL.md`, `HOOK.md`, `RULE.mdc`, `COMMAND.md` or `AGENT.md`; more than one is an error (`Kind::detect`). It is also written to `meta.json` as `kind` so listings can read it without opening the folder; a missing `kind` means `skill`, which is how stores created before hooks existed keep working.
 
 Everything else is shared: the same `store/<name>/<version>/<name>/` layout and flat namespace (a skill and a hook cannot share a name), the same content hash, staging, read-only sealing, drafts (`new --kind hook`, `edit`, `seal`), discovery on `install`, and the same `Skill` struct for the parsed document (`Skill { dir, kind, frontmatter, body }`, loaded with `load_kind`).
 

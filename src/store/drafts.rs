@@ -8,8 +8,8 @@ use crate::{
     artifact::Kind,
     cli::Bump,
     commands::init::{
-        DEFAULT_COMMAND_TEMPLATE, DEFAULT_HOOK_SCRIPT, DEFAULT_HOOK_TEMPLATE,
-        DEFAULT_RULE_TEMPLATE, DEFAULT_TEMPLATE,
+        DEFAULT_AGENT_TEMPLATE, DEFAULT_COMMAND_TEMPLATE, DEFAULT_HOOK_SCRIPT,
+        DEFAULT_HOOK_TEMPLATE, DEFAULT_RULE_TEMPLATE, DEFAULT_TEMPLATE,
     },
     error::Error,
     names::SkillName,
@@ -33,6 +33,7 @@ fn default_template(kind: Kind) -> &'static str {
         Kind::Hook => "hook",
         Kind::Rule => "rule",
         Kind::Command => "command",
+        Kind::Agent => "agent",
     }
 }
 
@@ -80,6 +81,7 @@ pub fn new(
             ),
             Kind::Rule => (DEFAULT_RULE_TEMPLATE.into(), Vec::new()),
             Kind::Command => (DEFAULT_COMMAND_TEMPLATE.into(), Vec::new()),
+            Kind::Agent => (DEFAULT_AGENT_TEMPLATE.into(), Vec::new()),
         },
         Err(error) => return Err(io_error(&path, error)),
         Ok(_) => {
@@ -409,6 +411,7 @@ pub(crate) fn rewrite(
                     }
                     Kind::Rule => "Describe when Cursor should attach this rule.",
                     Kind::Command => "Describe what this slash command does.",
+                    Kind::Agent => "Describe when the main agent should delegate to this subagent.",
                 }),
             );
         }

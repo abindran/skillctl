@@ -23,7 +23,7 @@ flowchart TD
 
 The skill folder sits **one level below** its version folder so that its own folder name is exactly the skill `name`; the spec and Cursor require that `name` match the folder name even when a link is resolved to its real path. `meta.json` sits beside the skill rather than inside it, so harnesses never see it and the validator never flags it as an unreferenced file.
 
-Hooks, rules and commands use the same layout in the same `store/` namespace (`store/<name>/<version>/<name>/HOOK.md`, `RULE.mdc`, `COMMAND.md`), so two artifacts of any kind cannot share a name. The kind is detected from the root document (`artifact::Kind::detect`) and recorded in `meta.json`; store queries stay directory-based and kind-agnostic.
+Hooks, rules, commands and agents use the same layout in the same `store/` namespace (`store/<name>/<version>/<name>/HOOK.md`, `RULE.mdc`, `COMMAND.md`, `AGENT.md`), so two artifacts of any kind cannot share a name. The kind is detected from the root document (`artifact::Kind::detect`) and recorded in `meta.json`; store queries stay directory-based and kind-agnostic.
 
 ## Registry data model
 
@@ -115,7 +115,7 @@ Queries perform no writes, including in dry runs. Callers hold the registry lock
 }
 ```
 
-`kind` is `skill`, `hook`, `rule` or `command`; it is optional on read (versions stored before hooks existed have no field and are skills) and always written. `source.kind` is `git`, `local` (installed from a path or sealed from a draft) or `new`. Git sources carry `url` and `commit`, with optional `ref` and repository-relative `subdir`. `Metadata` is read and atomically written through the `Fs` service; missing or malformed metadata is an error, not a default. Because `meta.json` lives beside the skill folder, writing it never changes the content hash.
+`kind` is `skill`, `hook`, `rule`, `command` or `agent`; it is optional on read (versions stored before hooks existed have no field and are skills) and always written. `source.kind` is `git`, `local` (installed from a path or sealed from a draft) or `new`. Git sources carry `url` and `commit`, with optional `ref` and repository-relative `subdir`. `Metadata` is read and atomically written through the `Fs` service; missing or malformed metadata is an error, not a default. Because `meta.json` lives beside the skill folder, writing it never changes the content hash.
 
 ## Canonical content hash
 

@@ -130,6 +130,13 @@ pub enum Command {
         command: GlobalCommand,
     },
 
+    /// Subagent helpers.
+    Agent {
+        /// The agent operation to execute.
+        #[command(subcommand)]
+        command: AgentCommand,
+    },
+
     /// Register hooks with the harnesses (Claude Code settings, read by Cursor too).
     Hook {
         /// The hook operation to execute.
@@ -289,6 +296,22 @@ pub enum GlobalCommand {
     /// List globally installed skills.
     List,
 }
+/// Subagent operations.
+#[derive(Debug, Subcommand)]
+pub enum AgentCommand {
+    /// Write cursor.md into an agent draft: the same prompt with a Cursor model
+    /// id and a read-the-skill line per preloaded skill, linked as
+    /// .cursor/agents/<name>.md once sealed and pinned.
+    Derive {
+        /// Name of the agent draft (run skillctl edit <name> first for a sealed agent).
+        agent: String,
+
+        /// Cursor model id to run the agent on, optionally with options such as [effort=high].
+        #[arg(long)]
+        model: String,
+    },
+}
+
 /// Hook registration operations.
 #[derive(Debug, Subcommand)]
 pub enum HookCommand {

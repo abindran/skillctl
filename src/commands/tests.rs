@@ -26,26 +26,26 @@ fn injected_dry_run_records_the_layout_without_disk_writes_or_prompts() {
         },
     );
     let report = initialize(&context).unwrap();
-    // home, store, drafts, templates, templates/{default,hook,rule,command},
-    // registry.yml, and five template files.
-    assert_eq!(report.created.len(), 14);
+    // home, store, drafts, templates, templates/{default,hook,rule,command,agent},
+    // registry.yml, and six template files.
+    assert_eq!(report.created.len(), 16);
     assert!(report.dry_run);
     assert!(!home.exists());
     let actions = fs.actions();
     // Each template file is a write followed by a mode change.
-    assert_eq!(actions.len(), 19);
+    assert_eq!(actions.len(), 22);
     assert!(matches!(&actions[0], FsAction::CreateDir { path } if path == &home));
     assert!(
         matches!(&actions[5], FsAction::CreateDir { path } if path == &home.join("templates/hook"))
     );
-    assert!(matches!(&actions[8], FsAction::WriteAtomic { path, bytes }
-        if path == &home.join("registry.yml") && crate::registry::Registry::from_yaml(bytes).unwrap() == crate::registry::Registry::default()));
     assert!(matches!(&actions[9], FsAction::WriteAtomic { path, bytes }
+        if path == &home.join("registry.yml") && crate::registry::Registry::from_yaml(bytes).unwrap() == crate::registry::Registry::default()));
+    assert!(matches!(&actions[10], FsAction::WriteAtomic { path, bytes }
         if path == &home.join("templates/default/SKILL.md") && bytes == DEFAULT_TEMPLATE.as_bytes()));
-    assert!(matches!(&actions[13], FsAction::WriteAtomic { path, bytes }
+    assert!(matches!(&actions[14], FsAction::WriteAtomic { path, bytes }
         if path == &home.join("templates/hook/hook.py") && bytes == DEFAULT_HOOK_SCRIPT.as_bytes()));
     assert!(
-        matches!(&actions[14], FsAction::SetMode { path, mode: 0o755 }
+        matches!(&actions[15], FsAction::SetMode { path, mode: 0o755 }
         if path == &home.join("templates/hook/hook.py"))
     );
     drop(context);

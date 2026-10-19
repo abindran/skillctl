@@ -1,0 +1,12 @@
+{
+  "type": "object",
+  "required": ["status", "answer", "files", "open_questions", "confidence", "artifact"],
+  "properties": {
+    "status": {"type": "string", "enum": ["ok", "partial", "failed"]},
+    "answer": {"type": "string"},
+    "files": {"type": "array"},
+    "open_questions": {"type": "array"},
+    "confidence": {"type": "number"},
+    "artifact": {"type": "string"}
+  }
+}

@@ -1,5 +1,6 @@
 //! Native validation. Structural failures suppress dependent field checks, not I/O errors.
 
+pub mod agent;
 pub mod command;
 pub mod description;
 pub mod fields;
@@ -78,7 +79,8 @@ fn suppressible(rule: &str) -> bool {
     !(rule.starts_with('S')
         || hook::STRUCTURAL.contains(&rule)
         || self::rule::STRUCTURAL.contains(&rule)
-        || command::STRUCTURAL.contains(&rule))
+        || command::STRUCTURAL.contains(&rule)
+        || agent::STRUCTURAL.contains(&rule))
 }
 
 /// The rule groups a kind is validated with.
@@ -93,6 +95,7 @@ pub fn rules_for(kind: Kind) -> &'static [&'static dyn Rule] {
         Kind::Hook => &[&hook::HookRules],
         Kind::Rule => &[&self::rule::RuleRules],
         Kind::Command => &[&command::CommandRules],
+        Kind::Agent => &[&agent::AgentRules],
     }
 }
 
@@ -103,6 +106,7 @@ pub fn scaffold_rule(kind: Kind) -> &'static dyn Rule {
         Kind::Hook => &hook::HookRules,
         Kind::Rule => &self::rule::RuleRules,
         Kind::Command => &command::CommandRules,
+        Kind::Agent => &agent::AgentRules,
     }
 }
 
@@ -114,6 +118,7 @@ fn gate_rules(kind: Kind) -> (&'static str, &'static str, &'static str) {
         Kind::Hook => ("K101", "K101", "K110"),
         Kind::Rule => ("K201", "K201", "K201"),
         Kind::Command => ("K301", "K301", "K301"),
+        Kind::Agent => ("H220", "H220", "H220"),
     }
 }
 

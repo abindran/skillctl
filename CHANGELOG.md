@@ -13,6 +13,20 @@ heading when cutting a release.
 
 ### Added
 
+- Agent artifacts (strategy work items W17, W18 and W19). A folder with
+  `AGENT.md` is a subagent, linked as `.claude/agents/<name>.md` and, when
+  the folder carries a `cursor.md` override, `.cursor/agents/<name>.md`. Rules
+  H220–H227 check the name (a built-in name such as `Explore` is allowed and
+  overrides the built-in agent), description, version and body, field types,
+  a Claude-only model alias without an override (H222), tool scope without
+  `readonly: true`, which Cursor would run unscoped (H224), a stale override
+  (H226) and an invalid `schema.json` (H227). `skillctl agent derive <agent>
+  --model <id>` writes the override into a draft: the same prompt, a Cursor
+  model id, `readonly` kept, and a read-this-skill line per preloaded skill.
+  `new --kind agent` scaffolds a read-only Haiku explorer. Four agents ship
+  under `agents/`: `explore` (overrides Claude Code's built-in on Haiku),
+  `repo-explorer`, `log-digester` and `reviewer`, each with the `schema.json`
+  its final message must satisfy.
 - Rule and command artifacts (strategy work items W15 and W31). A folder with
   `RULE.mdc` is a Cursor rule, linked as `.cursor/rules/<name>.mdc`; one with
   `COMMAND.md` is a slash command, linked as `.claude/commands/<name>.md` and

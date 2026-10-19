@@ -1,4 +1,5 @@
 pub mod advisory;
+pub mod agent;
 pub mod attach;
 pub mod completions;
 pub mod config;

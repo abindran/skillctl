@@ -27,6 +27,10 @@ pub const DEFAULT_RULE_TEMPLATE: &str = "---\nname: {{name}}\ndescription: Descr
 /// `.claude/commands/<name>.md` and `.cursor/commands/<name>.md`.
 pub const DEFAULT_COMMAND_TEMPLATE: &str = "---\nname: {{name}}\ndescription: Describe what this slash command does.\nargument-hint: \"[what to pass]\"\nmetadata:\n  version: \"0.1.0\"\n---\n\nWrite the prompt the command expands to. $ARGUMENTS is replaced by what the user typed after /{{name}}.\n";
 
+/// The subagent scaffold: `AGENT.md` with Claude Code's frontmatter plus
+/// Cursor's `readonly`, linked as `.claude/agents/<name>.md`.
+pub const DEFAULT_AGENT_TEMPLATE: &str = "---\nname: {{name}}\ndescription: Describe when the main agent should delegate to this subagent. Use proactively for [the kind of task].\ntools: Read, Grep, Glob\nmodel: haiku\nreadonly: true\nmaxTurns: 15\nmetadata:\n  version: \"0.1.0\"\n---\n\nYou investigate; you never edit. Write full findings to .claude/scratch/<task-id>.md.\nReturn ONLY this JSON: {\"status\":\"ok|partial|failed\",\"answer\":\"<=120 words\",\"files\":[{\"path\":\"\",\"lines\":\"\",\"why\":\"\"}],\"open_questions\":[],\"confidence\":0.0,\"artifact\":\".claude/scratch/<task-id>.md\"}\n";
+
 #[derive(Debug, Serialize)]
 pub struct InitReport {
     pub home: PathBuf,
@@ -105,6 +109,7 @@ pub fn initialize(context: &Context<'_>) -> Result<InitReport, Error> {
             context.home.templates().join("hook"),
             context.home.templates().join("rule"),
             context.home.templates().join("command"),
+            context.home.templates().join("agent"),
         ] {
             ensure_dir(fs, &dir, &mut report.created)?;
         }
@@ -119,6 +124,7 @@ pub fn initialize(context: &Context<'_>) -> Result<InitReport, Error> {
             ("hook/hook.py", DEFAULT_HOOK_SCRIPT, 0o755),
             ("rule/RULE.mdc", DEFAULT_RULE_TEMPLATE, 0o644),
             ("command/COMMAND.md", DEFAULT_COMMAND_TEMPLATE, 0o644),
+            ("agent/AGENT.md", DEFAULT_AGENT_TEMPLATE, 0o644),
         ] {
             let template = context.home.templates().join(relative);
             if !exists(fs, &template)? {

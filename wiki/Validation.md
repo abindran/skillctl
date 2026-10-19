@@ -142,6 +142,23 @@ A folder whose root document is `RULE.mdc` is a Cursor rule (`validate::rule::Ru
 
 K201–K204 and K301–K304 are structural and never suppressed. Hook rule K111 also checks `companions`, a list of valid artifact names that `hook add` pins into every project.
 
+## Agent rules
+
+A folder whose root document is `AGENT.md` is a subagent (`validate::agent::AgentRules`). The rules encode the asymmetry between the harnesses: Claude Code honours `tools`, `disallowedTools`, `model`, `skills` and `maxTurns`; Cursor imports `.claude/agents/*.md` itself but understands only `name`, `description`, `model`, `readonly` and `is_background`, and `.cursor/agents/<name>.md` wins on a name clash, which is what a `cursor.md` override is linked as.
+
+| ID | Severity | Rule |
+|---|---|---|
+| H220 | error | `AGENT.md` exists and parses (also the id for a symlinked document) |
+| H221 | error | `name` is non-empty, has no `:` and no leading `-` (Claude Code skips the file otherwise), and equals the folder name ignoring case, so `name: Explore` in folder `explore` overrides the built-in agent |
+| H222 | warning | `model` is one of `CLAUDE_ALIASES` (`sonnet`, `opus`, `haiku`, `fable`, `inherit`) and no `cursor.md` exists |
+| H223 | error | `description` present (≤ 1,024 characters), `metadata.version` parses, body non-empty |
+| H224 | warning | `tools` or `disallowedTools` present without `readonly: true` |
+| H225 | error | Field types: `tools`/`disallowedTools` string or list, `readonly` boolean, `skills` string or list, `maxTurns` positive integer, `model` string |
+| H226 | warning | `cursor.md` exists but its `name` differs or `AGENT.md`'s trimmed body is not contained in it (the override may prepend preload instructions) |
+| H227 | error | `schema.json` exists but is not a JSON object |
+
+H220, H221, H223 and H225 are structural and never suppressed. `commands::agent::derive` builds the override: `name`, `description`, the given `model`, `readonly` and `is_background` (from `background`) in the frontmatter, then one `.claude/skills/<skill>/SKILL.md` line per preloaded skill and the agent's body verbatim, so H226 passes by construction.
+
 ## Instruction-file rules
 
 `skillctl lint [<folder>]` runs `validate::instructions::check` on a project folder rather than on a store artifact. It reads `AGENTS.md`, `CLAUDE.md`, `.claude/CLAUDE.md` and `CLAUDE.local.md` into a `Layout` (and `.cursor/rules/*.mdc` for I302), decides whether any `CLAUDE.md` imports `AGENTS.md` (an `@AGENTS.md` or `@./AGENTS.md` token anywhere on a line for `./CLAUDE.md`, `@../AGENTS.md` for `.claude/CLAUDE.md`, since Claude Code resolves imports relative to the importing file; quoted paths do not count), and for I309 climbs the parents up to the Git top level (`Git::toplevel`) or the filesystem root. Nothing is written: these files are team-owned.

@@ -67,9 +67,10 @@ Before anything is touched, `linker::plans` turns the pins into `LinkPlan { dir,
 | skill | `<target>/<name>` → `store/<name>/<ver>/<name>` for every `settings.link_targets` entry (duplicates collapsed) |
 | rule | `.cursor/rules/<name>.mdc` → `…/<name>/RULE.mdc` |
 | command | `.claude/commands/<name>.md` and `.cursor/commands/<name>.md` → `…/<name>/COMMAND.md` |
+| agent | `.claude/agents/<name>.md` → `…/<name>/AGENT.md`; plus `.cursor/agents/<name>.md` → `…/<name>/cursor.md` when that override file exists |
 | hook | none here; `hook add` links it under `~/.claude/hooks` with `Layout::Folders` |
 
-A pin whose store folder is missing is planned as a skill so its dangling links still show up for `doctor`. The folders visited are every `link_targets` entry, every folder a plan names, and (in `Kinds` layout) the three kind folders even when nothing is planned for them, so the links of an unpinned rule or command are removed. `status`, `doctor` and `global list` compute link health from the same plans, so what is reported is exactly what reconcile maintains.
+A pin whose store folder is missing is planned as a skill so its dangling links still show up for `doctor`. The folders visited are every `link_targets` entry, every folder a plan names, and (in `Kinds` layout) the kind folders (`.cursor/rules`, `.claude/commands`, `.cursor/commands`, `.claude/agents`, `.cursor/agents`) even when nothing is planned for them, so the links of an unpinned rule or command are removed. `status`, `doctor` and `global list` compute link health from the same plans, so what is reported is exactly what reconcile maintains.
 
 ```
 plans = linker::plans(pins, settings.link_targets, layout)
