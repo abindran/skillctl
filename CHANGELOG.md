@@ -22,6 +22,9 @@ heading when cutting a release.
   alternative such as `gh` for GitHub where one exists); before that it is
   `mcp-unmeasured` (info). Advisory, like the telemetry section, under `mcp`
   in `--json`.
+- `hook add` updates an existing `settings.json` entry whose matcher, timeout
+  or entry script no longer matches the hook (reported as `updated`), so a
+  hook upgrade that changes its matcher takes effect.
 - `skillctl-logger` 1.1.0 records MCP tool calls: the `PostToolUse` matcher
   is now `Skill|mcp__.*` and each MCP event carries `server`.
 - Directive-description rules O140–O145 (strategy work item W09), all

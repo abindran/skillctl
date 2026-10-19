@@ -29,7 +29,7 @@ pub struct Registration {
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
 pub struct Outcome {
     pub event: String,
-    /// `added`, `present` or `removed`.
+    /// `added`, `updated` (matcher, timeout or entry changed), `present` or `removed`.
     pub status: &'static str,
 }
 
@@ -201,12 +201,63 @@ pub fn register(
         message: "settings.json has a \"hooks\" key that is not an object".into(),
         hint: "Make \"hooks\" an object keyed by event name, as Claude Code expects.".into(),
     })?;
+    let marker = marker(name);
+    let wanted = command(name, entry);
     let mut outcomes = Vec::new();
     for registration in registrations {
         if already.contains(&registration.event) {
+            // Bring an existing entry in line with the hook's current
+            // matcher, timeout and entry script; report whether that changed.
+            let mut changed = false;
+            if let Some(groups) = hooks
+                .get_mut(&registration.event)
+                .and_then(Value::as_array_mut)
+            {
+                for group in groups.iter_mut() {
+                    let ours = group
+                        .get("hooks")
+                        .and_then(Value::as_array)
+                        .is_some_and(|items| items.iter().any(|item| is_ours(item, &marker)));
+                    if !ours {
+                        continue;
+                    }
+                    let Some(object) = group.as_object_mut() else {
+                        continue;
+                    };
+                    match &registration.matcher {
+                        Some(matcher) => {
+                            if object.get("matcher").and_then(Value::as_str) != Some(matcher) {
+                                object.insert("matcher".into(), Value::String(matcher.clone()));
+                                changed = true;
+                            }
+                        }
+                        None => {
+                            if object.remove("matcher").is_some() {
+                                changed = true;
+                            }
+                        }
+                    }
+                    if let Some(items) = object.get_mut("hooks").and_then(Value::as_array_mut) {
+                        for item in items.iter_mut().filter(|item| is_ours(item, &marker)) {
+                            if let Some(item) = item.as_object_mut() {
+                                if item.get("timeout").and_then(Value::as_u64)
+                                    != Some(registration.timeout)
+                                {
+                                    item.insert("timeout".into(), json!(registration.timeout));
+                                    changed = true;
+                                }
+                                if item.get("command").and_then(Value::as_str) != Some(&wanted) {
+                                    item.insert("command".into(), Value::String(wanted.clone()));
+                                    changed = true;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
             outcomes.push(Outcome {
                 event: registration.event.clone(),
-                status: "present",
+                status: if changed { "updated" } else { "present" },
             });
             continue;
         }
@@ -351,6 +402,34 @@ mod tests {
                 .map(String::from)
                 .collect()
         );
+    }
+
+    #[test]
+    fn register_updates_a_changed_matcher_timeout_or_entry_in_place() {
+        let mut value = json!({});
+        register(&mut value, &name(), "hook.py", &regs()).unwrap();
+        let mut changed = regs();
+        changed[1].matcher = Some("Skill|mcp__.*".into());
+        changed[0].timeout = 5;
+        let outcomes = register(&mut value, &name(), "run.py", &changed).unwrap();
+        assert_eq!(
+            outcomes.iter().map(|o| o.status).collect::<Vec<_>>(),
+            ["updated", "updated"]
+        );
+        assert_eq!(value["hooks"]["PostToolUse"][0]["matcher"], "Skill|mcp__.*");
+        assert_eq!(value["hooks"]["SessionEnd"][0]["hooks"][0]["timeout"], 5);
+        assert_eq!(
+            value["hooks"]["SessionEnd"][0]["hooks"][0]["command"],
+            "\"$HOME/.claude/hooks/logger/run.py\""
+        );
+        // Still exactly one entry per event, and a repeat is a no-op.
+        assert_eq!(value["hooks"]["PostToolUse"].as_array().unwrap().len(), 1);
+        let outcomes = register(&mut value, &name(), "run.py", &changed).unwrap();
+        assert!(outcomes.iter().all(|o| o.status == "present"));
+        // Dropping a matcher removes the key.
+        changed[1].matcher = None;
+        register(&mut value, &name(), "run.py", &changed).unwrap();
+        assert!(value["hooks"]["PostToolUse"][0].get("matcher").is_none());
     }
 
     #[test]
