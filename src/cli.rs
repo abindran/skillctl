@@ -150,6 +150,14 @@ pub enum Command {
     /// List available skills.
     Skills,
 
+    /// List every store version with its kind, pins and recorded use.
+    Artifacts {
+        /// Only versions nothing pins, or pinned skills and agents with no
+        /// recorded use after a week of logging.
+        #[arg(long)]
+        unused: bool,
+    },
+
     /// Relink project skills.
     Relink {
         /// Relink all projects.

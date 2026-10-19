@@ -20,6 +20,7 @@ The technical architecture lives in the [project wiki](https://github.com/abindr
 - [Global flags and exit codes](#global-flags-and-exit-codes)
 - [Hooks](#hooks)
 - [Validation](#validation)
+- [Model and effort defaults](#model-and-effort-defaults)
 - [Instruction files](#instruction-files)
 - [Configuration](#configuration)
 - [Home folder layout](#home-folder-layout)
@@ -312,6 +313,7 @@ Hooks never go into `skills/` folders: `add`, `attach --skills` and `global add`
 
 | Command | Run from | What it changes |
 |---|---|---|
+| `skillctl artifacts [--unused]` | anywhere | Every store version with its kind, what pins it (projects, `global`, `hook`) and what the event log records for it: skill activations for skills, subagent runs for agents, nothing for kinds the log cannot see. `--unused` keeps versions nothing pins and pinned skills or agents with no recorded use after a week of logging. The quarterly bloat review in one command. |
 | `skillctl skills` | anywhere | Lists every artifact and version in the store with the projects pinning it and whether it is global. Hooks are marked `(hook)` in the text and carry `"kind": "hook"` in `--json`. |
 | `skillctl install <source> [--ref <tag>] [--path <subdir>] [--all] [--version <semver>]` | anywhere | Installs from a Git URL (`git@…`, `https://…`, `ssh://…`, `file://…`, shallow-cloned with `--depth 1` using your own SSH keys and credential helpers) or from an existing local folder. Discovers every folder containing `SKILL.md` or `HOOK.md` (or only `--path`), asks which to install when there are several (`--all` answers), validates each with the registry allow-list, and stages the selected ones with `meta.json` recording the kind, URL, ref, commit and subfolder. The same version with the same content reports "already installed" and exits 0; the same version with different content is refused. `--version` fills in a missing `metadata.version` in the stored copy. |
 | `skillctl gc [--keep <n>]` | anywhere | Lists store versions that no project or global pin uses and that are not among a skill's newest `n` (default 1), asks for confirmation (`--yes` answers), restores write permission and deletes them. Empty skill folders are removed too. |
@@ -322,7 +324,7 @@ Hooks never go into `skills/` folders: `add`, `attach --skills` and `global add`
 |---|---|---|
 | `skillctl lint [<folder>] [--format text\|json\|junit] [--strict]` | anywhere | Checks a project's instruction files (`AGENTS.md`, `CLAUDE.md`, `.claude/CLAUDE.md`, `CLAUDE.local.md`, `.cursor/rules/*.mdc`) with rules I301–I306, I308 and I309 and reports each problem with a suggested fix. Read-only: those files are team-owned and changed through review, never by skillctl. Same formats, allow-list and exit code 3 as `validate`. |
 | `skillctl validate [<name>[@<version>\|@draft] \| <path>] [--format text\|json\|junit] [--strict] [--with-reference]` | anywhere | Validates one store version, a draft, any folder, or with no argument every draft and every store version. A folder with `SKILL.md` gets the skill rules, one with `HOOK.md` the hook rules. Nothing is written. |
-| `skillctl doctor [--fix]` | anywhere | Reports, each with the command that fixes it: a missing or too-old `git`; instance folders that no longer exist or were replaced; pinned versions missing from the store; missing, wrong, dangling or conflicting links in every instance and user-level folder; store versions whose content no longer matches `meta.json` or that gained write permission; personal copies in `~/.claude/skills`, `~/.agents/skills` or `~/.cursor/skills` that shadow a project skill; symlinked or repository-resident global targets; repositories with `core.symlinks=false`. `--fix` removes vanished instances from the registry, relinks everything and restores read-only modes. Exits 1 while problems remain. An **MCP servers** section lists every server the harnesses connect to from this folder (`~/.claude.json` user and per-project entries, `.mcp.json`, `~/.cursor/mcp.json`, `.cursor/mcp.json`) with its command or URL, disabled state and how often the event log has seen its tools called; a server with no recorded call after a week of logging is `mcp-unused` (warning, with a CLI alternative such as `gh` where one exists), earlier it is `mcp-unmeasured` (info). Every connected server's tool definitions are loaded on every turn, so this is where the largest token savings tend to be. A separate **Telemetry** section, which never affects the exit status, says whether Claude Code's OpenTelemetry export is on and complete (`CLAUDE_CODE_ENABLE_TELEMETRY=1`, `OTEL_METRICS_EXPORTER`, `OTEL_LOGS_EXPORTER`, `OTEL_EXPORTER_OTLP_PROTOCOL`, `OTEL_EXPORTER_OTLP_ENDPOINT`, and `OTEL_LOG_TOOL_DETAILS=1` so `agent.name` is not redacted), whether `ccusage` is on `PATH`, that Cursor's usage comes from its dashboard and hook logs and, once a hook is registered, whether the event log has seen Cursor run it (`cursor-imports`: a warning asking you to confirm **Settings → Agents → Third-Party Imports** while no Cursor event has arrived, an info line with the count once one has); `--json` carries it under `telemetry`. |
+| `skillctl doctor [--fix]` | anywhere | Reports, each with the command that fixes it: a missing or too-old `git`; instance folders that no longer exist or were replaced; pinned versions missing from the store; missing, wrong, dangling or conflicting links in every instance and user-level folder; store versions whose content no longer matches `meta.json` or that gained write permission; personal copies in `~/.claude/skills`, `~/.agents/skills` or `~/.cursor/skills` that shadow a project skill; symlinked or repository-resident global targets; repositories with `core.symlinks=false`. `--fix` removes vanished instances from the registry, relinks everything and restores read-only modes. Exits 1 while problems remain. An **MCP servers** section lists every server the harnesses connect to from this folder (`~/.claude.json` user and per-project entries, `.mcp.json`, `~/.cursor/mcp.json`, `.cursor/mcp.json`) with its command or URL, disabled state and how often the event log has seen its tools called; a server with no recorded call after a week of logging is `mcp-unused` (warning, with a CLI alternative such as `gh` where one exists), earlier it is `mcp-unmeasured` (info). Every connected server's tool definitions are loaded on every turn, so this is where the largest token savings tend to be. A separate **Telemetry** section, which never affects the exit status, says whether Claude Code's OpenTelemetry export is on and complete (`CLAUDE_CODE_ENABLE_TELEMETRY=1`, `OTEL_METRICS_EXPORTER`, `OTEL_LOGS_EXPORTER`, `OTEL_EXPORTER_OTLP_PROTOCOL`, `OTEL_EXPORTER_OTLP_ENDPOINT`, and `OTEL_LOG_TOOL_DETAILS=1` so `agent.name` is not redacted), whether `ccusage` is on `PATH`, that Cursor's usage comes from its dashboard and hook logs, the model defaults in effect (`model-defaults`: the main model and whether subagents inherit it or run on `CLAUDE_CODE_SUBAGENT_MODEL`), and, once a hook is registered, whether the event log has seen Cursor run it (`cursor-imports`: a warning asking you to confirm **Settings → Agents → Third-Party Imports** while no Cursor event has arrived, an info line with the count once one has); `--json` carries it under `telemetry`. |
 | `skillctl config get\|set <key> [<value>]` | anywhere | Reads or changes `link_targets`, `global_link_targets`, `git_exclude`, `global_in_instances` and `validate.allow` (lists are comma-separated). After changing link targets it offers to run `relink --all` (`--yes` answers), which also removes managed links from targets that were dropped. |
 | `skillctl completions <shell>` | anywhere | Prints a completion script for bash, zsh, fish, elvish or PowerShell. Touches nothing else. |
 
@@ -677,6 +679,19 @@ settings:
     allow: [O102, H201]
 ```
 
+## Model and effort defaults
+
+The strategy's routing rule is simple: the main agent on Sonnet, read-heavy subagents on Haiku, Opus only when a task needs it, and the reasoning budget set per task. Where each default lives:
+
+| Default | Claude Code | Cursor |
+|---|---|---|
+| Main model | `model` in `~/.claude/settings.json` (or `/model` for one session) | the model picker; per-rule and per-agent `model` fields |
+| Subagent model | `CLAUDE_CODE_SUBAGENT_MODEL=haiku` in the `env` block of `~/.claude/settings.json`; an agent's own `model` field overrides it | each agent's `model` in its `cursor.md` override, with options such as `[effort=high]` |
+| Reasoning budget | `/effort low\|medium\|high` per task; an agent's `effort` field | `[effort=…]` on the model id |
+| Escalation | `/model opus` for the hard task, then back | pick the model per chat |
+
+`skillctl doctor` reports what is in effect under `model-defaults` and points out when subagents merely inherit the main model. The bundled agents carry their own defaults: `explore`, `repo-explorer` and `log-digester` on Haiku, `reviewer` on Sonnet.
+
 ## Instruction files
 
 Claude Code reads `CLAUDE.md`; Cursor reads `AGENTS.md`. Keeping both means paying for the same instructions twice and watching them drift. The arrangement skillctl checks for is one shared file and a one-line hand-off:
@@ -844,6 +859,9 @@ scripts/release/build-universal.sh && scripts/release/package.sh 0.1.0 && script
 | Validation: S, O, H and K rules; text, JSON and JUnit; allow-lists; `--strict`; `--with-reference` | Implemented |
 | Instruction-file lint (`lint`): I301–I306, I308, I309, read-only | Implemented (W06, W07, W11, W23) |
 | Script bundles (`.claude/scripts/<name>`), K501–K507, the bundled `test-quiet` and `log-errors` wrappers | Implemented (W23) |
+| Model and effort defaults documented; `doctor` reports them (`model-defaults`) | Implemented (W25) |
+| `artifacts --unused` for the periodic bloat review | Implemented (W30) |
+| Subagent telemetry: the logger records `SubagentStart`/`SubagentStop` with the agent type (Cursor maps only `SubagentStop`) | Implemented by the logger (W21) |
 | `install` from Git and local folders, `edit`, `doctor --fix`, `gc`, `config`, `completions` | Implemented |
 | Release pipeline: universal build, optional signing and notarization, clean-runner verification, GitHub release, crates.io publish and verification | Implemented (GitHub Actions) |
 | Manual harness compatibility matrix (Claude Code, Cursor, ZohoCode) | Not run; default link targets are provisional |

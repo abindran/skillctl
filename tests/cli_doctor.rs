@@ -192,7 +192,12 @@ fn doctor_reports_telemetry_without_changing_the_exit_status() {
         .collect();
     assert_eq!(
         checks,
-        ["telemetry-off", "ccusage-missing", "cursor-telemetry"]
+        [
+            "telemetry-off",
+            "ccusage-missing",
+            "model-defaults",
+            "cursor-telemetry"
+        ]
     );
     let out = Command::new(env!("CARGO_BIN_EXE_skillctl"))
         .env("SKILLCTL_HOME", &e.home)
@@ -226,9 +231,10 @@ fn doctor_reports_telemetry_without_changing_the_exit_status() {
     assert_eq!(report["telemetry"]["claude_code"]["enabled"], true);
     assert_eq!(report["telemetry"]["ccusage_on_path"], true);
     let findings = report["telemetry"]["findings"].as_array().unwrap();
-    assert_eq!(findings.len(), 1);
-    assert_eq!(findings[0]["check"], "cursor-telemetry");
-    assert_eq!(findings[0]["severity"], "info");
+    assert_eq!(findings.len(), 2);
+    assert_eq!(findings[0]["check"], "model-defaults");
+    assert_eq!(findings[1]["check"], "cursor-telemetry");
+    assert_eq!(findings[1]["severity"], "info");
 }
 
 #[test]

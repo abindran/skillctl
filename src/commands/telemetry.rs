@@ -61,6 +61,38 @@ pub struct CursorEvidence {
     pub last_event: Option<String>,
 }
 
+/// Model and effort defaults read from `~/.claude/settings.json`: the main
+/// `model`, and `CLAUDE_CODE_SUBAGENT_MODEL` from its `env` block (the
+/// process environment also counts).
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize)]
+pub struct ModelDefaults {
+    pub main_model: Option<String>,
+    pub subagent_model: Option<String>,
+}
+
+impl ModelDefaults {
+    pub fn from_settings(
+        settings: &serde_json::Value,
+        var: impl Fn(&str) -> Option<String>,
+    ) -> Self {
+        let env = settings.get("env");
+        let from_env = |key: &str| {
+            var(key).or_else(|| {
+                env.and_then(|env| env.get(key))
+                    .and_then(serde_json::Value::as_str)
+                    .map(str::to_owned)
+            })
+        };
+        Self {
+            main_model: settings
+                .get("model")
+                .and_then(serde_json::Value::as_str)
+                .map(str::to_owned),
+            subagent_model: from_env("CLAUDE_CODE_SUBAGENT_MODEL"),
+        }
+    }
+}
+
 /// Inspect the environment through injected lookups so tests need no process state.
 pub fn inspect(var: impl Fn(&str) -> Option<String>, on_path: impl Fn(&str) -> bool) -> Telemetry {
     inspect_with_cursor(var, on_path, &CursorEvidence::default())
@@ -71,6 +103,16 @@ pub fn inspect_with_cursor(
     var: impl Fn(&str) -> Option<String>,
     on_path: impl Fn(&str) -> bool,
     cursor: &CursorEvidence,
+) -> Telemetry {
+    inspect_full(var, on_path, cursor, &ModelDefaults::default())
+}
+
+/// `inspect_with_cursor`, plus the model and effort defaults (W25).
+pub fn inspect_full(
+    var: impl Fn(&str) -> Option<String>,
+    on_path: impl Fn(&str) -> bool,
+    cursor: &CursorEvidence,
+    models: &ModelDefaults,
 ) -> Telemetry {
     let set = |name: &str| {
         var(name)
@@ -190,6 +232,29 @@ pub fn inspect_with_cursor(
         ));
     }
 
+    // Model routing: the strategy's default is Sonnet for the main agent and
+    // Haiku for read-heavy subagents, Opus only by escalation per task.
+    match &models.subagent_model {
+        None => findings.push(finding(
+            "model-defaults",
+            "info",
+            format!(
+                "Main model: {}; subagents inherit it (CLAUDE_CODE_SUBAGENT_MODEL is unset), so read-only exploration runs at full price",
+                models.main_model.as_deref().unwrap_or("harness default")
+            ),
+            "Add \"env\": {\"CLAUDE_CODE_SUBAGENT_MODEL\": \"haiku\"} to ~/.claude/settings.json; agents that set their own model (explore, reviewer) are unaffected",
+        )),
+        Some(subagent) => findings.push(finding(
+            "model-defaults",
+            "info",
+            format!(
+                "Main model: {}; subagents default to {subagent}",
+                models.main_model.as_deref().unwrap_or("harness default")
+            ),
+            "Nothing to set; switch the main model per task with /model and the reasoning budget with /effort",
+        )),
+    }
+
     // Cursor has no telemetry export; the hook log is its instrument, and the
     // log also shows whether Cursor imports the registered hooks at all.
     match (cursor.hooks_registered, cursor.events, &cursor.last_event) {
@@ -249,7 +314,12 @@ mod tests {
         assert!(!telemetry.ccusage_on_path);
         assert_eq!(
             checks(&telemetry),
-            ["telemetry-off", "ccusage-missing", "cursor-telemetry"]
+            [
+                "telemetry-off",
+                "ccusage-missing",
+                "model-defaults",
+                "cursor-telemetry"
+            ]
         );
         assert!(
             telemetry.findings[0]
@@ -276,7 +346,7 @@ mod tests {
         assert!(telemetry.claude_code.enabled);
         assert!(telemetry.claude_code.tool_details);
         assert!(telemetry.ccusage_on_path);
-        assert_eq!(checks(&telemetry), ["cursor-telemetry"]);
+        assert_eq!(checks(&telemetry), ["model-defaults", "cursor-telemetry"]);
     }
 
     #[test]
@@ -287,6 +357,7 @@ mod tests {
             [
                 "telemetry-no-exporter",
                 "telemetry-agent-redacted",
+                "model-defaults",
                 "cursor-telemetry"
             ]
         );
@@ -301,7 +372,7 @@ mod tests {
         );
         assert_eq!(
             checks(&telemetry),
-            ["telemetry-no-metrics", "cursor-telemetry"]
+            ["telemetry-no-metrics", "model-defaults", "cursor-telemetry"]
         );
     }
 
@@ -321,6 +392,7 @@ mod tests {
             [
                 "telemetry-otlp-protocol",
                 "telemetry-otlp-endpoint",
+                "model-defaults",
                 "cursor-telemetry"
             ]
         );
@@ -343,7 +415,11 @@ mod tests {
         );
         assert_eq!(
             checks(&telemetry),
-            ["telemetry-otlp-endpoint", "cursor-telemetry"]
+            [
+                "telemetry-otlp-endpoint",
+                "model-defaults",
+                "cursor-telemetry"
+            ]
         );
         assert!(
             telemetry.findings[0]
@@ -375,22 +451,58 @@ mod tests {
             events: 0,
             last_event: None,
         });
-        assert_eq!(none.findings[0].check, "cursor-imports");
-        assert_eq!(none.findings[0].severity, "warning");
+        let cursor_of = |t: &Telemetry| {
+            t.findings
+                .iter()
+                .find(|f| f.check.starts_with("cursor-"))
+                .cloned()
+                .unwrap()
+        };
+        assert_eq!(cursor_of(&none).check, "cursor-imports");
+        assert_eq!(cursor_of(&none).severity, "warning");
         let seen = run(CursorEvidence {
             hooks_registered: 1,
             events: 12,
             last_event: Some("2026-10-19T12:00:00Z".into()),
         });
-        assert_eq!(seen.findings[0].check, "cursor-imports");
-        assert_eq!(seen.findings[0].severity, "info");
+        assert_eq!(cursor_of(&seen).check, "cursor-imports");
+        assert_eq!(cursor_of(&seen).severity, "info");
         assert!(
-            seen.findings[0]
+            cursor_of(&seen)
                 .message
                 .contains("12 event(s), last 2026-10-19T12:00:00Z")
         );
         let no_hooks = run(CursorEvidence::default());
-        assert_eq!(no_hooks.findings[0].check, "cursor-telemetry");
+        assert_eq!(cursor_of(&no_hooks).check, "cursor-telemetry");
+    }
+
+    #[test]
+    fn model_defaults_come_from_settings_or_the_environment() {
+        let settings =
+            serde_json::json!({"model": "sonnet", "env": {"CLAUDE_CODE_SUBAGENT_MODEL": "haiku"}});
+        let defaults = ModelDefaults::from_settings(&settings, |_| None);
+        assert_eq!(defaults.main_model.as_deref(), Some("sonnet"));
+        assert_eq!(defaults.subagent_model.as_deref(), Some("haiku"));
+        let overridden = ModelDefaults::from_settings(&settings, |key| {
+            (key == "CLAUDE_CODE_SUBAGENT_MODEL").then(|| "opus".to_owned())
+        });
+        assert_eq!(overridden.subagent_model.as_deref(), Some("opus"));
+        let none = ModelDefaults::from_settings(&serde_json::json!({}), |_| None);
+        assert_eq!(none, ModelDefaults::default());
+        let telemetry = inspect_full(|_| None, |_| true, &CursorEvidence::default(), &none);
+        let item = telemetry
+            .findings
+            .iter()
+            .find(|f| f.check == "model-defaults")
+            .unwrap();
+        assert!(item.message.contains("subagents inherit it"));
+        let telemetry = inspect_full(|_| None, |_| true, &CursorEvidence::default(), &defaults);
+        let item = telemetry
+            .findings
+            .iter()
+            .find(|f| f.check == "model-defaults")
+            .unwrap();
+        assert!(item.message.contains("subagents default to haiku"));
     }
 
     #[test]

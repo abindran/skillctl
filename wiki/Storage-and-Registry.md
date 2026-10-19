@@ -175,6 +175,10 @@ The clone happens before the exclusive registry lock is taken; everything select
 
 `doctor` also runs two advisory checks that are deliberately not problems. `commands/mcp.rs` reads the MCP server configuration of both harnesses (`~/.claude.json` user and per-project `mcpServers` plus `disabledMcpjsonServers`, `.mcp.json`, `~/.cursor/mcp.json`, `.cursor/mcp.json`), scores each server by the `PostToolUse` events the logger recorded for `mcp__<server>__*` tools, and reports `mcp-unused` (warning, after `UNUSED_AFTER_DAYS` of log history) or `mcp-unmeasured` (info) with a CLI alternative where one is known; the result is the `mcp` object of the JSON report. `commands/telemetry.rs` is the observability check: it reads the Claude Code OpenTelemetry variables and probes `PATH` for `ccusage` through injected closures (so the logic is unit-tested without process state), produces `Problem` values with severities `warning` and `info`, and returns them in a separate `telemetry` object. They are rendered above the problem list and never counted in `remaining`, so a machine without telemetry is reported as unmeasured, not broken.
 
+## Artifact review
+
+`commands/artifacts.rs` joins the store (every version's `meta.json` kind), the registry (which projects, `global.skills` or `global.hooks` pin each version) and the event log (`PostToolUse` lines with `skill`, `SubagentStop` lines with `agent`, matched case-insensitively) into one row per version. `--unused` keeps versions with no pin at all, and pinned skills or agents with zero recorded use once the log spans `UNUSED_AFTER_DAYS` (7); kinds the log cannot observe (hooks, rules, commands, scripts) are never called unused on usage grounds.
+
 ## Locking and atomic writes
 
 | Mechanism | Detail |

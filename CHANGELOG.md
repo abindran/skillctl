@@ -13,6 +13,16 @@ heading when cutting a release.
 
 ### Added
 
+- `artifacts [--unused]` (strategy work item W30): every store version with
+  its kind, pins and recorded use from the event log (skill activations,
+  subagent runs); `--unused` keeps unpinned versions and pinned skills or
+  agents with no recorded use after seven days of log.
+- `doctor` reports the model defaults in effect (strategy work item W25):
+  the main `model` from `~/.claude/settings.json` and whether subagents
+  inherit it or run on `CLAUDE_CODE_SUBAGENT_MODEL`.
+- README "Model and effort defaults" section (W25) and a note that subagent
+  telemetry (strategy work item W21) is already covered by the logger's
+  `SubagentStart`/`SubagentStop` events with the agent type.
 - Script bundles (strategy work item W23). A folder with `SCRIPT.md` and
   one or more executable wrappers is linked as the folder
   `.claude/scripts/<name>`; rules K501–K507 check the document, that every

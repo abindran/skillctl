@@ -84,7 +84,13 @@ pub fn run(context: &mut Context<'_>, fix: bool) -> Result<(), Error> {
         }
         evidence
     };
-    let telemetry = super::telemetry::inspect_with_cursor(
+    let models = {
+        let settings_path = crate::harness::claude_settings().expand()?;
+        let settings = crate::harness::claude::load(fs_for_settings(), &settings_path)
+            .unwrap_or(serde_json::json!({}));
+        super::telemetry::ModelDefaults::from_settings(&settings, |name| std::env::var(name).ok())
+    };
+    let telemetry = super::telemetry::inspect_full(
         |name| std::env::var(name).ok(),
         |binary| {
             std::env::var_os("PATH").is_some_and(|path| {
@@ -93,6 +99,7 @@ pub fn run(context: &mut Context<'_>, fix: bool) -> Result<(), Error> {
             })
         },
         &cursor,
+        &models,
     );
     // MCP servers visible from this folder, scored against the event log.
     let user_home = crate::paths::HomePath::new("~/.claude.json")?
@@ -604,6 +611,12 @@ fn diagnose(context: &Context<'_>, fix: bool) -> Result<Vec<Problem>, Error> {
         }
     }
     Ok(problems)
+}
+
+/// Settings reads for the advisory sections go straight to disk; they are
+/// never part of a dry-run plan.
+fn fs_for_settings() -> &'static dyn crate::services::fs::Fs {
+    &crate::services::fs::RealFs
 }
 
 fn collect_writable(
