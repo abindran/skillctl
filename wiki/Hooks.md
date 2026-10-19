@@ -78,6 +78,8 @@ Matchers and `timeout` carry over; Cursor's `loop_limit` does not apply to impor
 
 Whether Cursor rewrites stdin field names to Claude Code's for imported hooks is not documented, so hook scripts should accept both shapes; the logger does.
 
+The setting itself is not stored anywhere skillctl can read (Cursor's `settings.json` has no key for it), so `doctor` infers it from the log: with at least one hook registered, a `"tool": "cursor"` event proves the import works (`cursor-imports` info with the count and last time); none at all is a `cursor-imports` warning naming the setting to confirm.
+
 ## The `skillctl-logger` hook
 
 `hooks/skillctl-logger/` in the repository (installed from the checkout or from Git with `--path hooks/skillctl-logger`). It is a plain hook: a `HOOK.md` declaring nine events with `matchers: {PostToolUse: "Skill|mcp__.*"}` and `timeout: 10`, and `hook.py`.

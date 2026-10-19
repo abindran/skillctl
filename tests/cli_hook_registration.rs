@@ -177,11 +177,44 @@ fn hook_add_links_registers_merges_backs_up_and_is_idempotent() {
     let rows = json(&out);
     assert_eq!(rows[0]["link"]["status"], "ok");
     assert_eq!(rows[0]["missing"], json!([]));
-    // Skills listing marks the pinned hook as global; doctor is clean.
+    // Skills listing marks the pinned hook as global; doctor is clean, and
+    // with a hook registered but no Cursor event logged it asks to confirm
+    // Third-Party Imports; one Cursor event turns that into confirmation.
     let out = ok(&e, &["--json", "skills"]);
     assert_eq!(json(&out)[0]["versions"][0]["global"], true);
     let out = ok(&e, &["--json", "doctor"]);
-    assert_eq!(json(&out)["problems"], json!([]));
+    let report = json(&out);
+    assert_eq!(report["problems"], json!([]));
+    let cursor = report["telemetry"]["findings"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|f| f["check"] == "cursor-imports")
+        .cloned()
+        .expect("cursor-imports finding");
+    assert_eq!(cursor["severity"], "warning");
+    assert!(
+        cursor["fix"]
+            .as_str()
+            .unwrap()
+            .contains("Third-Party Imports")
+    );
+    fs::create_dir_all(e.home.join("log")).unwrap();
+    fs::write(
+        e.home.join("log/events.jsonl"),
+        "{\"ts\":\"2026-10-19T12:00:00Z\",\"tool\":\"cursor\",\"event\":\"SessionEnd\"}\n",
+    )
+    .unwrap();
+    let out = ok(&e, &["--json", "doctor"]);
+    let cursor = json(&out)["telemetry"]["findings"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|f| f["check"] == "cursor-imports")
+        .cloned()
+        .unwrap();
+    assert_eq!(cursor["severity"], "info");
+    assert!(cursor["message"].as_str().unwrap().contains("1 event(s)"));
 
     // Remove: our entries go, the hand-written one and other keys stay, the
     // link is gone, and the pin is dropped.

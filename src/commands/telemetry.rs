@@ -52,8 +52,26 @@ impl Telemetry {
     }
 }
 
+/// What the event log says about Cursor: how many events it has written, when
+/// the last one was, and whether any hook is registered at all.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct CursorEvidence {
+    pub hooks_registered: usize,
+    pub events: usize,
+    pub last_event: Option<String>,
+}
+
 /// Inspect the environment through injected lookups so tests need no process state.
 pub fn inspect(var: impl Fn(&str) -> Option<String>, on_path: impl Fn(&str) -> bool) -> Telemetry {
+    inspect_with_cursor(var, on_path, &CursorEvidence::default())
+}
+
+/// `inspect`, plus what the log shows about Cursor running the registered hooks.
+pub fn inspect_with_cursor(
+    var: impl Fn(&str) -> Option<String>,
+    on_path: impl Fn(&str) -> bool,
+    cursor: &CursorEvidence,
+) -> Telemetry {
     let set = |name: &str| {
         var(name)
             .map(|value| value.trim().to_owned())
@@ -172,12 +190,33 @@ pub fn inspect(var: impl Fn(&str) -> Option<String>, on_path: impl Fn(&str) -> b
         ));
     }
 
-    findings.push(finding(
-        "cursor-telemetry",
-        "info",
-        "Cursor exports no telemetry; its baseline comes from the usage dashboard (cursor.com, Settings, Usage) and from hook logs".to_owned(),
-        "Nothing to set; record Cursor numbers from the dashboard and the hook log",
-    ));
+    // Cursor has no telemetry export; the hook log is its instrument, and the
+    // log also shows whether Cursor imports the registered hooks at all.
+    match (cursor.hooks_registered, cursor.events, &cursor.last_event) {
+        (0, _, _) => findings.push(finding(
+            "cursor-telemetry",
+            "info",
+            "Cursor exports no telemetry; its baseline comes from the usage dashboard (cursor.com, Settings, Usage) and from hook logs".to_owned(),
+            "Nothing to set; record Cursor numbers from the dashboard and the hook log",
+        )),
+        (hooks, 0, _) => findings.push(finding(
+            "cursor-imports",
+            "warning",
+            format!(
+                "No event from Cursor in the log although {hooks} hook(s) are registered; Cursor runs Claude Code hooks only when Third-Party Imports is on"
+            ),
+            "In Cursor open Settings, Agents, Third-Party Imports and enable \"Include Third-Party Plugins, Skills, and Other Configs\" (on by default), then send one prompt in Cursor and run skillctl doctor again",
+        )),
+        (_, events, last) => findings.push(finding(
+            "cursor-imports",
+            "info",
+            format!(
+                "Cursor runs the registered hooks ({events} event(s), last {}); Third-Party Imports is on",
+                last.as_deref().unwrap_or("unknown")
+            ),
+            "Nothing to do; Cursor's cost numbers still come from its usage dashboard",
+        )),
+    }
 
     Telemetry {
         claude_code,
@@ -311,6 +350,47 @@ mod tests {
                 .message
                 .contains("logs has no OTEL_EXPORTER_OTLP_ENDPOINT")
         );
+    }
+
+    #[test]
+    fn cursor_import_evidence_drives_the_cursor_finding() {
+        let full = [
+            ("CLAUDE_CODE_ENABLE_TELEMETRY", "1"),
+            ("OTEL_METRICS_EXPORTER", "otlp"),
+            ("OTEL_LOGS_EXPORTER", "otlp"),
+            ("OTEL_EXPORTER_OTLP_PROTOCOL", "grpc"),
+            ("OTEL_EXPORTER_OTLP_ENDPOINT", "http://localhost:4317"),
+            ("OTEL_LOG_TOOL_DETAILS", "1"),
+        ];
+        let vars: BTreeMap<&str, &str> = full.iter().copied().collect();
+        let run = |cursor: CursorEvidence| {
+            inspect_with_cursor(
+                |name| vars.get(name).map(|v| (*v).to_owned()),
+                |_| true,
+                &cursor,
+            )
+        };
+        let none = run(CursorEvidence {
+            hooks_registered: 1,
+            events: 0,
+            last_event: None,
+        });
+        assert_eq!(none.findings[0].check, "cursor-imports");
+        assert_eq!(none.findings[0].severity, "warning");
+        let seen = run(CursorEvidence {
+            hooks_registered: 1,
+            events: 12,
+            last_event: Some("2026-10-19T12:00:00Z".into()),
+        });
+        assert_eq!(seen.findings[0].check, "cursor-imports");
+        assert_eq!(seen.findings[0].severity, "info");
+        assert!(
+            seen.findings[0]
+                .message
+                .contains("12 event(s), last 2026-10-19T12:00:00Z")
+        );
+        let no_hooks = run(CursorEvidence::default());
+        assert_eq!(no_hooks.findings[0].check, "cursor-telemetry");
     }
 
     #[test]

@@ -13,6 +13,16 @@ heading when cutting a release.
 
 ### Added
 
+- `lint` rule I305 (strategy work item W11), a warning for content in an
+  always-loaded instruction file (`AGENTS.md`, `CLAUDE.md`, `CLAUDE.local.md`,
+  `.claude/rules/*.md`, `.cursor/rules/*.mdc`) that changes between sessions
+  and so invalidates the cacheable prompt prefix: timestamps and "last
+  updated" dates, `$(…)`/`${…}` expansions and `` !`command` `` injection,
+  and `@imports` of files that change often. Fenced code is skipped.
+- `doctor` reports whether Cursor runs the registered hooks (strategy work
+  item W12): with a hook registered and no `"tool": "cursor"` event in the
+  log it warns (`cursor-imports`) with the Third-Party Imports setting to
+  confirm; once Cursor events exist it reports the count and last time.
 - `doctor` audits MCP servers (strategy work item W10): every server the
   harnesses connect to from the current folder (`~/.claude.json` user and
   per-project entries with `disabledMcpjsonServers`, `.mcp.json`,

@@ -1,8 +1,8 @@
 //! Instruction-file rules I3xx for a project folder: `AGENTS.md`, `CLAUDE.md`,
 //! `.claude/CLAUDE.md` and `CLAUDE.local.md`. These files are team-owned and
 //! edited only by people, so every rule is read-only and ends in a suggested
-//! fix. This module ships I301–I304, I308 and I309; I305 and I306 arrive with
-//! the work items that need them.
+//! fix. This module ships I301–I305, I308 and I309; I306 arrives with the work
+//! item that needs it.
 use super::{Finding, Severity};
 use crate::{error::Error, services::fs::Fs};
 use std::{
@@ -30,6 +30,33 @@ const PROCEDURE_WORDS: [&str; 11] = [
     "deploy",
     "deployment",
     "migration",
+];
+
+/// Import targets whose content changes between sessions, which breaks the
+/// cacheable prefix every time they do.
+const VOLATILE_IMPORT: [&str; 10] = [
+    "log",
+    "status",
+    "changelog",
+    "todo",
+    "notes",
+    "journal",
+    "scratch",
+    ".jsonl",
+    ".tmp",
+    ".git/",
+];
+/// Words that mark a date on the same line as a generated timestamp rather
+/// than a date mentioned in prose.
+const STAMP_WORDS: [&str; 8] = [
+    "updated",
+    "generated",
+    "as of",
+    "last ",
+    "snapshot",
+    "timestamp",
+    "refreshed",
+    "synced",
 ];
 
 /// The two places Claude Code accepts a project `CLAUDE.md`, with the import
@@ -260,6 +287,38 @@ pub fn check(fs: &dyn Fs, folder: &Path, repo_root: Option<&Path>) -> Result<Vec
         }
     }
 
+    // I305: anything that changes between sessions in an always-loaded file
+    // invalidates the prompt cache for every turn after it.
+    let mut always_loaded: Vec<(PathBuf, String)> = Vec::new();
+    if let Some(agents) = &layout.agents {
+        always_loaded.push((agents.clone(), layout.agents_text.clone()));
+    }
+    for (path, text, _) in &layout.claude {
+        always_loaded.push((path.clone(), text.clone()));
+    }
+    if let Some(local) = &layout.local {
+        if let Some(text) = read_if_file(fs, local)? {
+            always_loaded.push((local.clone(), text));
+        }
+    }
+    always_loaded.extend(claude_rules(fs, folder)?);
+    always_loaded.extend(cursor_rules(fs, folder)?);
+    for (path, text) in &always_loaded {
+        for (offset, reason) in volatile_lines(text) {
+            let mut item = finding(
+                "I305",
+                true,
+                path.clone(),
+                format!(
+                    "{reason}; the file is loaded on every turn, so this breaks the cacheable prefix whenever it changes"
+                ),
+                "Keep always-loaded instruction files byte-identical between sessions: drop timestamps and dynamic content, and import only files that rarely change.",
+            );
+            item.line = Some(offset + 1);
+            findings.push(item);
+        }
+    }
+
     // I302: Cursor rules that always apply are AGENTS.md by another name.
     for (path, text) in cursor_rules(fs, folder)? {
         let lines = text.lines().count();
@@ -366,6 +425,97 @@ fn procedure(section: &Section) -> Option<String> {
     } else {
         None
     }
+}
+
+/// Lines of an instruction file whose content varies between sessions, with
+/// the reason: an ISO timestamp, a date beside a "last updated" style word, a
+/// shell expansion or `!`command`` injection, or an import of a volatile file.
+/// Fenced code is skipped: a shell example is content, not an instruction.
+fn volatile_lines(text: &str) -> Vec<(usize, String)> {
+    let mut out = Vec::new();
+    let mut in_fence = false;
+    for (offset, line) in text.lines().enumerate() {
+        let trimmed = line.trim_start();
+        if trimmed.starts_with("```") || trimmed.starts_with("~~~") {
+            in_fence = !in_fence;
+            continue;
+        }
+        if in_fence {
+            continue;
+        }
+        let lower = line.to_lowercase();
+        if iso_timestamp(line) {
+            out.push((offset, "line carries a timestamp".to_owned()));
+        } else if iso_date(line) && STAMP_WORDS.iter().any(|word| lower.contains(word)) {
+            out.push((offset, "line carries a generated date stamp".to_owned()));
+        }
+        if line.contains("!`") || line.contains("$(") || line.contains("${") {
+            out.push((
+                offset,
+                "line contains a shell expansion or command injection whose output varies"
+                    .to_owned(),
+            ));
+        }
+        for token in line.split_whitespace() {
+            if let Some(target) = token.strip_prefix('@') {
+                let target = target.trim_end_matches([',', ';', ')', ']']).to_lowercase();
+                if target.len() > 1 && VOLATILE_IMPORT.iter().any(|needle| target.contains(needle))
+                {
+                    out.push((
+                        offset,
+                        format!("import @{target} points at a file that changes often"),
+                    ));
+                }
+            }
+        }
+    }
+    out
+}
+
+fn iso_date(line: &str) -> bool {
+    let bytes = line.as_bytes();
+    bytes.windows(10).any(|w| {
+        w[4] == b'-'
+            && w[7] == b'-'
+            && w[..4].iter().all(u8::is_ascii_digit)
+            && w[5..7].iter().all(u8::is_ascii_digit)
+            && w[8..].iter().all(u8::is_ascii_digit)
+    })
+}
+
+fn iso_timestamp(line: &str) -> bool {
+    let bytes = line.as_bytes();
+    bytes.windows(16).any(|w| {
+        w[4] == b'-'
+            && w[7] == b'-'
+            && (w[10] == b'T' || w[10] == b' ')
+            && w[13] == b':'
+            && w[..4].iter().all(u8::is_ascii_digit)
+            && w[5..7].iter().all(u8::is_ascii_digit)
+            && w[8..10].iter().all(u8::is_ascii_digit)
+            && w[11..13].iter().all(u8::is_ascii_digit)
+            && w[14..16].iter().all(u8::is_ascii_digit)
+    })
+}
+
+/// `.claude/rules/*.md` files, sorted, with their text (loaded every session
+/// unless path-scoped).
+fn claude_rules(fs: &dyn Fs, folder: &Path) -> Result<Vec<(PathBuf, String)>, Error> {
+    let dir = folder.join(".claude/rules");
+    let entries = match fs.read_dir(&dir) {
+        Ok(entries) => entries,
+        Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(Vec::new()),
+        Err(source) => return Err(io_error(&dir, source)),
+    };
+    let mut rules = Vec::new();
+    for path in entries {
+        if path.extension().is_some_and(|ext| ext == "md") {
+            if let Some(text) = read_if_file(fs, &path)? {
+                rules.push((path, text));
+            }
+        }
+    }
+    Ok(rules)
 }
 
 /// `.cursor/rules/*.mdc` files, sorted, with their text.
@@ -536,6 +686,57 @@ mod tests {
                 ("I302".to_owned(), "big.mdc".to_owned()),
             ]
         );
+    }
+
+    #[test]
+    fn i305_flags_timestamps_dynamic_content_and_volatile_imports_outside_fences() {
+        let temp = tempfile::tempdir().unwrap();
+        let dir = temp.path();
+        let text = "# Project\n\nLast updated: 2026-10-19\nGenerated 2026-10-19T13:18:38Z by a script\nThe project started in 2024-03-01 and ships monthly.\nBranch: !`git branch --show-current`\nUse $(pwd) as the root\n@notes/daily.md\n@docs/architecture.md\n\n```sh\necho $(date) 2026-01-01T00:00:00Z @status.log\n```\n";
+        fs::write(dir.join("AGENTS.md"), text).unwrap();
+        fs::write(dir.join("CLAUDE.md"), "@AGENTS.md\n").unwrap();
+        let findings = check(&RealFs, dir, None).unwrap();
+        let hits: Vec<(String, Option<usize>)> = findings
+            .iter()
+            .filter(|f| f.rule == "I305")
+            .map(|f| (f.message.split(';').next().unwrap().to_owned(), f.line))
+            .collect();
+        assert_eq!(
+            hits,
+            [
+                ("line carries a generated date stamp".to_owned(), Some(3)),
+                ("line carries a timestamp".to_owned(), Some(4)),
+                (
+                    "line contains a shell expansion or command injection whose output varies"
+                        .to_owned(),
+                    Some(6)
+                ),
+                (
+                    "line contains a shell expansion or command injection whose output varies"
+                        .to_owned(),
+                    Some(7)
+                ),
+                (
+                    "import @notes/daily.md points at a file that changes often".to_owned(),
+                    Some(8)
+                ),
+            ],
+            "{findings:#?}"
+        );
+        // Rules folders are always loaded too.
+        fs::write(dir.join("AGENTS.md"), "# Project\n").unwrap();
+        fs::create_dir_all(dir.join(".claude/rules")).unwrap();
+        fs::write(
+            dir.join(".claude/rules/style.md"),
+            "Snapshot taken 2026-10-19.\n",
+        )
+        .unwrap();
+        let rules: Vec<String> = check(&RealFs, dir, None)
+            .unwrap()
+            .into_iter()
+            .map(|f| f.rule)
+            .collect();
+        assert_eq!(rules, ["I305"]);
     }
 
     #[test]

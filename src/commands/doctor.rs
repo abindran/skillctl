@@ -57,7 +57,34 @@ pub fn run(context: &mut Context<'_>, fix: bool) -> Result<(), Error> {
         super::init::ensure_home(context)?;
         super::read_locked(context, || diagnose(context, false))?
     };
-    let telemetry = super::telemetry::inspect(
+    // Cursor's import of the registered hooks is only observable through the
+    // log: a "tool": "cursor" line proves Third-Party Imports is on.
+    let cursor = {
+        let hooks_registered = super::read_locked(context, || super::load_registry(context))
+            .map(|registry| registry.global.hooks.len())
+            .unwrap_or(0);
+        let mut evidence = super::telemetry::CursorEvidence {
+            hooks_registered,
+            ..Default::default()
+        };
+        if let Ok(text) = std::fs::read_to_string(context.home.home().join("log/events.jsonl")) {
+            for line in text.lines() {
+                let Ok(event) = serde_json::from_str::<serde_json::Value>(line) else {
+                    continue;
+                };
+                if event.get("tool").and_then(serde_json::Value::as_str) == Some("cursor") {
+                    evidence.events += 1;
+                    if let Some(ts) = event.get("ts").and_then(serde_json::Value::as_str) {
+                        if evidence.last_event.as_deref().is_none_or(|last| ts > last) {
+                            evidence.last_event = Some(ts.to_owned());
+                        }
+                    }
+                }
+            }
+        }
+        evidence
+    };
+    let telemetry = super::telemetry::inspect_with_cursor(
         |name| std::env::var(name).ok(),
         |binary| {
             std::env::var_os("PATH").is_some_and(|path| {
@@ -65,6 +92,7 @@ pub fn run(context: &mut Context<'_>, fix: bool) -> Result<(), Error> {
                     .any(|dir| std::fs::metadata(dir.join(binary)).is_ok_and(|info| info.is_file()))
             })
         },
+        &cursor,
     );
     // MCP servers visible from this folder, scored against the event log.
     let user_home = crate::paths::HomePath::new("~/.claude.json")?
