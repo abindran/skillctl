@@ -72,7 +72,11 @@ fn forced_eval_hook_validates_and_installs() {
         .arg(hook_dir())
         .output()
         .unwrap();
-    assert!(out.status.success(), "{}", String::from_utf8_lossy(&out.stderr));
+    assert!(
+        out.status.success(),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
     let out = Command::new(env!("CARGO_BIN_EXE_skillctl"))
         .env("SKILLCTL_HOME", &home)
         .env("HOME", temp.path())
@@ -98,7 +102,12 @@ fn shortlist_matches_phrases_paths_and_keywords_and_stays_silent_otherwise() {
     fs::create_dir_all(&user_home).unwrap();
 
     // No skills visible: silent.
-    let (out, err) = run(&project, &user_home, "add a column to the orders table", false);
+    let (out, err) = run(
+        &project,
+        &user_home,
+        "add a column to the orders table",
+        false,
+    );
     assert_eq!(out, "");
     assert!(err.contains("no skills visible"), "{err}");
 
@@ -119,26 +128,64 @@ fn shortlist_matches_phrases_paths_and_keywords_and_stays_silent_otherwise() {
     );
 
     // A quoted trigger phrase: one candidate, scored above the rest.
-    let (out, _) = run(&project, &user_home, "please add a column to the orders table", false);
+    let (out, _) = run(
+        &project,
+        &user_home,
+        "please add a column to the orders table",
+        false,
+    );
     assert_eq!(
         out,
         "MANDATORY SKILL CHECK. Candidates: db-migrations\nFor each: [name] - YES/NO - [reason]. Call Skill(name) for every YES before any other tool.\n"
     );
     // A path mention reaches a skill through its paths, not its words.
-    let (out, err) = run(&project, &user_home, "the dropdown in jsapps/zohoone/app/templates/orgs.hbs is misaligned", false);
+    let (out, err) = run(
+        &project,
+        &user_home,
+        "the dropdown in jsapps/zohoone/app/templates/orgs.hbs is misaligned",
+        false,
+    );
     assert!(out.contains("Candidates: ember-client"), "{out}\n{err}");
     assert!(err.contains("path "), "{err}");
+    // Plurals and verb forms count as the same keyword.
+    let (out, err) = run(
+        &project,
+        &user_home,
+        "we need two new columns on the schemas for migrating orders",
+        false,
+    );
+    assert!(out.contains("db-migrations"), "{out}\n{err}");
     // Shared keywords alone need at least two.
-    let (out, _) = run(&project, &user_home, "draft the changelog entry and release notes for 2.1", false);
+    let (out, _) = run(
+        &project,
+        &user_home,
+        "draft the changelog entry and release notes for 2.1",
+        false,
+    );
     assert!(out.contains("release-notes"), "{out}");
-    let (out, err) = run(&project, &user_home, "what is a migration in general terms?", false);
+    let (out, err) = run(
+        &project,
+        &user_home,
+        "what is a migration in general terms?",
+        false,
+    );
     assert_eq!(out, "", "one keyword is not enough: {err}");
     // A prompt that matches nothing is silent.
-    let (out, err) = run(&project, &user_home, "explain the difference between a Vec and a VecDeque", false);
+    let (out, err) = run(
+        &project,
+        &user_home,
+        "explain the difference between a Vec and a VecDeque",
+        false,
+    );
     assert_eq!(out, "");
     assert!(err.contains("no candidate among 3 skill(s)"), "{err}");
     // Cursor: silent before anything is read.
-    let (out, err) = run(&project, &user_home, "add a column to the orders table", true);
+    let (out, err) = run(
+        &project,
+        &user_home,
+        "add a column to the orders table",
+        true,
+    );
     assert_eq!(out, "");
     assert_eq!(err, "");
     // Malformed input exits 0 silently.

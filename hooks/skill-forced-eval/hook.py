@@ -36,8 +36,24 @@ def debug(message):
         sys.stderr.write(f"skill-forced-eval: {message}\n")
 
 
+def stem(word):
+    """Light stemming so columns/column, migrations/migration and
+    rolling/roll compare equal; good enough for keyword overlap."""
+    for suffix in ("ing", "ies", "es", "ed", "s"):
+        if word.endswith(suffix) and len(word) - len(suffix) >= 3:
+            word = word[: -len(suffix)]
+            if suffix == "ies":
+                word += "y"
+            break
+    return word
+
+
 def words(text):
-    return {w for w in re.findall(r"[a-z0-9][a-z0-9_-]{2,}", text.lower()) if w not in STOPWORDS}
+    return {
+        stem(w)
+        for w in re.findall(r"[a-z0-9][a-z0-9_-]{2,}", text.lower())
+        if w not in STOPWORDS
+    }
 
 
 def paths(text):
