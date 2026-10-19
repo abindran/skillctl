@@ -10,6 +10,7 @@ pub mod instructions;
 pub mod org;
 pub mod report;
 pub mod rule;
+pub mod script;
 pub mod spec;
 
 use crate::{artifact::Kind, error::Error, services::fs::Fs, skill::Skill};
@@ -80,7 +81,8 @@ fn suppressible(rule: &str) -> bool {
         || hook::STRUCTURAL.contains(&rule)
         || self::rule::STRUCTURAL.contains(&rule)
         || command::STRUCTURAL.contains(&rule)
-        || agent::STRUCTURAL.contains(&rule))
+        || agent::STRUCTURAL.contains(&rule)
+        || script::STRUCTURAL.contains(&rule))
 }
 
 /// The rule groups a kind is validated with.
@@ -96,6 +98,7 @@ pub fn rules_for(kind: Kind) -> &'static [&'static dyn Rule] {
         Kind::Rule => &[&self::rule::RuleRules],
         Kind::Command => &[&command::CommandRules],
         Kind::Agent => &[&agent::AgentRules],
+        Kind::Script => &[&script::ScriptRules],
     }
 }
 
@@ -107,6 +110,7 @@ pub fn scaffold_rule(kind: Kind) -> &'static dyn Rule {
         Kind::Rule => &self::rule::RuleRules,
         Kind::Command => &command::CommandRules,
         Kind::Agent => &agent::AgentRules,
+        Kind::Script => &script::ScriptRules,
     }
 }
 
@@ -119,6 +123,7 @@ fn gate_rules(kind: Kind) -> (&'static str, &'static str, &'static str) {
         Kind::Rule => ("K201", "K201", "K201"),
         Kind::Command => ("K301", "K301", "K301"),
         Kind::Agent => ("H220", "H220", "H220"),
+        Kind::Script => ("K501", "K501", "K507"),
     }
 }
 

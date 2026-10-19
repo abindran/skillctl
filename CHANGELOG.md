@@ -13,6 +13,17 @@ heading when cutting a release.
 
 ### Added
 
+- Script bundles (strategy work item W23). A folder with `SCRIPT.md` and
+  one or more executable wrappers is linked as the folder
+  `.claude/scripts/<name>`; rules K501–K507 check the document, that every
+  wrapper has a shebang and the executable bit, the script hygiene shared
+  with skills, and the absence of symlinks. `lint` rule I306 warns when a
+  bundle pinned in the folder's project is not named in `AGENTS.md` or
+  `CLAUDE.md`. `new --kind script` scaffolds a bundle with a quiet `run.sh`.
+  Two bundles ship under `wrappers/`: `test-quiet` (run a command, print one
+  line on success and the failing lines on failure, keep the exit code) and
+  `log-errors` (the matching lines of a log with context, duplicates
+  collapsed, capped at 200 lines).
 - The bundled `hooks/subagent-schema/` hook (strategy work item W20): on
   `SubagentStop` it validates the agent's `last_assistant_message` against
   the `schema.json` beside the agent definition the project links, exits 2

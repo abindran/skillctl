@@ -9,7 +9,8 @@ use crate::{
     cli::Bump,
     commands::init::{
         DEFAULT_AGENT_TEMPLATE, DEFAULT_COMMAND_TEMPLATE, DEFAULT_HOOK_SCRIPT,
-        DEFAULT_HOOK_TEMPLATE, DEFAULT_RULE_TEMPLATE, DEFAULT_TEMPLATE,
+        DEFAULT_HOOK_TEMPLATE, DEFAULT_RULE_TEMPLATE, DEFAULT_SCRIPT_TEMPLATE,
+        DEFAULT_SCRIPT_WRAPPER, DEFAULT_TEMPLATE,
     },
     error::Error,
     names::SkillName,
@@ -34,6 +35,7 @@ fn default_template(kind: Kind) -> &'static str {
         Kind::Rule => "rule",
         Kind::Command => "command",
         Kind::Agent => "agent",
+        Kind::Script => "script",
     }
 }
 
@@ -82,6 +84,14 @@ pub fn new(
             Kind::Rule => (DEFAULT_RULE_TEMPLATE.into(), Vec::new()),
             Kind::Command => (DEFAULT_COMMAND_TEMPLATE.into(), Vec::new()),
             Kind::Agent => (DEFAULT_AGENT_TEMPLATE.into(), Vec::new()),
+            Kind::Script => (
+                DEFAULT_SCRIPT_TEMPLATE.into(),
+                vec![(
+                    "run.sh".to_owned(),
+                    DEFAULT_SCRIPT_WRAPPER.as_bytes().to_vec(),
+                    true,
+                )],
+            ),
         },
         Err(error) => return Err(io_error(&path, error)),
         Ok(_) => {
@@ -412,6 +422,7 @@ pub(crate) fn rewrite(
                     Kind::Rule => "Describe when Cursor should attach this rule.",
                     Kind::Command => "Describe what this slash command does.",
                     Kind::Agent => "Describe when the main agent should delegate to this subagent.",
+                    Kind::Script => "Describe the commands these wrappers replace and what they print.",
                 }),
             );
         }

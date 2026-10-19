@@ -115,7 +115,7 @@ Queries perform no writes, including in dry runs. Callers hold the registry lock
 }
 ```
 
-`kind` is `skill`, `hook`, `rule`, `command` or `agent`; it is optional on read (versions stored before hooks existed have no field and are skills) and always written. `source.kind` is `git`, `local` (installed from a path or sealed from a draft) or `new`. Git sources carry `url` and `commit`, with optional `ref` and repository-relative `subdir`. `Metadata` is read and atomically written through the `Fs` service; missing or malformed metadata is an error, not a default. Because `meta.json` lives beside the skill folder, writing it never changes the content hash.
+`kind` is `skill`, `hook`, `rule`, `command`, `agent` or `script`; it is optional on read (versions stored before hooks existed have no field and are skills) and always written. `source.kind` is `git`, `local` (installed from a path or sealed from a draft) or `new`. Git sources carry `url` and `commit`, with optional `ref` and repository-relative `subdir`. `Metadata` is read and atomically written through the `Fs` service; missing or malformed metadata is an error, not a default. Because `meta.json` lives beside the skill folder, writing it never changes the content hash.
 
 ## Canonical content hash
 

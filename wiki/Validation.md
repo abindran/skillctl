@@ -142,6 +142,22 @@ A folder whose root document is `RULE.mdc` is a Cursor rule (`validate::rule::Ru
 
 K201–K204 and K301–K304 are structural and never suppressed. Hook rule K111 also checks `companions`, a list of valid artifact names that `hook add` pins into every project.
 
+## Script bundle rules
+
+A folder whose root document is `SCRIPT.md` is a script bundle (`validate::script::ScriptRules`): the wrappers agents should run instead of raw commands, linked as the folder `.claude/scripts/<name>`.
+
+| ID | Severity | Rule |
+|---|---|---|
+| K501 | error | `SCRIPT.md` exists and parses |
+| K502 | error | `name` matches the pattern and the folder name |
+| K503 | error | `description` present, at most 1,024 characters |
+| K504 | error | `metadata.version` parses as semver |
+| K505 | error | At least one wrapper (a file beside `SCRIPT.md` that starts with `#!` or has an execute bit), and every wrapper has both the shebang and the bit |
+| K506 | mixed | Wrappers request no interactive input (warning) and contain no `sudo` or `curl … \| sh` (error); no file contains a likely secret (error); the heuristics are `org.rs`'s |
+| K507 | error | No symlinks inside the bundle |
+
+K501–K505 are structural and never suppressed.
+
 ## Agent rules
 
 A folder whose root document is `AGENT.md` is a subagent (`validate::agent::AgentRules`). The rules encode the asymmetry between the harnesses: Claude Code honours `tools`, `disallowedTools`, `model`, `skills` and `maxTurns`; Cursor imports `.claude/agents/*.md` itself but understands only `name`, `description`, `model`, `readonly` and `is_background`, and `.cursor/agents/<name>.md` wins on a name clash, which is what a `cursor.md` override is linked as.
@@ -169,11 +185,12 @@ H220, H221, H223 and H225 are structural and never suppressed. `commands::agent:
 | I302 | warning | Each `.cursor/rules/*.mdc` has at most 500 lines, and one whose frontmatter sets `alwaysApply: true` has at most 100 lines |
 | I303 | warning | No `AGENTS.md` section (ATX headings split sections; headings inside fenced code do not) reads like a procedure: five or more ordered steps (`1.`/`1)` outside fenced code), three or more fenced code blocks, or a heading containing a procedure word (`how to`, `process`, `procedure`, `runbook`, `checklist`, `steps`, `workflow`, `release`, `deploy`, `deployment`, `migration`) together with at least three steps or one block. Reported at the heading line |
 | I304 | error | Each existing `CLAUDE.md` imports `AGENTS.md`, and the imported `AGENTS.md` exists |
+| I306 | warning | For every script bundle pinned in the folder's project (resolved through the registry's `InstanceResolver`, kinds read from the store), `AGENTS.md` or a `CLAUDE.md` contains `.claude/scripts/<name>`. Reported against `AGENTS.md`, or the path where it should be |
 | I305 | warning | No line outside fenced code in an always-loaded file (`AGENTS.md`, the `CLAUDE.md`s, `CLAUDE.local.md`, `.claude/rules/*.md`, `.cursor/rules/*.mdc`) varies between sessions: an ISO timestamp, an ISO date on a line with a stamp word (`updated`, `generated`, `as of`, `last`, `snapshot`, `timestamp`, `refreshed`, `synced`), a `$(`, `${` or `` !` `` expansion, or an `@import` whose target name contains `log`, `status`, `changelog`, `todo`, `notes`, `journal`, `scratch`, `.jsonl`, `.tmp` or `.git/`. Reported per line |
 | I308 | warning | No comparable line (trimmed, ≥ 24 characters, not an import, containing a letter or digit) of `CLAUDE.md` also appears in `AGENTS.md`; reported per line |
 | I309 | error | When `AGENTS.md` exists and nothing imports it, no `CLAUDE.md`, `.claude/CLAUDE.md` or `CLAUDE.local.md` exists in the folder or any parent up to the repository root, because any of them makes Claude Code skip `AGENTS.md`. A `CLAUDE.md` in the folder itself is reported as I304 instead |
 
-I rules honour the registry allow-list (`settings.validate.allow`) and `--strict`. The remaining I3xx rule named by the optimisation strategy (I306 quiet wrappers) is added with the work item that needs it.
+I rules honour the registry allow-list (`settings.validate.allow`) and `--strict`. `lint` computes the pinned script bundles in `commands::lint` and passes their names to `instructions::check`.
 
 ## Suppression and strict mode
 

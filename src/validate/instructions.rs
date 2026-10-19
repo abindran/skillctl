@@ -1,8 +1,7 @@
 //! Instruction-file rules I3xx for a project folder: `AGENTS.md`, `CLAUDE.md`,
 //! `.claude/CLAUDE.md` and `CLAUDE.local.md`. These files are team-owned and
 //! edited only by people, so every rule is read-only and ends in a suggested
-//! fix. This module ships I301–I305, I308 and I309; I306 arrives with the work
-//! item that needs it.
+//! fix. This module ships I301–I306, I308 and I309.
 use super::{Finding, Severity};
 use crate::{error::Error, services::fs::Fs};
 use std::{
@@ -184,9 +183,41 @@ fn finding(
 
 /// Run the instruction-file rules. `repo_root` bounds the ancestor search for
 /// I309; `None` means "not in a repository", which searches to the root.
-pub fn check(fs: &dyn Fs, folder: &Path, repo_root: Option<&Path>) -> Result<Vec<Finding>, Error> {
+/// `scripts` are the script bundles pinned in this folder's project, which
+/// `AGENTS.md` must point agents at (I306).
+pub fn check(
+    fs: &dyn Fs,
+    folder: &Path,
+    repo_root: Option<&Path>,
+    scripts: &[String],
+) -> Result<Vec<Finding>, Error> {
     let layout = layout(fs, folder)?;
     let mut findings = Vec::new();
+
+    // I306: a quiet wrapper nobody is told about is never used.
+    for script in scripts {
+        let needle = format!(".claude/scripts/{script}");
+        let mentioned = layout.agents_text.contains(&needle)
+            || layout
+                .claude
+                .iter()
+                .any(|(_, text, _)| text.contains(&needle));
+        if !mentioned {
+            let path = layout
+                .agents
+                .clone()
+                .unwrap_or_else(|| folder.join("AGENTS.md"));
+            findings.push(finding(
+                "I306",
+                true,
+                path,
+                format!(
+                    "script bundle '{script}' is pinned here but no instruction file tells agents to run {needle}/…; they will keep running the raw command"
+                ),
+                "Add a line to AGENTS.md naming the wrapper to use instead of the raw command, for example: Run tests with .claude/scripts/test-quiet/test-quiet.sh cargo test.",
+            ));
+        }
+    }
 
     // I304: a CLAUDE.md must hand off to AGENTS.md, and AGENTS.md must exist.
     for (path, _, imports) in &layout.claude {
@@ -563,7 +594,7 @@ mod tests {
     use std::fs;
 
     fn ids(folder: &Path, root: Option<&Path>) -> Vec<String> {
-        check(&RealFs, folder, root)
+        check(&RealFs, folder, root, &[])
             .unwrap()
             .into_iter()
             .map(|f| f.rule)
@@ -622,7 +653,7 @@ mod tests {
             "{facts}\n## Deploy\n\n1. build\n2. tag\n3. push\n4. wait\n5. verify\n\n## Debugging tips\n\n```\na\n```\n```\nb\n```\n```\nc\n```\n\n## Release notes\n\nWe cut a release every two weeks; see the changelog.\n\n## How to rotate keys\n\n```\nrotate --all\n```\n"
         );
         fs::write(dir.join("AGENTS.md"), &text).unwrap();
-        let findings = check(&RealFs, dir, None).unwrap();
+        let findings = check(&RealFs, dir, None, &[]).unwrap();
         let hits: Vec<(String, Option<usize>)> =
             findings.iter().map(|f| (f.rule.clone(), f.line)).collect();
         assert_eq!(
@@ -669,7 +700,7 @@ mod tests {
         )
         .unwrap();
         fs::write(rules.join("notes.md"), "x\n".repeat(600)).unwrap();
-        let findings = check(&RealFs, dir, None).unwrap();
+        let findings = check(&RealFs, dir, None, &[]).unwrap();
         let hits: Vec<(String, String)> = findings
             .iter()
             .map(|f| {
@@ -695,7 +726,7 @@ mod tests {
         let text = "# Project\n\nLast updated: 2026-10-19\nGenerated 2026-10-19T13:18:38Z by a script\nThe project started in 2024-03-01 and ships monthly.\nBranch: !`git branch --show-current`\nUse $(pwd) as the root\n@notes/daily.md\n@docs/architecture.md\n\n```sh\necho $(date) 2026-01-01T00:00:00Z @status.log\n```\n";
         fs::write(dir.join("AGENTS.md"), text).unwrap();
         fs::write(dir.join("CLAUDE.md"), "@AGENTS.md\n").unwrap();
-        let findings = check(&RealFs, dir, None).unwrap();
+        let findings = check(&RealFs, dir, None, &[]).unwrap();
         let hits: Vec<(String, Option<usize>)> = findings
             .iter()
             .filter(|f| f.rule == "I305")
@@ -731,12 +762,44 @@ mod tests {
             "Snapshot taken 2026-10-19.\n",
         )
         .unwrap();
-        let rules: Vec<String> = check(&RealFs, dir, None)
+        let rules: Vec<String> = check(&RealFs, dir, None, &[])
             .unwrap()
             .into_iter()
             .map(|f| f.rule)
             .collect();
         assert_eq!(rules, ["I305"]);
+    }
+
+    #[test]
+    fn i306_wants_pinned_script_bundles_named_in_an_instruction_file() {
+        let temp = tempfile::tempdir().unwrap();
+        let dir = temp.path();
+        let scripts = ["test-quiet".to_owned()];
+        // No AGENTS.md at all: reported against the file that should exist.
+        let findings = check(&RealFs, dir, None, &scripts).unwrap();
+        assert_eq!(findings.len(), 1);
+        assert_eq!(findings[0].rule, "I306");
+        assert_eq!(findings[0].path, dir.join("AGENTS.md"));
+        fs::write(
+            dir.join("AGENTS.md"),
+            "# Project\n\nRun tests with cargo test.\n",
+        )
+        .unwrap();
+        assert_eq!(ids_with(dir, &scripts), ["I306"]);
+        fs::write(
+            dir.join("AGENTS.md"),
+            "# Project\n\nRun tests with .claude/scripts/test-quiet/test-quiet.sh cargo test.\n",
+        )
+        .unwrap();
+        assert!(ids_with(dir, &scripts).is_empty());
+    }
+
+    fn ids_with(folder: &Path, scripts: &[String]) -> Vec<String> {
+        check(&RealFs, folder, None, scripts)
+            .unwrap()
+            .into_iter()
+            .map(|f| f.rule)
+            .collect()
     }
 
     #[test]
@@ -759,7 +822,7 @@ mod tests {
             "@AGENTS.md\n\nRun cargo test before every commit.\n",
         )
         .unwrap();
-        let findings = check(&RealFs, dir, None).unwrap();
+        let findings = check(&RealFs, dir, None, &[]).unwrap();
         assert_eq!(findings.len(), 1);
         assert_eq!(findings[0].rule, "I308");
         assert_eq!(findings[0].line, Some(3));

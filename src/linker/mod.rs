@@ -84,6 +84,7 @@ const RULES_DIR: &str = ".cursor/rules";
 const COMMAND_DIRS: [&str; 2] = [".claude/commands", ".cursor/commands"];
 const CLAUDE_AGENTS_DIR: &str = ".claude/agents";
 const CURSOR_AGENTS_DIR: &str = ".cursor/agents";
+pub const SCRIPTS_DIR: &str = ".claude/scripts";
 /// The Cursor override an agent folder may carry beside `AGENT.md`.
 pub const AGENT_CURSOR_OVERRIDE: &str = "cursor.md";
 
@@ -150,6 +151,13 @@ pub fn plans(
                     });
                 }
             }
+            // A script bundle links as a folder, so AGENTS.md can name
+            // `.claude/scripts/<name>/<wrapper>` and the path never changes.
+            Kind::Script => plans.push(LinkPlan {
+                dir: RelPath::new(SCRIPTS_DIR)?,
+                name: name.as_str().to_owned(),
+                target: dir.clone(),
+            }),
             // Hooks are registered with `hook add`, never linked into a project.
             Kind::Hook => {}
         }
@@ -184,7 +192,7 @@ pub fn reconcile(
     if layout == Layout::Kinds {
         // Visit every kind folder even with no plan for it, so the links of
         // an unpinned rule or command are removed.
-        for dir in [RULES_DIR, CLAUDE_AGENTS_DIR, CURSOR_AGENTS_DIR]
+        for dir in [RULES_DIR, CLAUDE_AGENTS_DIR, CURSOR_AGENTS_DIR, SCRIPTS_DIR]
             .into_iter()
             .chain(COMMAND_DIRS)
         {

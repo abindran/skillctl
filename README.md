@@ -34,7 +34,7 @@ The technical architecture lives in the [project wiki](https://github.com/abindr
 | **Do not keep duplicate copies per harness or per clone.** | Each skill version exists exactly once in `~/.skills/store/`. Projects and harness folders only hold symlinks to it. |
 | **Project-specific skills that follow the project to every clone.** | A project is a registry entry with pinned skill versions. Attach any number of folders to it; `add` and `remove` reconcile all of them, and `relink` restores links after `git clean -fdx` or a fresh checkout. |
 | **Keep project repositories clean.** | Links are listed individually in `.git/info/exclude`, so `git status` stays empty and project-owned skills in the same folder remain visible to Git. |
-| **Validate skills against open standards.** | `validate` implements the Agent Skills spec rules (S001–S008), organisation quality rules (O101–O133), directive-description rules (O140–O145) and harness-compatibility warnings (H201–H205); hooks, rules, commands and agents get their own rules (K101–K111, K201–K207, K301–K305, H220–H227). JUnit output plugs into CI merge-request widgets. |
+| **Validate skills against open standards.** | `validate` implements the Agent Skills spec rules (S001–S008), organisation quality rules (O101–O133), directive-description rules (O140–O145) and harness-compatibility warnings (H201–H205); hooks, rules, commands, agents and script bundles get their own rules (K101–K111, K201–K207, K301–K305, H220–H227, K501–K507). JUnit output plugs into CI merge-request widgets. |
 | **Rules and slash commands shared by both tools, never committed.** | A Cursor rule (`RULE.mdc`) or a slash command (`COMMAND.md`) is stored and versioned like a skill. Pinning it to a project links `.cursor/rules/<name>.mdc`, or `.claude/commands/<name>.md` and `.cursor/commands/<name>.md`, into the store, hidden through `.git/info/exclude` like every other link. One copy, both tools, nothing in the repository. |
 | **Subagents defined once for both tools.** | An agent (`AGENT.md`) links as `.claude/agents/<name>.md`; Cursor imports that folder itself and honours `readonly`. Where Cursor needs a different model or a skill preload, `skillctl agent derive` writes a `cursor.md` override that links as `.cursor/agents/<name>.md`. Rules H220–H227 catch an agent Cursor would run unscoped, a Claude-only model alias with no override, and a stale override. Four read-only agents ship in [`agents/`](agents/). |
 | **Store hooks next to skills, register them once.** | A hook is a `HOOK.md` declaring lifecycle events plus the script a harness runs. Hooks are authored, validated, versioned and installed exactly like skills, in the same store. `hook add` links one under `~/.claude/hooks/` and merges its events into `~/.claude/settings.json`, which Cursor reads too, so one registration serves both tools. |
@@ -277,7 +277,7 @@ Every command that asks a question also accepts flags that answer it, so all of 
 
 | Command | Run from | What it changes |
 |---|---|---|
-| `skillctl add <name>[@<version>] [--project <name>] [--draft]` | instance folder | Pins a skill, rule, command or agent in the current (or named) project and reconciles every instance of it. Where the link goes depends on the kind: skills into every `link_targets` folder, rules to `.cursor/rules/<name>.mdc`, commands to `.claude/commands/<name>.md` and `.cursor/commands/<name>.md`, agents to `.claude/agents/<name>.md` plus `.cursor/agents/<name>.md` when the agent folder carries a `cursor.md`. Hooks are registered with `hook add` instead, and rules and commands are project-level (`global add` refuses them). Without a version, pins the highest stable store version. `--draft` links the writable draft instead. Re-adding with a different version changes the pin. Fails with a hint if the skill is not in the store. After pinning, prints any directive-description warnings (O140–O145) for the skill and the project's index budget (O143) on stderr; the same data is under `advisory` in `--json`. `global add` and `attach --skills` do the same. |
+| `skillctl add <name>[@<version>] [--project <name>] [--draft]` | instance folder | Pins a skill, rule, command or agent in the current (or named) project and reconciles every instance of it. Where the link goes depends on the kind: skills into every `link_targets` folder, rules to `.cursor/rules/<name>.mdc`, commands to `.claude/commands/<name>.md` and `.cursor/commands/<name>.md`, agents to `.claude/agents/<name>.md` plus `.cursor/agents/<name>.md` when the agent folder carries a `cursor.md`, script bundles as the folder `.claude/scripts/<name>`. Hooks are registered with `hook add` instead, and rules and commands are project-level (`global add` refuses them). Without a version, pins the highest stable store version. `--draft` links the writable draft instead. Re-adding with a different version changes the pin. Fails with a hint if the skill is not in the store. After pinning, prints any directive-description warnings (O140–O145) for the skill and the project's index budget (O143) on stderr; the same data is under `advisory` in `--json`. `global add` and `attach --skills` do the same. |
 | `skillctl remove <skill> [--project <name>]` | instance folder | Unpins the skill and reconciles every instance, deleting its links. |
 | `skillctl relink [--project <name>] [--all]` | instance folder or anywhere | Reconciles the current instance, every instance of one project, or everything. `--all` reconciles global skills first and cleans links in link targets that were removed from the settings. |
 | `skillctl global add <skill>[@<version>]` | anywhere | Pins a skill globally and links it into the user-level folders (`~/.claude/skills/` by default). Refuses a name that any project pins. |
@@ -288,7 +288,7 @@ Every command that asks a question also accepts flags that answer it, so all of 
 
 | Command | Run from | What it changes |
 |---|---|---|
-| `skillctl new <name> [--kind skill\|hook\|rule\|command\|agent] [--from-template <name>]` | anywhere | Scaffolds `~/.skills/drafts/<name>/` with the name filled in and `metadata.version: 0.1.0`. A rule (`--kind rule`) comes from `templates/rule/RULE.mdc`, a command (`--kind command`) from `templates/command/COMMAND.md`, and an agent (`--kind agent`) from `templates/agent/AGENT.md` (a read-only Haiku explorer returning a fixed JSON shape). A skill (the default) comes from `templates/default/SKILL.md`, whose description is a directive template with `[placeholders]` to replace (O144 flags any left in), with empty `scripts/` and `references/` folders. A hook (`--kind hook`) comes from `templates/hook/`: `HOOK.md` plus every other file in the template folder (the `hook.py` entry script, executable), with `{{name}}` substituted. Never replaces an existing draft. |
+| `skillctl new <name> [--kind skill\|hook\|rule\|command\|agent\|script] [--from-template <name>]` | anywhere | Scaffolds `~/.skills/drafts/<name>/` with the name filled in and `metadata.version: 0.1.0`. A rule (`--kind rule`) comes from `templates/rule/RULE.mdc`, a command (`--kind command`) from `templates/command/COMMAND.md`, an agent (`--kind agent`) from `templates/agent/AGENT.md` (a read-only Haiku explorer returning a fixed JSON shape), and a script bundle (`--kind script`) from `templates/script/` (`SCRIPT.md` plus a quiet `run.sh` wrapper). A skill (the default) comes from `templates/default/SKILL.md`, whose description is a directive template with `[placeholders]` to replace (O144 flags any left in), with empty `scripts/` and `references/` folders. A hook (`--kind hook`) comes from `templates/hook/`: `HOOK.md` plus every other file in the template folder (the `hook.py` entry script, executable), with `{{name}}` substituted. Never replaces an existing draft. |
 | `skillctl seal <name> [--bump major\|minor\|patch]` | anywhere | Runs the full validator with the registry allow-list; errors leave the draft intact. Stages a read-only copy under `store/<name>/<version>/<name>/`, writes `meta.json` with `kind` (`skill` or `hook`) and `source.kind: local`, then deletes the draft. Fails if the version already exists. |
 | `skillctl edit <name>[@<version>] [--force]` | anywhere | Copies a stored version (default: highest stable) into a writable draft with its patch version bumped, restoring write permission on the copy. Refuses to replace an existing draft unless `--force` is given. Link a skill draft into a project with `add <skill> --draft`, then `seal` it as the next version. |
 
@@ -320,7 +320,7 @@ Hooks never go into `skills/` folders: `add`, `attach --skills` and `global add`
 
 | Command | Run from | What it changes |
 |---|---|---|
-| `skillctl lint [<folder>] [--format text\|json\|junit] [--strict]` | anywhere | Checks a project's instruction files (`AGENTS.md`, `CLAUDE.md`, `.claude/CLAUDE.md`, `CLAUDE.local.md`, `.cursor/rules/*.mdc`) with rules I301–I305, I308 and I309 and reports each problem with a suggested fix. Read-only: those files are team-owned and changed through review, never by skillctl. Same formats, allow-list and exit code 3 as `validate`. |
+| `skillctl lint [<folder>] [--format text\|json\|junit] [--strict]` | anywhere | Checks a project's instruction files (`AGENTS.md`, `CLAUDE.md`, `.claude/CLAUDE.md`, `CLAUDE.local.md`, `.cursor/rules/*.mdc`) with rules I301–I306, I308 and I309 and reports each problem with a suggested fix. Read-only: those files are team-owned and changed through review, never by skillctl. Same formats, allow-list and exit code 3 as `validate`. |
 | `skillctl validate [<name>[@<version>\|@draft] \| <path>] [--format text\|json\|junit] [--strict] [--with-reference]` | anywhere | Validates one store version, a draft, any folder, or with no argument every draft and every store version. A folder with `SKILL.md` gets the skill rules, one with `HOOK.md` the hook rules. Nothing is written. |
 | `skillctl doctor [--fix]` | anywhere | Reports, each with the command that fixes it: a missing or too-old `git`; instance folders that no longer exist or were replaced; pinned versions missing from the store; missing, wrong, dangling or conflicting links in every instance and user-level folder; store versions whose content no longer matches `meta.json` or that gained write permission; personal copies in `~/.claude/skills`, `~/.agents/skills` or `~/.cursor/skills` that shadow a project skill; symlinked or repository-resident global targets; repositories with `core.symlinks=false`. `--fix` removes vanished instances from the registry, relinks everything and restores read-only modes. Exits 1 while problems remain. An **MCP servers** section lists every server the harnesses connect to from this folder (`~/.claude.json` user and per-project entries, `.mcp.json`, `~/.cursor/mcp.json`, `.cursor/mcp.json`) with its command or URL, disabled state and how often the event log has seen its tools called; a server with no recorded call after a week of logging is `mcp-unused` (warning, with a CLI alternative such as `gh` where one exists), earlier it is `mcp-unmeasured` (info). Every connected server's tool definitions are loaded on every turn, so this is where the largest token savings tend to be. A separate **Telemetry** section, which never affects the exit status, says whether Claude Code's OpenTelemetry export is on and complete (`CLAUDE_CODE_ENABLE_TELEMETRY=1`, `OTEL_METRICS_EXPORTER`, `OTEL_LOGS_EXPORTER`, `OTEL_EXPORTER_OTLP_PROTOCOL`, `OTEL_EXPORTER_OTLP_ENDPOINT`, and `OTEL_LOG_TOOL_DETAILS=1` so `agent.name` is not redacted), whether `ccusage` is on `PATH`, that Cursor's usage comes from its dashboard and hook logs and, once a hook is registered, whether the event log has seen Cursor run it (`cursor-imports`: a warning asking you to confirm **Settings → Agents → Third-Party Imports** while no Cursor event has arrived, an info line with the count once one has); `--json` carries it under `telemetry`. |
 | `skillctl config get\|set <key> [<value>]` | anywhere | Reads or changes `link_targets`, `global_link_targets`, `git_exclude`, `global_in_instances` and `validate.allow` (lists are comma-separated). After changing link targets it offers to run `relink --all` (`--yes` answers), which also removes managed links from targets that were dropped. |
@@ -409,6 +409,32 @@ The four bundled agents in [`agents/`](agents/) follow the strategy's Story 3 (d
 ```bash
 skillctl install ./agents --all && skillctl add explore
 ```
+
+### Script bundles
+
+A script bundle is `SCRIPT.md` plus one or more wrappers, linked as the folder `.claude/scripts/<name>` so the path agents are told to run never changes across versions. The point is context: a passing `cargo test` prints hundreds of lines the agent then carries for the rest of the session; a wrapper prints one.
+
+| Rule | Checks |
+|---|---|
+| K501–K504 | `SCRIPT.md` present and parsable; `name` matches the folder; `description`; `metadata.version` |
+| K505 | At least one wrapper (an executable file with a shebang) beside `SCRIPT.md`, and every wrapper has both |
+| K506 | No interactive input (warning), no `sudo` or `curl … \| sh`, no likely secrets, as for skill scripts |
+| K507 | No symlinks inside the bundle |
+
+A pinned bundle that no instruction file mentions is pointless, so `lint` rule **I306** warns when `AGENTS.md` (or `CLAUDE.md`) does not name `.claude/scripts/<name>` for a bundle the project pins.
+
+Two bundles ship in [`wrappers/`](wrappers/):
+
+| Bundle | Replaces | Prints |
+|---|---|---|
+| `test-quiet` | `cargo test`, `npm test`, any build | on success one line plus the last three lines; on failure the lines matching error/fail/panic/assert/exception (≤ 40) and the last twenty; the command's exit code is preserved |
+| `log-errors` | `cat server.log`, `tail -n 1000` | the matching lines (error/warn/fail/panic/exception, or a pattern you pass) with two lines of context, consecutive duplicates collapsed with a count, capped at 200 lines |
+
+```bash
+skillctl install ./wrappers --all && skillctl add test-quiet && skillctl add log-errors
+```
+
+then tell agents about them in `AGENTS.md`: *Run tests with `.claude/scripts/test-quiet/test-quiet.sh cargo test`; read logs with `.claude/scripts/log-errors/log-errors.sh <file>`.*
 
 ### Hook artifacts
 
@@ -601,6 +627,7 @@ The schema subset it understands is what the bundled agents use: `type`, `requir
 | Rule artifacts | K201–K207 | mixed | `RULE.mdc` present and parsable; `name` matches the folder; `description`; `metadata.version`; `alwaysApply` boolean and `globs` string or list; non-empty body; size budget (500 lines, 100 for always-apply) as a warning. K201–K204 cannot be allow-listed. |
 | Command artifacts | K301–K305 | error | `COMMAND.md` present and parsable; `name` matches the folder; `description`; `metadata.version`; non-empty body. K301–K304 cannot be allow-listed. |
 | Agent artifacts | H220–H227 | mixed | See [Agents](#agents): name and folder, Claude-only model alias without a `cursor.md` override, tool scope without `readonly`, field types, stale override, invalid `schema.json`. H220, H221, H223 and H225 cannot be allow-listed. |
+| Script bundles | K501–K507 | mixed | See [Script bundles](#script-bundles). K501–K505 cannot be allow-listed. |
 | Hook artifacts | K101–K111 | mixed | `HOOK.md` present and parsable; `name` matches the folder; `description` 1–1024 characters; `metadata.version` is semver; `events` is a non-empty list (unknown event names warn); `entry` is a regular file inside the folder with a shebang and the executable bit; no interactive input, `sudo` or `curl … \| sh` in scripts; no likely secrets; no symlinks; `matchers` names declared events, `timeout` is 1–600 seconds and `companions` is a list of artifact names. K101–K105 and K107 cannot be allow-listed. |
 
 Examples:
@@ -669,6 +696,7 @@ Cursor reads `AGENTS.md` natively. Claude Code expands the `@AGENTS.md` import a
 | I302 | warning | A `.cursor/rules/*.mdc` file is over 500 lines, or an `alwaysApply: true` rule is over 100 lines (an always-apply rule is `AGENTS.md` by another name) | Split by topic, or scope the rule with `globs`/`description` so it loads on demand |
 | I303 | warning | A section of `AGENTS.md` reads like a procedure: five or more ordered steps, three or more code blocks, or a heading naming a procedure (*how to, process, runbook, checklist, steps, workflow, release, deploy, migration*) with a few steps or a code block; reported at the heading | Create a skill from the section (`skillctl new <name>`) and leave a one-line pointer; a skill's body loads only when the task needs it |
 | I305 | warning | An always-loaded instruction file (`AGENTS.md`, `CLAUDE.md`, `CLAUDE.local.md`, `.claude/rules/*.md`, `.cursor/rules/*.mdc`) has content that changes between sessions: a timestamp or "last updated" date, a `$(…)`/`${…}` expansion or `` !`command` `` injection, or an `@import` of a file that changes often (logs, status, notes, TODOs). Fenced code is skipped. Every change invalidates the prompt cache for the whole prefix | Keep these files byte-identical between sessions; move changing content behind a skill or a file the agent reads on demand |
+| I306 | warning | A script bundle is pinned in this folder's project but neither `AGENTS.md` nor `CLAUDE.md` names `.claude/scripts/<name>`, so agents keep running the raw command | Add the wrapper invocation to `AGENTS.md` |
 | I304 | error | `CLAUDE.md` (or `.claude/CLAUDE.md`) exists but has no `@AGENTS.md` import (`@../AGENTS.md` from `.claude/`), or imports one that does not exist | Move the shared instructions into `AGENTS.md` and reduce `CLAUDE.md` to the import plus Claude-only notes |
 | I308 | warning | A line of `CLAUDE.md` also appears in `AGENTS.md` (reported with its line number) | Delete the duplicate; both tools already read it from `AGENTS.md` |
 | I309 | error | `AGENTS.md` exists, nothing imports it, and a `CLAUDE.md` or `CLAUDE.local.md` in the folder or a parent (up to the repository root) makes Claude Code skip it | Add a `CLAUDE.md` containing `@AGENTS.md`, or set Claude Code's **Project instructions** to `claude-md-and-agents-md` |
@@ -683,7 +711,7 @@ skillctl lint
 1 error(s), 0 warning(s)
 ```
 
-A folder with no instruction files passes. The budgets are the optimisation strategy's numbers; allow-list a rule in `settings.validate.allow` if a team's files legitimately exceed them. One more I-rule (quiet-wrapper references, I306) arrives with the work item that needs it.
+A folder with no instruction files passes. The budgets are the optimisation strategy's numbers; allow-list a rule in `settings.validate.allow` if a team's files legitimately exceed them.
 
 Why I305 matters: Claude Code and Cursor cache the stable prefix of every request (system prompt, tools, instruction files), and cached input is billed at a fraction of the price. Anything in an always-loaded file that differs from the previous session, even a date, means the prefix is rebuilt and paid in full on every turn of that session.
 
@@ -814,7 +842,8 @@ scripts/release/build-universal.sh && scripts/release/package.sh 0.1.0 && script
 | Linking: instance resolution, reconcile, Git exclude block | Implemented |
 | `attach`, `detach`, `status`, `add`, `remove`, `relink`, `global add/remove/list`, `hook add/remove/list`, `projects`, `skills` | Implemented |
 | Validation: S, O, H and K rules; text, JSON and JUnit; allow-lists; `--strict`; `--with-reference` | Implemented |
-| Instruction-file lint (`lint`): I301–I305, I308, I309, read-only | Implemented (W06, W07, W11) |
+| Instruction-file lint (`lint`): I301–I306, I308, I309, read-only | Implemented (W06, W07, W11, W23) |
+| Script bundles (`.claude/scripts/<name>`), K501–K507, the bundled `test-quiet` and `log-errors` wrappers | Implemented (W23) |
 | `install` from Git and local folders, `edit`, `doctor --fix`, `gc`, `config`, `completions` | Implemented |
 | Release pipeline: universal build, optional signing and notarization, clean-runner verification, GitHub release, crates.io publish and verification | Implemented (GitHub Actions) |
 | Manual harness compatibility matrix (Claude Code, Cursor, ZohoCode) | Not run; default link targets are provisional |

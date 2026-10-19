@@ -31,15 +31,20 @@ pub enum Kind {
     /// `schema.json` for its output, linked as `.claude/agents/<name>.md` and,
     /// when `cursor.md` exists, `.cursor/agents/<name>.md`.
     Agent,
+    /// A script bundle: `SCRIPT.md` describing the wrappers in the folder,
+    /// linked as the folder `.claude/scripts/<name>` and referenced from
+    /// `AGENTS.md` so agents run the quiet wrapper instead of the raw command.
+    Script,
 }
 
 impl Kind {
-    pub const ALL: [Kind; 5] = [
+    pub const ALL: [Kind; 6] = [
         Kind::Skill,
         Kind::Hook,
         Kind::Rule,
         Kind::Command,
         Kind::Agent,
+        Kind::Script,
     ];
 
     /// The frontmatter document at the folder root.
@@ -50,6 +55,7 @@ impl Kind {
             Self::Rule => "RULE.mdc",
             Self::Command => "COMMAND.md",
             Self::Agent => "AGENT.md",
+            Self::Script => "SCRIPT.md",
         }
     }
 
@@ -60,6 +66,7 @@ impl Kind {
             Self::Rule => "rule",
             Self::Command => "command",
             Self::Agent => "agent",
+            Self::Script => "script",
         }
     }
 
@@ -100,7 +107,7 @@ impl Kind {
                         .collect::<Vec<_>>()
                         .join(", ")
                 ),
-                hint: "A folder is one artifact kind; keep exactly one of SKILL.md, HOOK.md, RULE.mdc, COMMAND.md or AGENT.md.".into(),
+                hint: "A folder is one artifact kind; keep exactly one of SKILL.md, HOOK.md, RULE.mdc, COMMAND.md, AGENT.md or SCRIPT.md.".into(),
             }),
         }
     }
@@ -109,10 +116,10 @@ impl Kind {
     pub fn of(fs: &dyn Fs, dir: &Path) -> Result<Kind, Error> {
         Self::detect(fs, dir)?.ok_or_else(|| Error::Validation {
             summary: format!(
-                "{} contains no root document (SKILL.md, HOOK.md, RULE.mdc, COMMAND.md or AGENT.md)",
+                "{} contains no root document (SKILL.md, HOOK.md, RULE.mdc, COMMAND.md, AGENT.md or SCRIPT.md)",
                 dir.display()
             ),
-            hint: "Point skillctl at an artifact folder: a skill (SKILL.md), hook (HOOK.md), rule (RULE.mdc), command (COMMAND.md) or agent (AGENT.md).".into(),
+            hint: "Point skillctl at an artifact folder: a skill (SKILL.md), hook (HOOK.md), rule (RULE.mdc), command (COMMAND.md), agent (AGENT.md) or script bundle (SCRIPT.md).".into(),
         })
     }
 }

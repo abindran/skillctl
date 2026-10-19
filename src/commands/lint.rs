@@ -23,7 +23,25 @@ pub fn run(
     let registry = super::load_registry_or_default(context)?;
     let allow = &registry.settings.validate.allow;
     let repo_root = context.git.toplevel(&folder)?;
-    let mut findings = instructions::check(context.fs.as_ref(), &folder, repo_root.as_deref())?;
+    // Script bundles pinned in this folder's project, for I306.
+    let scripts: Vec<String> =
+        match crate::registry::resolve::InstanceResolver::new(&registry)?.resolve(&folder)? {
+            Some(found) => {
+                let mut names = Vec::new();
+                for (name, pin) in &found.project.skills {
+                    let dir = crate::store::store_dir(&context.home, name, pin);
+                    if crate::artifact::Kind::detect(context.fs.as_ref(), &dir)?
+                        == Some(crate::artifact::Kind::Script)
+                    {
+                        names.push(name.to_string());
+                    }
+                }
+                names
+            }
+            None => Vec::new(),
+        };
+    let mut findings =
+        instructions::check(context.fs.as_ref(), &folder, repo_root.as_deref(), &scripts)?;
     findings.retain(|finding| !allow.iter().any(|id| id == &finding.rule));
     if strict {
         for finding in &mut findings {
