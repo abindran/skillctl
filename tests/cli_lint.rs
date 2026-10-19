@@ -163,3 +163,49 @@ fn lint_reports_each_rule_with_a_fix_and_never_writes() {
         String::from_utf8_lossy(&out.stderr)
     );
 }
+
+#[test]
+fn lint_reports_budget_and_procedure_rules_as_warnings() {
+    let temp = tempfile::tempdir().unwrap();
+    let home = temp.path().join("skills");
+    let project = temp.path().join("project");
+    repo(&project);
+    let mut agents = String::from(
+        "# Project\n\nRun cargo test before every commit.\n\n## Release process\n\n1. bump\n2. tag\n3. push\n4. wait for CI\n5. publish\n",
+    );
+    agents.push_str(&"fact\n".repeat(200));
+    fs::write(project.join("AGENTS.md"), agents).unwrap();
+    fs::write(project.join("CLAUDE.md"), "@AGENTS.md\n").unwrap();
+    let rules = project.join(".cursor/rules");
+    fs::create_dir_all(&rules).unwrap();
+    fs::write(
+        rules.join("style.mdc"),
+        format!("---\nalwaysApply: true\n---\n{}", "x\n".repeat(150)),
+    )
+    .unwrap();
+    let out = run(&home, &project, &["--json", "lint"]);
+    assert!(out.status.success(), "warnings alone pass");
+    let findings: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
+    let rules: Vec<(&str, Option<u64>)> = findings
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|f| (f["rule"].as_str().unwrap(), f["line"].as_u64()))
+        .collect();
+    assert_eq!(rules, [("I301", None), ("I303", Some(5)), ("I302", None)]);
+    assert!(
+        findings
+            .as_array()
+            .unwrap()
+            .iter()
+            .all(|f| f["severity"] == "warning")
+    );
+    assert!(
+        findings[1]["message"]
+            .as_str()
+            .unwrap()
+            .contains("Release process")
+    );
+    let out = run(&home, &project, &["lint", "--strict"]);
+    assert_eq!(out.status.code(), Some(3));
+}

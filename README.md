@@ -312,7 +312,7 @@ Hooks never go into `skills/` folders: `add`, `attach --skills` and `global add`
 
 | Command | Run from | What it changes |
 |---|---|---|
-| `skillctl lint [<folder>] [--format text\|json\|junit] [--strict]` | anywhere | Checks a project's instruction files (`AGENTS.md`, `CLAUDE.md`, `.claude/CLAUDE.md`, `CLAUDE.local.md`) with rules I304, I308 and I309 and reports each problem with a suggested fix. Read-only: those files are team-owned and changed through review, never by skillctl. Same formats, allow-list and exit code 3 as `validate`. |
+| `skillctl lint [<folder>] [--format text\|json\|junit] [--strict]` | anywhere | Checks a project's instruction files (`AGENTS.md`, `CLAUDE.md`, `.claude/CLAUDE.md`, `CLAUDE.local.md`, `.cursor/rules/*.mdc`) with rules I301–I304, I308 and I309 and reports each problem with a suggested fix. Read-only: those files are team-owned and changed through review, never by skillctl. Same formats, allow-list and exit code 3 as `validate`. |
 | `skillctl validate [<name>[@<version>\|@draft] \| <path>] [--format text\|json\|junit] [--strict] [--with-reference]` | anywhere | Validates one store version, a draft, any folder, or with no argument every draft and every store version. A folder with `SKILL.md` gets the skill rules, one with `HOOK.md` the hook rules. Nothing is written. |
 | `skillctl doctor [--fix]` | anywhere | Reports, each with the command that fixes it: a missing or too-old `git`; instance folders that no longer exist or were replaced; pinned versions missing from the store; missing, wrong, dangling or conflicting links in every instance and user-level folder; store versions whose content no longer matches `meta.json` or that gained write permission; personal copies in `~/.claude/skills`, `~/.agents/skills` or `~/.cursor/skills` that shadow a project skill; symlinked or repository-resident global targets; repositories with `core.symlinks=false`. `--fix` removes vanished instances from the registry, relinks everything and restores read-only modes. Exits 1 while problems remain. A separate **Telemetry** section, which never affects the exit status, says whether Claude Code's OpenTelemetry export is on and complete (`CLAUDE_CODE_ENABLE_TELEMETRY=1`, `OTEL_METRICS_EXPORTER`, `OTEL_LOGS_EXPORTER`, `OTEL_EXPORTER_OTLP_PROTOCOL`, `OTEL_EXPORTER_OTLP_ENDPOINT`, and `OTEL_LOG_TOOL_DETAILS=1` so `agent.name` is not redacted), whether `ccusage` is on `PATH`, and that Cursor's usage comes from its dashboard and hook logs; `--json` carries it under `telemetry`. |
 | `skillctl config get\|set <key> [<value>]` | anywhere | Reads or changes `link_targets`, `global_link_targets`, `git_exclude`, `global_in_instances` and `validate.allow` (lists are comma-separated). After changing link targets it offers to run `relink --all` (`--yes` answers), which also removes managed links from targets that were dropped. |
@@ -544,6 +544,9 @@ Cursor reads `AGENTS.md` natively. Claude Code expands the `@AGENTS.md` import a
 
 | Rule | Severity | Finding | Suggested fix |
 |---|---|---|---|
+| I301 | warning | `AGENTS.md` is over 200 lines; every line is paid for on every turn in both tools | Move procedures into skills, path-specific guidance into `.claude/rules/` or `.cursor/rules/`, reference material into files read on demand |
+| I302 | warning | A `.cursor/rules/*.mdc` file is over 500 lines, or an `alwaysApply: true` rule is over 100 lines (an always-apply rule is `AGENTS.md` by another name) | Split by topic, or scope the rule with `globs`/`description` so it loads on demand |
+| I303 | warning | A section of `AGENTS.md` reads like a procedure: five or more ordered steps, three or more code blocks, or a heading naming a procedure (*how to, process, runbook, checklist, steps, workflow, release, deploy, migration*) with a few steps or a code block; reported at the heading | Create a skill from the section (`skillctl new <name>`) and leave a one-line pointer; a skill's body loads only when the task needs it |
 | I304 | error | `CLAUDE.md` (or `.claude/CLAUDE.md`) exists but has no `@AGENTS.md` import (`@../AGENTS.md` from `.claude/`), or imports one that does not exist | Move the shared instructions into `AGENTS.md` and reduce `CLAUDE.md` to the import plus Claude-only notes |
 | I308 | warning | A line of `CLAUDE.md` also appears in `AGENTS.md` (reported with its line number) | Delete the duplicate; both tools already read it from `AGENTS.md` |
 | I309 | error | `AGENTS.md` exists, nothing imports it, and a `CLAUDE.md` or `CLAUDE.local.md` in the folder or a parent (up to the repository root) makes Claude Code skip it | Add a `CLAUDE.md` containing `@AGENTS.md`, or set Claude Code's **Project instructions** to `claude-md-and-agents-md` |
@@ -558,7 +561,7 @@ skillctl lint
 1 error(s), 0 warning(s)
 ```
 
-A folder with no instruction files passes. More I-rules (length budgets, cacheable-prefix checks, quiet-wrapper references) arrive with the work items that need them.
+A folder with no instruction files passes. The budgets are the optimisation strategy's numbers; allow-list a rule in `settings.validate.allow` if a team's files legitimately exceed them. Two more I-rules (cacheable-prefix checks, quiet-wrapper references) arrive with the work items that need them.
 
 ## Configuration
 
@@ -685,7 +688,7 @@ scripts/release/build-universal.sh && scripts/release/package.sh 0.1.0 && script
 | Linking: instance resolution, reconcile, Git exclude block | Implemented |
 | `attach`, `detach`, `status`, `add`, `remove`, `relink`, `global add/remove/list`, `hook add/remove/list`, `projects`, `skills` | Implemented |
 | Validation: S, O, H and K rules; text, JSON and JUnit; allow-lists; `--strict`; `--with-reference` | Implemented |
-| Instruction-file lint (`lint`): I304, I308, I309, read-only | Implemented (W06) |
+| Instruction-file lint (`lint`): I301–I304, I308, I309, read-only | Implemented (W06, W07) |
 | `install` from Git and local folders, `edit`, `doctor --fix`, `gc`, `config`, `completions` | Implemented |
 | Release pipeline: universal build, optional signing and notarization, clean-runner verification, GitHub release, crates.io publish and verification | Implemented (GitHub Actions) |
 | Manual harness compatibility matrix (Claude Code, Cursor, ZohoCode) | Not run; default link targets are provisional |

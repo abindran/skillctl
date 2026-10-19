@@ -13,6 +13,13 @@ heading when cutting a release.
 
 ### Added
 
+- `lint` rules I301–I303 (strategy work item W07), all warnings: I301 for an
+  `AGENTS.md` over 200 lines; I303 for a section of `AGENTS.md` that reads
+  like a procedure (five or more ordered steps, three or more code blocks, or
+  a procedure-named heading with a few steps or a code block), reported at
+  the heading with the suggestion to make it a skill; I302 for a
+  `.cursor/rules/*.mdc` file over 500 lines or an `alwaysApply: true` rule
+  over 100 lines.
 - `lint [<folder>]` (strategy work item W06): read-only checks on a project's
   instruction files with the same formats, allow-list and exit codes as
   `validate`. I304 (error): a `CLAUDE.md` or `.claude/CLAUDE.md` without an

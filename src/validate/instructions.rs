@@ -1,7 +1,7 @@
 //! Instruction-file rules I3xx for a project folder: `AGENTS.md`, `CLAUDE.md`,
 //! `.claude/CLAUDE.md` and `CLAUDE.local.md`. These files are team-owned and
 //! edited only by people, so every rule is read-only and ends in a suggested
-//! fix. This module ships I304, I308 and I309; the other I3xx rules arrive with
+//! fix. This module ships I301–I304, I308 and I309; I305 and I306 arrive with
 //! the work items that need them.
 use super::{Finding, Severity};
 use crate::{error::Error, services::fs::Fs};
@@ -10,6 +10,27 @@ use std::{
     io,
     path::{Path, PathBuf},
 };
+
+/// Budgets from the optimisation strategy: instruction text is paid for on
+/// every turn, so each file that always loads gets a line budget.
+pub const AGENTS_MAX_LINES: usize = 200;
+pub const CURSOR_RULE_MAX_LINES: usize = 500;
+pub const ALWAYS_APPLY_MAX_LINES: usize = 100;
+
+/// Heading words that usually introduce a procedure rather than a fact.
+const PROCEDURE_WORDS: [&str; 11] = [
+    "how to",
+    "process",
+    "procedure",
+    "runbook",
+    "checklist",
+    "steps",
+    "workflow",
+    "release",
+    "deploy",
+    "deployment",
+    "migration",
+];
 
 /// The two places Claude Code accepts a project `CLAUDE.md`, with the import
 /// spellings that reach `./AGENTS.md` from each (imports resolve relative to the
@@ -207,7 +228,174 @@ pub fn check(fs: &dyn Fs, folder: &Path, repo_root: Option<&Path>) -> Result<Vec
             }
         }
     }
+
+    // I301: AGENTS.md is loaded every turn in both tools; keep it to facts.
+    if let Some(agents) = &layout.agents {
+        let lines = layout.agents_text.lines().count();
+        if lines > AGENTS_MAX_LINES {
+            findings.push(finding(
+                "I301",
+                true,
+                agents.clone(),
+                format!("AGENTS.md is {lines} lines; the budget is {AGENTS_MAX_LINES} because every line is paid for on every turn in both tools"),
+                "Move procedures into skills (loaded only when relevant), path-specific guidance into .claude/rules/ or .cursor/rules/, and reference material into files the agent reads on demand.",
+            ));
+        }
+        // I303: a section that reads like a procedure belongs in a skill.
+        for section in sections(&layout.agents_text) {
+            if let Some(reason) = procedure(&section) {
+                let mut item = finding(
+                    "I303",
+                    true,
+                    agents.clone(),
+                    format!(
+                        "Section {:?} reads like a procedure ({reason}); a skill loads it only when the task needs it",
+                        section.title
+                    ),
+                    "Create a skill from this section (skillctl new <name>) and leave a one-line pointer to it here.",
+                );
+                item.line = Some(section.line);
+                findings.push(item);
+            }
+        }
+    }
+
+    // I302: Cursor rules that always apply are AGENTS.md by another name.
+    for (path, text) in cursor_rules(fs, folder)? {
+        let lines = text.lines().count();
+        if lines > CURSOR_RULE_MAX_LINES {
+            findings.push(finding(
+                "I302",
+                true,
+                path.clone(),
+                format!("Cursor rule is {lines} lines; the budget is {CURSOR_RULE_MAX_LINES}"),
+                "Split the rule by topic or move procedures into skills.",
+            ));
+        }
+        if always_apply(&text) && lines > ALWAYS_APPLY_MAX_LINES {
+            findings.push(finding(
+                "I302",
+                true,
+                path,
+                format!("Always-apply Cursor rule is {lines} lines; it is paid for on every turn, like AGENTS.md (budget {ALWAYS_APPLY_MAX_LINES})"),
+                "Scope the rule with globs or a description so it loads on demand, or shorten it.",
+            ));
+        }
+    }
     Ok(findings)
+}
+
+/// A heading-delimited part of a Markdown file. The text before the first
+/// heading is a section with an empty title at line 1.
+struct Section {
+    title: String,
+    line: usize,
+    body: Vec<String>,
+}
+
+fn sections(text: &str) -> Vec<Section> {
+    let mut sections = vec![Section {
+        title: String::new(),
+        line: 1,
+        body: Vec::new(),
+    }];
+    let mut in_fence = false;
+    for (offset, line) in text.lines().enumerate() {
+        let trimmed = line.trim_start();
+        if trimmed.starts_with("```") || trimmed.starts_with("~~~") {
+            in_fence = !in_fence;
+        }
+        if !in_fence && trimmed.starts_with('#') {
+            let title = trimmed.trim_start_matches('#').trim();
+            if !title.is_empty() {
+                sections.push(Section {
+                    title: title.to_owned(),
+                    line: offset + 1,
+                    body: Vec::new(),
+                });
+                continue;
+            }
+        }
+        sections
+            .last_mut()
+            .expect("preamble")
+            .body
+            .push(line.to_owned());
+    }
+    sections
+}
+
+/// Why a section counts as a procedure, or `None`. Strong signals on their
+/// own: five or more ordered steps, or three or more code blocks. A heading
+/// that names a procedure needs only a few steps or one block to confirm it.
+fn procedure(section: &Section) -> Option<String> {
+    // Ordered steps count only outside fenced code; a numbered list quoted in
+    // a code sample is content, not a procedure.
+    let mut steps = 0;
+    let mut fences = 0;
+    let mut in_fence = false;
+    for line in &section.body {
+        let text = line.trim_start();
+        if text.starts_with("```") || text.starts_with("~~~") {
+            fences += 1;
+            in_fence = !in_fence;
+            continue;
+        }
+        if in_fence {
+            continue;
+        }
+        let digits = text.chars().take_while(char::is_ascii_digit).count();
+        if digits > 0
+            && text[digits..].starts_with(['.', ')'])
+            && text[digits + 1..].starts_with(' ')
+        {
+            steps += 1;
+        }
+    }
+    let blocks = fences / 2;
+    let title = section.title.to_lowercase();
+    let named = PROCEDURE_WORDS.iter().any(|word| title.contains(word));
+    if steps >= 5 {
+        Some(format!("{steps} ordered steps"))
+    } else if blocks >= 3 {
+        Some(format!("{blocks} code blocks"))
+    } else if named && (steps >= 3 || blocks >= 1) {
+        Some(format!(
+            "heading names a procedure and it has {steps} ordered steps and {blocks} code blocks"
+        ))
+    } else {
+        None
+    }
+}
+
+/// `.cursor/rules/*.mdc` files, sorted, with their text.
+fn cursor_rules(fs: &dyn Fs, folder: &Path) -> Result<Vec<(PathBuf, String)>, Error> {
+    let dir = folder.join(".cursor/rules");
+    let entries = match fs.read_dir(&dir) {
+        Ok(entries) => entries,
+        Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(Vec::new()),
+        Err(source) => return Err(io_error(&dir, source)),
+    };
+    let mut rules = Vec::new();
+    for path in entries {
+        if path.extension().is_some_and(|ext| ext == "mdc") {
+            if let Some(text) = read_if_file(fs, &path)? {
+                rules.push((path, text));
+            }
+        }
+    }
+    Ok(rules)
+}
+
+/// Whether an `.mdc` rule's frontmatter sets `alwaysApply: true`.
+fn always_apply(text: &str) -> bool {
+    let Ok((yaml, _)) = crate::skill::frontmatter::split(text) else {
+        return false;
+    };
+    serde_yaml_ng::from_str::<serde_yaml_ng::Value>(yaml)
+        .ok()
+        .and_then(|value| value.get("alwaysApply")?.as_bool())
+        .unwrap_or(false)
 }
 
 fn io_error(path: &Path, source: io::Error) -> Error {
@@ -263,6 +451,91 @@ mod tests {
         assert!(ids(dir, None).is_empty());
         fs::write(dir.join("CLAUDE.local.md"), "my sandbox url\n").unwrap();
         assert!(ids(dir, None).is_empty(), "import makes local harmless");
+    }
+
+    #[test]
+    fn i301_i302_and_i303_watch_the_budgets() {
+        let temp = tempfile::tempdir().unwrap();
+        let dir = temp.path();
+        // Facts only, within budget: clean.
+        let facts =
+            "# Project\n\nRun `cargo test` before every commit.\nUse British spelling in docs.\n";
+        fs::write(dir.join("AGENTS.md"), facts).unwrap();
+        assert!(ids(dir, None).is_empty());
+        // 201 lines: I301.
+        fs::write(dir.join("AGENTS.md"), "line\n".repeat(201)).unwrap();
+        assert_eq!(ids(dir, None), ["I301"]);
+        // A five-step list, a three-block section, and a named procedure with
+        // one block: three I303 findings at the heading lines. A "Release
+        // notes" heading with plain prose is not one.
+        let text = format!(
+            "{facts}\n## Deploy\n\n1. build\n2. tag\n3. push\n4. wait\n5. verify\n\n## Debugging tips\n\n```\na\n```\n```\nb\n```\n```\nc\n```\n\n## Release notes\n\nWe cut a release every two weeks; see the changelog.\n\n## How to rotate keys\n\n```\nrotate --all\n```\n"
+        );
+        fs::write(dir.join("AGENTS.md"), &text).unwrap();
+        let findings = check(&RealFs, dir, None).unwrap();
+        let hits: Vec<(String, Option<usize>)> =
+            findings.iter().map(|f| (f.rule.clone(), f.line)).collect();
+        assert_eq!(
+            hits,
+            [
+                ("I303".to_owned(), Some(6)),
+                ("I303".to_owned(), Some(14)),
+                ("I303".to_owned(), Some(30)),
+            ],
+            "{findings:#?}"
+        );
+        assert!(findings[0].message.contains("5 ordered steps"));
+        assert!(findings[1].message.contains("3 code blocks"));
+        // Headings inside fenced code are not sections.
+        fs::write(
+            dir.join("AGENTS.md"),
+            "# Project\n\n```\n# Deploy\n1. a\n2. b\n3. c\n4. d\n5. e\n```\n",
+        )
+        .unwrap();
+        assert!(
+            ids(dir, None).is_empty(),
+            "fenced headings and steps are not procedures... except the preamble counts steps"
+        );
+        // Cursor rules: size and always-apply budgets.
+        fs::write(dir.join("AGENTS.md"), facts).unwrap();
+        let rules = dir.join(".cursor/rules");
+        fs::create_dir_all(&rules).unwrap();
+        fs::write(
+            rules.join("big.mdc"),
+            format!("---\ndescription: big\n---\n{}", "x\n".repeat(500)),
+        )
+        .unwrap();
+        fs::write(
+            rules.join("always.mdc"),
+            format!("---\nalwaysApply: true\n---\n{}", "x\n".repeat(100)),
+        )
+        .unwrap();
+        fs::write(
+            rules.join("scoped.mdc"),
+            format!(
+                "---\nglobs: [\"*.rs\"]\nalwaysApply: false\n---\n{}",
+                "x\n".repeat(100)
+            ),
+        )
+        .unwrap();
+        fs::write(rules.join("notes.md"), "x\n".repeat(600)).unwrap();
+        let findings = check(&RealFs, dir, None).unwrap();
+        let hits: Vec<(String, String)> = findings
+            .iter()
+            .map(|f| {
+                (
+                    f.rule.clone(),
+                    f.path.file_name().unwrap().to_string_lossy().into_owned(),
+                )
+            })
+            .collect();
+        assert_eq!(
+            hits,
+            [
+                ("I302".to_owned(), "always.mdc".to_owned()),
+                ("I302".to_owned(), "big.mdc".to_owned()),
+            ]
+        );
     }
 
     #[test]

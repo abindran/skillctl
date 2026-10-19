@@ -108,15 +108,18 @@ A folder whose root document is `HOOK.md` is validated with these rules (K101–
 
 ## Instruction-file rules
 
-`skillctl lint [<folder>]` runs `validate::instructions::check` on a project folder rather than on a store artifact. It reads `AGENTS.md`, `CLAUDE.md`, `.claude/CLAUDE.md` and `CLAUDE.local.md` into a `Layout`, decides whether any `CLAUDE.md` imports `AGENTS.md` (an `@AGENTS.md` or `@./AGENTS.md` token anywhere on a line for `./CLAUDE.md`, `@../AGENTS.md` for `.claude/CLAUDE.md`, since Claude Code resolves imports relative to the importing file; quoted paths do not count), and for I309 climbs the parents up to the Git top level (`Git::toplevel`) or the filesystem root. Nothing is written: these files are team-owned.
+`skillctl lint [<folder>]` runs `validate::instructions::check` on a project folder rather than on a store artifact. It reads `AGENTS.md`, `CLAUDE.md`, `.claude/CLAUDE.md` and `CLAUDE.local.md` into a `Layout` (and `.cursor/rules/*.mdc` for I302), decides whether any `CLAUDE.md` imports `AGENTS.md` (an `@AGENTS.md` or `@./AGENTS.md` token anywhere on a line for `./CLAUDE.md`, `@../AGENTS.md` for `.claude/CLAUDE.md`, since Claude Code resolves imports relative to the importing file; quoted paths do not count), and for I309 climbs the parents up to the Git top level (`Git::toplevel`) or the filesystem root. Nothing is written: these files are team-owned.
 
 | ID | Severity | Rule |
 |---|---|---|
+| I301 | warning | `AGENTS.md` has at most 200 lines (`AGENTS_MAX_LINES`) |
+| I302 | warning | Each `.cursor/rules/*.mdc` has at most 500 lines, and one whose frontmatter sets `alwaysApply: true` has at most 100 lines |
+| I303 | warning | No `AGENTS.md` section (ATX headings split sections; headings inside fenced code do not) reads like a procedure: five or more ordered steps (`1.`/`1)` outside fenced code), three or more fenced code blocks, or a heading containing a procedure word (`how to`, `process`, `procedure`, `runbook`, `checklist`, `steps`, `workflow`, `release`, `deploy`, `deployment`, `migration`) together with at least three steps or one block. Reported at the heading line |
 | I304 | error | Each existing `CLAUDE.md` imports `AGENTS.md`, and the imported `AGENTS.md` exists |
 | I308 | warning | No comparable line (trimmed, ≥ 24 characters, not an import, containing a letter or digit) of `CLAUDE.md` also appears in `AGENTS.md`; reported per line |
 | I309 | error | When `AGENTS.md` exists and nothing imports it, no `CLAUDE.md`, `.claude/CLAUDE.md` or `CLAUDE.local.md` exists in the folder or any parent up to the repository root, because any of them makes Claude Code skip `AGENTS.md`. A `CLAUDE.md` in the folder itself is reported as I304 instead |
 
-I rules honour the registry allow-list (`settings.validate.allow`) and `--strict`. The remaining I3xx rules named by the optimisation strategy (I301–I303 length and placement budgets, I305 cacheable prefix, I306 quiet wrappers) are added with the work items that need them.
+I rules honour the registry allow-list (`settings.validate.allow`) and `--strict`. The remaining I3xx rules named by the optimisation strategy (I305 cacheable prefix, I306 quiet wrappers) are added with the work items that need them.
 
 ## Suppression and strict mode
 
