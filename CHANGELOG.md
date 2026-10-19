@@ -13,6 +13,13 @@ heading when cutting a release.
 
 ### Added
 
+- The bundled `hooks/skill-forced-eval/` hook (strategy work items W13 and
+  W14): on `UserPromptSubmit` in Claude Code it shortlists the skills the
+  agent can see (`.claude/skills/`, `.agents/skills/`, `~/.claude/skills/`)
+  whose quoted trigger phrasings, path components or keywords match the
+  prompt, at most three, and injects a mandatory YES/NO check for them.
+  Silent in Cursor, without visible skills, and for prompts that match
+  nothing; always exits 0.
 - `lint` rule I305 (strategy work item W11), a warning for content in an
   always-loaded instruction file (`AGENTS.md`, `CLAUDE.md`, `CLAUDE.local.md`,
   `.claude/rules/*.md`, `.cursor/rules/*.mdc`) that changes between sessions

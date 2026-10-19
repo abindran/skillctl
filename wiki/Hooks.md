@@ -101,6 +101,17 @@ The log path is `$SKILLCTL_HOME/log/events.jsonl`, falling back to `~/.skills/lo
 - Claude Code fires `SubagentStop` for its own auxiliary agents (for example the one that titles the session after each turn), a few seconds after each `Stop`, with an `agent_id` but **no `agent_type`**. The logger therefore writes no `agent` field for them. Delegation metrics must filter on `agent` being present, or they will count one phantom subagent per turn.
 - The documented `PreCompact` payload carries `trigger` (and `custom_instructions`, which is dropped) but no token count; context size at compaction has to be derived from the transcript, whose path is logged.
 
+## The `skill-forced-eval` hook
+
+`hooks/skill-forced-eval/` is the activation hook (strategy W13/W14): `events: [UserPromptSubmit]`, `timeout: 10`, Python `hook.py`. Its stdout becomes additional context for the agent (Claude Code adds a `UserPromptSubmit` hook's stdout to the conversation on exit 0), which is the only injection path a prompt hook has; Cursor's `beforeSubmitPrompt` can only allow or block, so the script exits before reading anything when `CURSOR_VERSION` is set and Cursor is served by an always-apply rule instead.
+
+Decisions:
+
+1. **No `skillctl` call at run time.** The script reads the same `SKILL.md` files the harness lists: `<cwd>/.claude/skills/*/SKILL.md`, `<cwd>/.agents/skills/*/SKILL.md` and `~/.claude/skills/*/SKILL.md`. In a skillctl instance those are the pinned links, so "attached" and "has visible skills" coincide, and the hook works even where the binary is not on `PATH` (for example with a debug build). Only the frontmatter is read, line by line until the closing `---`.
+2. **Three match signals, no LLM.** Quoted phrasings from the description (`"add a column"`) found verbatim in the prompt score 3; a shared path component or extension (`jsapps`, `.hbs`) scores 2; shared keywords (stop-words removed, ≥ 3 characters) score 1 each and need at least two to count alone. Skills with no signal are not candidates; the best three are listed. This is what keeps no-skill prompts free of injection (W14's acceptance), and it is the part to tune from the logger's `PostToolUse`/`Skill` lines if a skill keeps being missed.
+3. **Never block.** Exit 0 on every path; malformed input, an empty prompt or an unreadable folder produce no output. `SKILLCTL_FORCED_EVAL_DEBUG=1` writes the shortlist reasons to stderr.
+4. **Validates clean** under K101–K111, like the logger.
+
 ## doctor
 
 With at least one hook pinned, `doctor` adds to its usual checks:

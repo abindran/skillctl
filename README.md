@@ -490,6 +490,23 @@ jq -r 'select(.server) | .server' ~/.skills/log/events.jsonl | sort | uniq -c
 
 MCP tool calls by server (what `doctor`'s MCP audit is built on).
 
+### The skill-forced-eval hook
+
+[`hooks/skill-forced-eval/`](hooks/skill-forced-eval/) is the activation hook of the strategy's Story 1 (work items W13 and W14). On every prompt in Claude Code it shortlists the skills the agent can see whose quoted trigger phrasings, file paths or keywords match the prompt, and injects a check the agent must answer before using any other tool:
+
+```
+MANDATORY SKILL CHECK. Candidates: db-migrations
+For each: [name] - YES/NO - [reason]. Call Skill(name) for every YES before any other tool.
+```
+
+In community measurements this forced YES/NO evaluation took activation from about 50% to 100% and stayed silent on prompts that needed no skill, where an LLM-based classifier invented skill names. It is deliberately the second layer: directive descriptions (O140–O145) come first, and `hook add` warns if any pinned skill still fails them.
+
+```bash
+skillctl install ./hooks/skill-forced-eval && skillctl hook add skill-forced-eval
+```
+
+It stays silent, and costs nothing, when there is nothing to say: in Cursor (`CURSOR_VERSION` is set; Cursor cannot inject text from a prompt hook and gets the same check as an always-apply rule instead), in folders with no `.claude/skills/`, `.agents/skills/` or `~/.claude/skills/` entries, and for prompts that match no skill. It reads the same `SKILL.md` files the harness lists, so it needs no `skillctl` binary at run time. Set `SKILLCTL_FORCED_EVAL_DEBUG=1` to see its shortlist reasoning in the transcript.
+
 **Upgrading, pausing, removing.** A new version of the logger is `skillctl install …` followed by `skillctl hook add skillctl-logger@<version>`; the link moves, the settings stay. To pause logging without losing the registration history, `skillctl hook remove skillctl-logger` and `hook add` it again later. The log file is plain JSONL; rotate or delete it whenever you like, the hook recreates it.
 
 ## Validation
