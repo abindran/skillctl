@@ -81,6 +81,11 @@ pub fn run(command: Command, context: &mut Context<'_>) -> Result<(), Error> {
             strict,
             with_reference,
         } => commands::validate::run(context, target.as_deref(), format, strict, with_reference),
+        Command::Lint {
+            folder,
+            format,
+            strict,
+        } => commands::lint::run(context, folder.as_deref(), format, strict),
         Command::Doctor { fix } => commands::doctor::run(context, fix),
         Command::Gc { keep } => commands::gc::run(context, keep),
         Command::Config { command } => match command {

@@ -3,6 +3,7 @@
 pub mod fields;
 pub mod harness;
 pub mod hook;
+pub mod instructions;
 pub mod org;
 pub mod report;
 pub mod spec;

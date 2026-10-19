@@ -223,6 +223,21 @@ pub enum Command {
         with_reference: bool,
     },
 
+    /// Check a project's instruction files (AGENTS.md, CLAUDE.md, CLAUDE.local.md)
+    /// and report problems with suggested fixes. Never writes.
+    Lint {
+        /// Project folder to check (default: the current folder).
+        folder: Option<PathBuf>,
+
+        /// Output format.
+        #[arg(long, value_enum)]
+        format: Option<OutputFormat>,
+
+        /// Treat warnings as failures.
+        #[arg(long)]
+        strict: bool,
+    },
+
     /// Diagnose the skillctl environment.
     Doctor {
         /// Attempt to fix detected problems.

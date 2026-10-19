@@ -20,6 +20,7 @@ The technical architecture lives in the [project wiki](https://github.com/abindr
 - [Global flags and exit codes](#global-flags-and-exit-codes)
 - [Hooks](#hooks)
 - [Validation](#validation)
+- [Instruction files](#instruction-files)
 - [Configuration](#configuration)
 - [Home folder layout](#home-folder-layout)
 - [Development](#development)
@@ -33,7 +34,7 @@ The technical architecture lives in the [project wiki](https://github.com/abindr
 | **Do not keep duplicate copies per harness or per clone.** | Each skill version exists exactly once in `~/.skills/store/`. Projects and harness folders only hold symlinks to it. |
 | **Project-specific skills that follow the project to every clone.** | A project is a registry entry with pinned skill versions. Attach any number of folders to it; `add` and `remove` reconcile all of them, and `relink` restores links after `git clean -fdx` or a fresh checkout. |
 | **Keep project repositories clean.** | Links are listed individually in `.git/info/exclude`, so `git status` stays empty and project-owned skills in the same folder remain visible to Git. |
-| **Validate skills against open standards.** | `validate` implements the Agent Skills spec rules (S001–S008), organisation quality rules (O101–O133) and harness-compatibility warnings (H201–H205); hooks get their own rules (K101–K110). JUnit output plugs into CI merge-request widgets. |
+| **Validate skills against open standards.** | `validate` implements the Agent Skills spec rules (S001–S008), organisation quality rules (O101–O133) and harness-compatibility warnings (H201–H205); hooks get their own rules (K101–K111). JUnit output plugs into CI merge-request widgets. |
 | **Store hooks next to skills, register them once.** | A hook is a `HOOK.md` declaring lifecycle events plus the script a harness runs. Hooks are authored, validated, versioned and installed exactly like skills, in the same store. `hook add` links one under `~/.claude/hooks/` and merges its events into `~/.claude/settings.json`, which Cursor reads too, so one registration serves both tools. |
 | **Skills that bundle scripts, references and assets.** | The validator checks that every bundled file is referenced, that scripts have a shebang and executable bit, and that no script downloads to a shell, asks for interactive input, or embeds secrets. Harnesses run the scripts; skillctl only lints them. |
 | **Skills that are safe from accidental edits by an AI agent.** | Sealed store versions are `0444`/`0555`. Editing happens in a writable draft under `~/.skills/drafts/`, which can be linked into a project with `add <skill> --draft` for trying out before sealing. |
@@ -311,6 +312,7 @@ Hooks never go into `skills/` folders: `add`, `attach --skills` and `global add`
 
 | Command | Run from | What it changes |
 |---|---|---|
+| `skillctl lint [<folder>] [--format text\|json\|junit] [--strict]` | anywhere | Checks a project's instruction files (`AGENTS.md`, `CLAUDE.md`, `.claude/CLAUDE.md`, `CLAUDE.local.md`) with rules I304, I308 and I309 and reports each problem with a suggested fix. Read-only: those files are team-owned and changed through review, never by skillctl. Same formats, allow-list and exit code 3 as `validate`. |
 | `skillctl validate [<name>[@<version>\|@draft] \| <path>] [--format text\|json\|junit] [--strict] [--with-reference]` | anywhere | Validates one store version, a draft, any folder, or with no argument every draft and every store version. A folder with `SKILL.md` gets the skill rules, one with `HOOK.md` the hook rules. Nothing is written. |
 | `skillctl doctor [--fix]` | anywhere | Reports, each with the command that fixes it: a missing or too-old `git`; instance folders that no longer exist or were replaced; pinned versions missing from the store; missing, wrong, dangling or conflicting links in every instance and user-level folder; store versions whose content no longer matches `meta.json` or that gained write permission; personal copies in `~/.claude/skills`, `~/.agents/skills` or `~/.cursor/skills` that shadow a project skill; symlinked or repository-resident global targets; repositories with `core.symlinks=false`. `--fix` removes vanished instances from the registry, relinks everything and restores read-only modes. Exits 1 while problems remain. A separate **Telemetry** section, which never affects the exit status, says whether Claude Code's OpenTelemetry export is on and complete (`CLAUDE_CODE_ENABLE_TELEMETRY=1`, `OTEL_METRICS_EXPORTER`, `OTEL_LOGS_EXPORTER`, `OTEL_EXPORTER_OTLP_PROTOCOL`, `OTEL_EXPORTER_OTLP_ENDPOINT`, and `OTEL_LOG_TOOL_DETAILS=1` so `agent.name` is not redacted), whether `ccusage` is on `PATH`, and that Cursor's usage comes from its dashboard and hook logs; `--json` carries it under `telemetry`. |
 | `skillctl config get\|set <key> [<value>]` | anywhere | Reads or changes `link_targets`, `global_link_targets`, `git_exclude`, `global_in_instances` and `validate.allow` (lists are comma-separated). After changing link targets it offers to run `relink --all` (`--yes` answers), which also removes managed links from targets that were dropped. |
@@ -527,6 +529,37 @@ settings:
     allow: [O102, H201]
 ```
 
+## Instruction files
+
+Claude Code reads `CLAUDE.md`; Cursor reads `AGENTS.md`. Keeping both means paying for the same instructions twice and watching them drift. The arrangement skillctl checks for is one shared file and a one-line hand-off:
+
+```
+AGENTS.md      # team-shared instructions: build and test commands, conventions, layout
+CLAUDE.md      # one line, "@AGENTS.md", plus anything only Claude Code can act on
+```
+
+Cursor reads `AGENTS.md` natively. Claude Code expands the `@AGENTS.md` import at launch, so both tools see the same text. Recent Claude Code versions can also read `AGENTS.md` directly, but only when no `CLAUDE.md` or `CLAUDE.local.md` exists in the folder or any folder above it, so the import is the arrangement that keeps working everywhere.
+
+`skillctl lint` reports what stands in the way, and never edits the files:
+
+| Rule | Severity | Finding | Suggested fix |
+|---|---|---|---|
+| I304 | error | `CLAUDE.md` (or `.claude/CLAUDE.md`) exists but has no `@AGENTS.md` import (`@../AGENTS.md` from `.claude/`), or imports one that does not exist | Move the shared instructions into `AGENTS.md` and reduce `CLAUDE.md` to the import plus Claude-only notes |
+| I308 | warning | A line of `CLAUDE.md` also appears in `AGENTS.md` (reported with its line number) | Delete the duplicate; both tools already read it from `AGENTS.md` |
+| I309 | error | `AGENTS.md` exists, nothing imports it, and a `CLAUDE.md` or `CLAUDE.local.md` in the folder or a parent (up to the repository root) makes Claude Code skip it | Add a `CLAUDE.md` containing `@AGENTS.md`, or set Claude Code's **Project instructions** to `claude-md-and-agents-md` |
+
+```bash
+skillctl lint
+```
+
+```
+/Users/me/work/crm/CLAUDE.md I304 error CLAUDE.md does not import AGENTS.md, so Claude Code and Cursor read different instructions
+  Hint: Move the team-shared instructions into AGENTS.md (Cursor reads it natively) and reduce this file to a line containing @AGENTS.md plus any Claude-only notes.
+1 error(s), 0 warning(s)
+```
+
+A folder with no instruction files passes. More I-rules (length budgets, cacheable-prefix checks, quiet-wrapper references) arrive with the work items that need them.
+
 ## Configuration
 
 All settings live in `~/.skills/registry.yml`. Read or change them with `config get <key>` and `config set <key> <value>`; editing the file by hand and running `skillctl relink --all` works too.
@@ -652,6 +685,7 @@ scripts/release/build-universal.sh && scripts/release/package.sh 0.1.0 && script
 | Linking: instance resolution, reconcile, Git exclude block | Implemented |
 | `attach`, `detach`, `status`, `add`, `remove`, `relink`, `global add/remove/list`, `hook add/remove/list`, `projects`, `skills` | Implemented |
 | Validation: S, O, H and K rules; text, JSON and JUnit; allow-lists; `--strict`; `--with-reference` | Implemented |
+| Instruction-file lint (`lint`): I304, I308, I309, read-only | Implemented (W06) |
 | `install` from Git and local folders, `edit`, `doctor --fix`, `gc`, `config`, `completions` | Implemented |
 | Release pipeline: universal build, optional signing and notarization, clean-runner verification, GitHub release, crates.io publish and verification | Implemented (GitHub Actions) |
 | Manual harness compatibility matrix (Claude Code, Cursor, ZohoCode) | Not run; default link targets are provisional |

@@ -13,6 +13,15 @@ heading when cutting a release.
 
 ### Added
 
+- `lint [<folder>]` (strategy work item W06): read-only checks on a project's
+  instruction files with the same formats, allow-list and exit codes as
+  `validate`. I304 (error): a `CLAUDE.md` or `.claude/CLAUDE.md` without an
+  `@AGENTS.md` import, or importing a missing `AGENTS.md`. I308 (warning): a
+  `CLAUDE.md` line that also appears in `AGENTS.md`, with its line number.
+  I309 (error): an `AGENTS.md` that Claude Code will skip because a
+  `CLAUDE.md` or `CLAUDE.local.md` exists in the folder or a parent up to the
+  repository root and nothing imports it. Every finding carries the suggested
+  fix; skillctl never edits these team-owned files.
 - Hook registration (strategy work item W02b). `hook add <hook>[@version]`
   pins a stored hook in the registry's new `global.hooks` section (omitted
   while empty, so existing registries are unchanged), links
