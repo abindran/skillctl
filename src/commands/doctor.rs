@@ -1,9 +1,11 @@
 //! Health checks: registry versus disk, link health, store integrity, user-level
 //! folders and the Git environment. `--fix` repairs what is safe to repair
 //! (missing instances, link drift, writable store entries); everything else is
-//! reported with the command that fixes it. A telemetry section (see
-//! [`super::telemetry`]) reports whether the harnesses export token and cost
-//! data; it is advisory and never affects the exit status.
+//! reported with the command that fixes it. Two advisory sections never affect
+//! the exit status: telemetry (see [`super::telemetry`]) reports whether the
+//! harnesses export token and cost data, and the MCP audit (see
+//! [`super::mcp`]) lists the servers visible from this folder and which of
+//! them the event log has never seen used.
 use crate::{
     context::Context,
     error::Error,
@@ -64,6 +66,20 @@ pub fn run(context: &mut Context<'_>, fix: bool) -> Result<(), Error> {
             })
         },
     );
+    // MCP servers visible from this folder, scored against the event log.
+    let user_home = crate::paths::HomePath::new("~/.claude.json")?
+        .expand()?
+        .parent()
+        .map(Path::to_path_buf)
+        .unwrap_or_default();
+    let folder = super::attach::cwd()
+        .ok()
+        .and_then(|cwd| crate::paths::canonicalize(&cwd).ok());
+    let mcp = super::mcp::audit(
+        &user_home,
+        folder.as_deref(),
+        &context.home.home().join("log/events.jsonl"),
+    )?;
     let fixed = problems.iter().filter(|item| item.fixed).count();
     let remaining = problems.len() - fixed;
     let problems_text = if problems.is_empty() {
@@ -87,12 +103,11 @@ pub fn run(context: &mut Context<'_>, fix: bool) -> Result<(), Error> {
         ));
         lines.join("\n")
     };
-    let telemetry_text = telemetry.text();
-    let text = if telemetry_text.is_empty() {
-        problems_text
-    } else {
-        format!("{telemetry_text}\n{problems_text}")
-    };
+    let text = [telemetry.text(), mcp.text(), problems_text]
+        .into_iter()
+        .filter(|part| !part.is_empty())
+        .collect::<Vec<_>>()
+        .join("\n");
     context
         .output
         .result(
@@ -101,6 +116,7 @@ pub fn run(context: &mut Context<'_>, fix: bool) -> Result<(), Error> {
                 "fixed": fixed,
                 "remaining": remaining,
                 "telemetry": telemetry,
+                "mcp": mcp,
                 "dry_run": context.flags.dry_run,
             }),
             &text,

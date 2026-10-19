@@ -70,9 +70,13 @@ def record_for(event):
     if name == "UserPromptSubmit" and isinstance(event.get("prompt"), str):
         record["prompt_chars"] = len(event["prompt"])
     if name in ("PreToolUse", "PostToolUse"):
-        record["tool_name"] = event.get("tool_name")
+        tool_name = event.get("tool_name")
+        record["tool_name"] = tool_name
+        if isinstance(tool_name, str) and tool_name.startswith("mcp__"):
+            # Claude Code names MCP tools mcp__<server>__<tool>.
+            record["server"] = tool_name[len("mcp__"):].split("__", 1)[0]
         tool_input = event.get("tool_input")
-        if isinstance(tool_input, dict):
+        if isinstance(tool_input, dict) and tool_name == "Skill":
             skill = tool_input.get("skill") or tool_input.get("name")
             if isinstance(skill, str):
                 record["skill"] = skill

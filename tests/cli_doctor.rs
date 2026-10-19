@@ -259,3 +259,94 @@ fn doctor_reports_missing_pins_and_shadowing_personal_copies() {
     assert!(!fixed.is_empty());
     assert_eq!(fs::read(&file).unwrap(), before);
 }
+
+#[test]
+fn doctor_audits_mcp_servers_from_both_harnesses_against_the_log() {
+    let e = env();
+    ok(&e, &e.root, &["init"]);
+    let key = fs::canonicalize(&e.root)
+        .unwrap()
+        .to_string_lossy()
+        .into_owned();
+    fs::write(
+        e.user_home.join(".claude.json"),
+        serde_json::json!({
+            "mcpServers": {"github": {"command": "github-mcp-server"}},
+            "projects": {key: {"disabledMcpjsonServers": ["jira"]}}
+        })
+        .to_string(),
+    )
+    .unwrap();
+    fs::write(
+        e.root.join(".mcp.json"),
+        r#"{"mcpServers": {"jira": {"command": "jira-mcp"}, "docs": {"url": "http://localhost:9/mcp"}}}"#,
+    )
+    .unwrap();
+    fs::create_dir_all(e.user_home.join(".cursor")).unwrap();
+    fs::write(
+        e.user_home.join(".cursor/mcp.json"),
+        r#"{"mcpServers": {"docs": {"url": "http://localhost:9/mcp"}}}"#,
+    )
+    .unwrap();
+    // Eight days of log in which only docs was ever called.
+    fs::create_dir_all(e.home.join("log")).unwrap();
+    fs::write(
+        e.home.join("log/events.jsonl"),
+        concat!(
+            r#"{"ts":"2026-10-01T09:00:00Z","tool":"claude-code","event":"SessionStart"}"#, "\n",
+            r#"{"ts":"2026-10-09T09:00:00Z","tool":"claude-code","event":"PostToolUse","tool_name":"mcp__docs__search","server":"docs"}"#, "\n",
+        ),
+    )
+    .unwrap();
+    let out = run(&e, &e.root, &["--json", "doctor"]);
+    assert_eq!(out.status.code(), Some(0), "advisory only");
+    let report: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
+    let servers: Vec<(&str, &str, bool, u64)> = report["mcp"]["servers"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|s| {
+            (
+                s["name"].as_str().unwrap(),
+                s["scope"].as_str().unwrap(),
+                s["disabled"].as_bool().unwrap(),
+                s["uses"].as_u64().unwrap(),
+            )
+        })
+        .collect();
+    assert_eq!(
+        servers,
+        [
+            ("github", "claude-user", false, 0),
+            ("docs", "claude-mcpjson", false, 1),
+            ("jira", "claude-mcpjson", true, 0),
+            ("docs", "cursor-user", false, 1),
+        ]
+    );
+    let findings: Vec<(&str, &str)> = report["mcp"]["findings"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|p| {
+            (
+                p["check"].as_str().unwrap(),
+                p["severity"].as_str().unwrap(),
+            )
+        })
+        .collect();
+    assert_eq!(findings, [("mcp-unused", "warning")]);
+    assert!(
+        report["mcp"]["findings"][0]["fix"]
+            .as_str()
+            .unwrap()
+            .contains("gh CLI")
+    );
+    let out = run(&e, &e.root, &["doctor"]);
+    let text = String::from_utf8_lossy(&out.stdout);
+    assert!(text.contains("MCP servers (advisory"), "{text}");
+    assert!(
+        text.contains("github [claude-user]: github-mcp-server; no tool call in the log"),
+        "{text}"
+    );
+    assert!(text.contains("jira [claude-mcpjson] disabled"), "{text}");
+}

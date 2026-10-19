@@ -68,7 +68,7 @@ fn logger_hook_validates_and_installs() {
     let out = Command::new(env!("CARGO_BIN_EXE_skillctl"))
         .env("SKILLCTL_HOME", &home)
         .env("HOME", temp.path())
-        .args(["validate", "skillctl-logger@1.0.0"])
+        .args(["validate", "skillctl-logger@1.1.0"])
         .output()
         .unwrap();
     assert!(
@@ -126,6 +126,14 @@ fn logger_records_claude_code_and_cursor_events_and_never_fails() {
         }),
         false,
     );
+    run_hook(
+        &home,
+        &json!({
+            "session_id": "s1", "cwd": "/work/crm", "hook_event_name": "PostToolUse",
+            "tool_name": "mcp__github__list_pull_requests", "tool_input": {"name": "ignored"}
+        }),
+        false,
+    );
     // Cursor-shaped payload, camelCase event, cursor_version present.
     run_hook(
         &home,
@@ -153,7 +161,7 @@ fn logger_records_claude_code_and_cursor_events_and_never_fails() {
     assert!(out.status.success());
 
     let records = lines(&home);
-    assert_eq!(records.len(), 6);
+    assert_eq!(records.len(), 7);
     let first = &records[0];
     assert_eq!(first["tool"], "claude-code");
     assert_eq!(first["event"], "PreCompact");
@@ -171,12 +179,18 @@ fn logger_records_claude_code_and_cursor_events_and_never_fails() {
     assert_eq!(records[3]["agent"], "repo-explorer");
     assert_eq!(records[3]["agent_id"], "a9");
     assert_eq!(records[3]["stop_hook_active"], false);
-    assert_eq!(records[4]["tool"], "cursor");
-    assert_eq!(records[4]["event"], "SessionEnd");
-    assert_eq!(records[4]["session"], "c7");
-    assert_eq!(records[4]["cwd"], "/work/api");
-    assert!(records[4].get("transcript").is_none());
+    assert_eq!(records[4]["tool_name"], "mcp__github__list_pull_requests");
+    assert_eq!(records[4]["server"], "github");
+    assert!(
+        records[4].get("skill").is_none(),
+        "name only counts for the Skill tool"
+    );
     assert_eq!(records[5]["tool"], "cursor");
-    assert_eq!(records[5]["event"], "Stop");
-    assert_eq!(records[5]["stop_hook_active"], true);
+    assert_eq!(records[5]["event"], "SessionEnd");
+    assert_eq!(records[5]["session"], "c7");
+    assert_eq!(records[5]["cwd"], "/work/api");
+    assert!(records[5].get("transcript").is_none());
+    assert_eq!(records[6]["tool"], "cursor");
+    assert_eq!(records[6]["event"], "Stop");
+    assert_eq!(records[6]["stop_hook_active"], true);
 }

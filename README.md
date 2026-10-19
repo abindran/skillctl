@@ -314,7 +314,7 @@ Hooks never go into `skills/` folders: `add`, `attach --skills` and `global add`
 |---|---|---|
 | `skillctl lint [<folder>] [--format text\|json\|junit] [--strict]` | anywhere | Checks a project's instruction files (`AGENTS.md`, `CLAUDE.md`, `.claude/CLAUDE.md`, `CLAUDE.local.md`, `.cursor/rules/*.mdc`) with rules I301–I304, I308 and I309 and reports each problem with a suggested fix. Read-only: those files are team-owned and changed through review, never by skillctl. Same formats, allow-list and exit code 3 as `validate`. |
 | `skillctl validate [<name>[@<version>\|@draft] \| <path>] [--format text\|json\|junit] [--strict] [--with-reference]` | anywhere | Validates one store version, a draft, any folder, or with no argument every draft and every store version. A folder with `SKILL.md` gets the skill rules, one with `HOOK.md` the hook rules. Nothing is written. |
-| `skillctl doctor [--fix]` | anywhere | Reports, each with the command that fixes it: a missing or too-old `git`; instance folders that no longer exist or were replaced; pinned versions missing from the store; missing, wrong, dangling or conflicting links in every instance and user-level folder; store versions whose content no longer matches `meta.json` or that gained write permission; personal copies in `~/.claude/skills`, `~/.agents/skills` or `~/.cursor/skills` that shadow a project skill; symlinked or repository-resident global targets; repositories with `core.symlinks=false`. `--fix` removes vanished instances from the registry, relinks everything and restores read-only modes. Exits 1 while problems remain. A separate **Telemetry** section, which never affects the exit status, says whether Claude Code's OpenTelemetry export is on and complete (`CLAUDE_CODE_ENABLE_TELEMETRY=1`, `OTEL_METRICS_EXPORTER`, `OTEL_LOGS_EXPORTER`, `OTEL_EXPORTER_OTLP_PROTOCOL`, `OTEL_EXPORTER_OTLP_ENDPOINT`, and `OTEL_LOG_TOOL_DETAILS=1` so `agent.name` is not redacted), whether `ccusage` is on `PATH`, and that Cursor's usage comes from its dashboard and hook logs; `--json` carries it under `telemetry`. |
+| `skillctl doctor [--fix]` | anywhere | Reports, each with the command that fixes it: a missing or too-old `git`; instance folders that no longer exist or were replaced; pinned versions missing from the store; missing, wrong, dangling or conflicting links in every instance and user-level folder; store versions whose content no longer matches `meta.json` or that gained write permission; personal copies in `~/.claude/skills`, `~/.agents/skills` or `~/.cursor/skills` that shadow a project skill; symlinked or repository-resident global targets; repositories with `core.symlinks=false`. `--fix` removes vanished instances from the registry, relinks everything and restores read-only modes. Exits 1 while problems remain. An **MCP servers** section lists every server the harnesses connect to from this folder (`~/.claude.json` user and per-project entries, `.mcp.json`, `~/.cursor/mcp.json`, `.cursor/mcp.json`) with its command or URL, disabled state and how often the event log has seen its tools called; a server with no recorded call after a week of logging is `mcp-unused` (warning, with a CLI alternative such as `gh` where one exists), earlier it is `mcp-unmeasured` (info). Every connected server's tool definitions are loaded on every turn, so this is where the largest token savings tend to be. A separate **Telemetry** section, which never affects the exit status, says whether Claude Code's OpenTelemetry export is on and complete (`CLAUDE_CODE_ENABLE_TELEMETRY=1`, `OTEL_METRICS_EXPORTER`, `OTEL_LOGS_EXPORTER`, `OTEL_EXPORTER_OTLP_PROTOCOL`, `OTEL_EXPORTER_OTLP_ENDPOINT`, and `OTEL_LOG_TOOL_DETAILS=1` so `agent.name` is not redacted), whether `ccusage` is on `PATH`, and that Cursor's usage comes from its dashboard and hook logs; `--json` carries it under `telemetry`. |
 | `skillctl config get\|set <key> [<value>]` | anywhere | Reads or changes `link_targets`, `global_link_targets`, `git_exclude`, `global_in_instances` and `validate.allow` (lists are comma-separated). After changing link targets it offers to run `relink --all` (`--yes` answers), which also removes managed links from targets that were dropped. |
 | `skillctl completions <shell>` | anywhere | Prints a completion script for bash, zsh, fish, elvish or PowerShell. Touches nothing else. |
 
@@ -401,7 +401,7 @@ Cursor reads Claude Code hooks from `~/.claude/settings.json` through **Settings
 
 ### The skillctl-logger hook
 
-[`hooks/skillctl-logger/`](hooks/skillctl-logger/) is the observability baseline of the LLM optimisation strategy: one JSON line per harness event, from both tools, in one file. Every later measurement (sessions, prompts, compactions, subagent runs, skill activations) reads this log.
+[`hooks/skillctl-logger/`](hooks/skillctl-logger/) is the observability baseline of the LLM optimisation strategy: one JSON line per harness event, from both tools, in one file. Every later measurement (sessions, prompts, compactions, subagent runs, skill activations, MCP tool calls) reads this log.
 
 **Install and register once per machine.** From a checkout of this repository:
 
@@ -427,6 +427,8 @@ skillctl-logger@1.0.0
   events: SessionStart, SessionEnd, UserPromptSubmit, PostToolUse, Stop, SubagentStart, SubagentStop, PreCompact, PostCompact (all registered)
 ```
 
+(`skillctl-logger@1.1.0` at the time of writing; the version follows the hook's `metadata.version`.)
+
 Then send one prompt in Claude Code (or Cursor) and watch the log:
 
 ```bash
@@ -449,6 +451,7 @@ tail -f ~/.skills/log/events.jsonl
 | `transcript` | when the harness provides it | Path to the conversation transcript, from which context size can be derived |
 | `prompt_chars` | `UserPromptSubmit` | Length of the prompt. The text itself is never recorded. |
 | `tool_name`, `skill` | `PostToolUse` | The tool that ran and, for the `Skill` tool, the skill name: this is how skill activations are counted |
+| `server` | `PostToolUse` on an MCP tool | The server name from `mcp__<server>__<tool>`; `doctor` uses it to tell which configured servers are actually used |
 | `agent`, `agent_id` | subagent events | The subagent type and id. `agent` is absent for the harness's own auxiliary agents (for example the one that titles the session after each turn), which also fire `SubagentStop`; count only lines with `agent` when measuring delegation |
 | `trigger` | `PreCompact`, `PostCompact` | `auto` or `manual` |
 | `source`, `reason`, `stop_hook_active` | `SessionStart`, `SessionEnd`, `Stop`/`SubagentStop` | Copied from the event when present |
@@ -479,7 +482,13 @@ real subagent runs by type (the `.agent` filter drops the harness's auxiliary ag
 jq -r '.tool' ~/.skills/log/events.jsonl | sort | uniq -c
 ```
 
-events per tool, which confirms that Cursor is importing the hook.
+events per tool, which confirms that Cursor is importing the hook;
+
+```bash
+jq -r 'select(.server) | .server' ~/.skills/log/events.jsonl | sort | uniq -c
+```
+
+MCP tool calls by server (what `doctor`'s MCP audit is built on).
 
 **Upgrading, pausing, removing.** A new version of the logger is `skillctl install …` followed by `skillctl hook add skillctl-logger@<version>`; the link moves, the settings stay. To pause logging without losing the registration history, `skillctl hook remove skillctl-logger` and `hook add` it again later. The log file is plain JSONL; rotate or delete it whenever you like, the hook recreates it.
 

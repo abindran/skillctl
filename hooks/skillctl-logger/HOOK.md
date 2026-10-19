@@ -1,11 +1,11 @@
 ---
 name: skillctl-logger
-description: Appends one JSON line per harness lifecycle event to ~/.skills/log/events.jsonl, tagged with the tool that fired it, so sessions, prompts, compactions, subagent runs and skill activations can be counted and compared between Claude Code and Cursor.
+description: Appends one JSON line per harness lifecycle event to ~/.skills/log/events.jsonl, tagged with the tool that fired it, so sessions, prompts, compactions, subagent runs, skill activations and MCP tool calls can be counted and compared between Claude Code and Cursor.
 metadata:
-  version: "1.0.0"
+  version: "1.1.0"
 events: [SessionStart, SessionEnd, UserPromptSubmit, PostToolUse, Stop, SubagentStart, SubagentStop, PreCompact, PostCompact]
 matchers:
-  PostToolUse: Skill
+  PostToolUse: "Skill|mcp__.*"
 timeout: 10
 entry: hook.py
 ---
@@ -47,6 +47,7 @@ One line per event, appended to `$SKILLCTL_HOME/log/events.jsonl`
 | `trigger`, `reason`, `source`, `stop_hook_active` | copied from the event when present |
 | `prompt_chars` | length of the prompt on `UserPromptSubmit`; the text is never recorded |
 | `tool_name`, `skill` | on tool events: the tool, and `tool_input.skill` when the tool is `Skill` |
+| `server` | on MCP tool events (`mcp__<server>__<tool>`): the server name, so `doctor` can tell which configured servers are actually used |
 
 The script never blocks the harness: every path exits 0, and malformed input or
 an unwritable log are ignored.

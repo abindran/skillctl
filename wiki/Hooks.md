@@ -80,15 +80,16 @@ Whether Cursor rewrites stdin field names to Claude Code's for imported hooks is
 
 ## The `skillctl-logger` hook
 
-`hooks/skillctl-logger/` in the repository (installed from the checkout or from Git with `--path hooks/skillctl-logger`). It is a plain hook: a `HOOK.md` declaring nine events with `matchers: {PostToolUse: Skill}` and `timeout: 10`, and `hook.py`.
+`hooks/skillctl-logger/` in the repository (installed from the checkout or from Git with `--path hooks/skillctl-logger`). It is a plain hook: a `HOOK.md` declaring nine events with `matchers: {PostToolUse: "Skill|mcp__.*"}` and `timeout: 10`, and `hook.py`.
 
 Design constraints, in order:
 
 1. **Never block the harness.** Every code path returns 0; `json.load` failures, non-object payloads and `OSError` on the log are swallowed. Claude Code treats exit 0 with empty stdout as "continue".
 2. **Fast.** One Python start-up, one `json.dumps`, one append. No imports beyond the standard library.
 3. **Both tools, one schema.** `tool` is `cursor` when the payload has `cursor_version` or the environment has `CURSOR_VERSION`; `session` is `session_id` or `conversation_id`; `cwd` is `cwd` or `workspace_roots[0]`; `event` is normalised to PascalCase so `preCompact` and `PreCompact` are the same line.
-4. **Nothing sensitive.** The prompt is reduced to `prompt_chars`; tool output, `custom_instructions` and anything not on the explicit copy list (`COPIED`) is dropped.
-5. **Validates clean** under K101–K111. In particular it reads stdin with `json.load(sys.stdin)` rather than `.read()`, because the shared script heuristic (O131/K108) treats a bare `read` token as a possible terminal read.
+4. **Tool events are filtered at the source.** The `PostToolUse` matcher is `Skill|mcp__.*`, so only skill invocations and MCP tool calls reach the script; for `mcp__<server>__<tool>` names it records `server`, which `doctor`'s MCP audit uses to find configured servers nobody calls.
+5. **Nothing sensitive.** The prompt is reduced to `prompt_chars`; tool output, `custom_instructions` and anything not on the explicit copy list (`COPIED`) is dropped.
+6. **Validates clean** under K101–K111. In particular it reads stdin with `json.load(sys.stdin)` rather than `.read()`, because the shared script heuristic (O131/K108) treats a bare `read` token as a possible terminal read.
 
 The log path is `$SKILLCTL_HOME/log/events.jsonl`, falling back to `~/.skills/log/events.jsonl`, so a test home (`SKILLCTL_HOME` set) logs into itself. Writes are single `write` calls of one line in append mode, which keeps concurrent hooks from interleaving within a line.
 

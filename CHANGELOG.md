@@ -13,6 +13,17 @@ heading when cutting a release.
 
 ### Added
 
+- `doctor` audits MCP servers (strategy work item W10): every server the
+  harnesses connect to from the current folder (`~/.claude.json` user and
+  per-project entries with `disabledMcpjsonServers`, `.mcp.json`,
+  `~/.cursor/mcp.json`, `.cursor/mcp.json`), its command or URL, and how many
+  tool calls the event log records for it. After seven days of log history a
+  server with no recorded call is `mcp-unused` (warning, naming a CLI
+  alternative such as `gh` for GitHub where one exists); before that it is
+  `mcp-unmeasured` (info). Advisory, like the telemetry section, under `mcp`
+  in `--json`.
+- `skillctl-logger` 1.1.0 records MCP tool calls: the `PostToolUse` matcher
+  is now `Skill|mcp__.*` and each MCP event carries `server`.
 - Directive-description rules O140–O145 (strategy work item W09), all
   warnings, in `validate`, `seal` and `install`: O140 a trigger verb
   addressing "this skill"; O141 a negative constraint; O142 concrete trigger
