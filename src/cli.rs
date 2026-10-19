@@ -125,6 +125,13 @@ pub enum Command {
         command: GlobalCommand,
     },
 
+    /// Register hooks with the harnesses (Claude Code settings, read by Cursor too).
+    Hook {
+        /// The hook operation to execute.
+        #[command(subcommand)]
+        command: HookCommand,
+    },
+
     /// List projects.
     Projects,
 
@@ -262,6 +269,26 @@ pub enum GlobalCommand {
     /// List globally installed skills.
     List,
 }
+/// Hook registration operations.
+#[derive(Debug, Subcommand)]
+pub enum HookCommand {
+    /// Pin a stored hook, link it under ~/.claude/hooks and register its events
+    /// in ~/.claude/settings.json (merged, backed up, idempotent).
+    Add {
+        /// Hook name, optionally followed by @version (default: highest stable).
+        hook: String,
+    },
+
+    /// Unpin a hook, remove its link and its settings entries.
+    Remove {
+        /// Name of the hook to remove.
+        hook: SkillName,
+    },
+
+    /// List pinned hooks with their link and registration state.
+    List,
+}
+
 /// Configuration operations.
 #[derive(Debug, Subcommand)]
 pub enum ConfigCommand {

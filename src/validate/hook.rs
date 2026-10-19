@@ -1,4 +1,4 @@
-//! Hook artifact rules K101–K110. A hook is `HOOK.md` declaring `events` and an
+//! Hook artifact rules K101–K111. A hook is `HOOK.md` declaring `events` and an
 //! `entry` script, plus the script itself. Structural rules make the hook
 //! unregistrable and cannot be allow-listed; the rest are quality lints that
 //! reuse the script heuristics shared with skills. Nothing here runs the script.
@@ -10,7 +10,15 @@ use crate::{
     skill::{Field, Skill},
 };
 use serde_yaml_ng::Value;
-use std::path::{Component, Path};
+use std::{
+    collections::BTreeMap,
+    path::{Component, Path},
+};
+
+/// Seconds a harness waits for the hook when `HOOK.md` sets no `timeout`.
+pub const DEFAULT_TIMEOUT: u64 = 10;
+/// The longest `timeout` a hook may declare, matching Claude Code's ceiling.
+pub const MAX_TIMEOUT: u64 = 600;
 
 /// Rules an allow-list can never suppress (K101 is the runner's gate).
 pub const STRUCTURAL: [&str; 6] = ["K101", "K102", "K103", "K104", "K105", "K107"];
@@ -68,6 +76,21 @@ pub fn events(skill: &Skill) -> Option<Vec<String>> {
 /// The declared `entry` script, relative to the hook folder.
 pub fn entry(skill: &Skill) -> Option<&str> {
     skill.frontmatter.extra.get("entry").and_then(Value::as_str)
+}
+
+/// Per-event tool-name matchers (`matchers: {PostToolUse: Skill}`), or `None`
+/// when absent or malformed.
+pub fn matchers(skill: &Skill) -> Option<BTreeMap<String, String>> {
+    let value = skill.frontmatter.extra.get("matchers")?;
+    let map = value.as_mapping()?;
+    map.iter()
+        .map(|(key, value)| Some((key.as_str()?.to_owned(), value.as_str()?.to_owned())))
+        .collect()
+}
+
+/// The declared `timeout` in seconds, or `None` when absent or malformed.
+pub fn timeout(skill: &Skill) -> Option<u64> {
+    skill.frontmatter.extra.get("timeout")?.as_u64()
 }
 
 fn finding(
@@ -190,6 +213,47 @@ impl Rule for HookRules {
                 "entry is required and names the script the harness runs",
                 "Add entry: hook.py (or the script's relative path) to the frontmatter.",
             )),
+        }
+        // Registration fields: matchers name declared events; timeout is 1–600 s.
+        if let Some(value) = fields.extra.get("matchers") {
+            match matchers(skill) {
+                Some(map) => {
+                    let declared = events(skill).unwrap_or_default();
+                    for event in map.keys().filter(|event| !declared.contains(event)) {
+                        findings.push(finding(
+                            skill,
+                            "K111",
+                            false,
+                            format!("matchers names {event}, which is not in events"),
+                            "Only events the hook declares can have a matcher.",
+                        ));
+                    }
+                }
+                None => {
+                    let _ = value;
+                    findings.push(finding(
+                        skill,
+                        "K111",
+                        false,
+                        "matchers must map event names to tool-name patterns (strings)",
+                        "Write matchers as a mapping, for example matchers: {PostToolUse: Skill}.",
+                    ));
+                }
+            }
+        }
+        if let Some(value) = fields.extra.get("timeout") {
+            if !value
+                .as_u64()
+                .is_some_and(|seconds| (1..=MAX_TIMEOUT).contains(&seconds))
+            {
+                findings.push(finding(
+                    skill,
+                    "K111",
+                    false,
+                    format!("timeout must be a whole number of seconds from 1 to {MAX_TIMEOUT}"),
+                    "Set timeout to the seconds the harness should wait, or remove it for the default.",
+                ));
+            }
         }
         findings
     }

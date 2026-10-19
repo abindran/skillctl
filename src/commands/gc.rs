@@ -19,6 +19,7 @@ pub fn run(context: &mut Context<'_>, keep: u32) -> Result<(), Error> {
             .values()
             .flat_map(|project| project.skills.iter())
             .chain(registry.global.skills.iter())
+            .chain(registry.global.hooks.iter())
             .filter_map(|(name, pin)| match pin {
                 Pin::Version(version) => Some((name.clone(), version.clone())),
                 Pin::Draft => None,

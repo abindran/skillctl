@@ -3,11 +3,12 @@ use crate::{
     context::Context,
     error::Error,
     linker::{self, ReconcileReport},
-    paths::RelPath,
-    registry::{Instance, Project, Registry, Settings},
+    names::SkillName,
+    paths::{HomePath, RelPath},
+    registry::{Instance, Pin, Project, Registry, Settings},
     store,
 };
-use std::path::PathBuf;
+use std::{collections::BTreeMap, path::PathBuf};
 
 /// Reuse the ownership/convergence engine for user-level folders without Git.
 /// Resolve the target directory itself when it is a symlink; links remain per-skill.
@@ -15,12 +16,26 @@ pub(super) fn reconcile(
     context: &Context<'_>,
     registry: &Registry,
 ) -> Result<Vec<ReconcileReport>, Error> {
+    reconcile_into(
+        context,
+        &registry.global.skills,
+        &registry.settings.global_link_targets,
+    )
+}
+
+/// Link a set of global pins into user-level target folders. Skills go to
+/// `global_link_targets`; hooks go to the hook link folder.
+pub(super) fn reconcile_into(
+    context: &Context<'_>,
+    pins: &BTreeMap<SkillName, Pin>,
+    targets: &[HomePath],
+) -> Result<Vec<ReconcileReport>, Error> {
     let project = Project {
-        skills: registry.global.skills.clone(),
+        skills: pins.clone(),
         instances: vec![],
     };
     let mut reports = Vec::new();
-    for target in &registry.settings.global_link_targets {
+    for target in targets {
         let target = target.expand()?;
         // Resolve the deepest existing ancestor so symlinked parents (for example
         // a dotfiles `~/.claude`) still receive per-skill links in the real folder.

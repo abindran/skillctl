@@ -3,6 +3,7 @@ pub mod cli;
 pub mod commands;
 pub mod context;
 pub mod error;
+pub mod harness;
 pub mod linker;
 pub mod names;
 pub mod output;
@@ -49,6 +50,7 @@ pub fn run(command: Command, context: &mut Context<'_>) -> Result<(), Error> {
             commands::pins::remove(context, &skill, project.as_ref())
         }
         Command::Global { command } => commands::global::run(context, command),
+        Command::Hook { command } => commands::hook::run(context, command),
         Command::Projects => commands::projects::run(context),
         Command::Skills => commands::skills::run(context),
         Command::Relink { all, project } => commands::pins::relink(context, all, project.as_ref()),

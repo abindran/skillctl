@@ -50,7 +50,8 @@ pub fn run(context: &mut Context<'_>) -> Result<(), Error> {
                     .filter(|(_, project)| project.skills.get(&name) == Some(&pin))
                     .map(|(name, _)| name.clone())
                     .collect();
-                let global = registry.global.skills.get(&name) == Some(&pin);
+                let global = registry.global.skills.get(&name) == Some(&pin)
+                    || registry.global.hooks.get(&name) == Some(&pin);
                 versions.push(VersionUsage {
                     version,
                     projects,

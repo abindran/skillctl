@@ -148,6 +148,15 @@ pub struct ValidationSettings {
 pub struct Global {
     #[serde(default, deserialize_with = "unique_map")]
     pub skills: BTreeMap<SkillName, Pin>,
+    /// Hooks pinned for every session; linked under `~/.claude/hooks/` and
+    /// registered in the harness settings rather than into skills folders.
+    /// Omitted when empty so registries without hooks are unchanged.
+    #[serde(
+        default,
+        deserialize_with = "unique_map",
+        skip_serializing_if = "BTreeMap::is_empty"
+    )]
+    pub hooks: BTreeMap<SkillName, Pin>,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -274,11 +283,23 @@ impl Registry {
     pub fn validate(&self) -> Result<(), Error> {
         check_schema(self.schema)?;
         let mut paths: Vec<(&ProjectName, &Path)> = Vec::new();
+        for hook in self.global.hooks.keys() {
+            if self.global.skills.contains_key(hook) {
+                return Err(invalid(format!(
+                    "'{hook}' is pinned both as a global skill and as a hook"
+                )));
+            }
+        }
         for (name, project) in &self.projects {
             for skill in project.skills.keys() {
                 if self.global.skills.contains_key(skill) {
                     return Err(invalid(format!(
                         "Skill '{skill}' is pinned globally and in project '{name}'"
+                    )));
+                }
+                if self.global.hooks.contains_key(skill) {
+                    return Err(invalid(format!(
+                        "'{skill}' is pinned as a hook and as a skill in project '{name}'"
                     )));
                 }
             }

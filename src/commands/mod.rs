@@ -6,6 +6,7 @@ pub mod doctor;
 pub mod edit;
 pub mod gc;
 pub mod global;
+pub mod hook;
 pub mod init;
 pub mod install;
 pub mod new;

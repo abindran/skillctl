@@ -35,6 +35,7 @@ erDiagram
     PROJECT ||--o{ INSTANCE : "instances (Vec)"
     PROJECT ||--o{ PIN : "skills (BTreeMap)"
     GLOBAL ||--o{ PIN : "skills (BTreeMap)"
+    GLOBAL ||--o{ PIN : "hooks (BTreeMap, omitted when empty)"
     SETTINGS ||--|| VALIDATION_SETTINGS : validate
 ```
 
@@ -51,6 +52,8 @@ settings:
 global:
   skills:
     org-commit-message: 2.0.1
+  hooks:                                                # linked under ~/.claude/hooks, registered in settings.json
+    skillctl-logger: 1.0.0
 projects:
   crm-web:
     skills:
@@ -66,6 +69,7 @@ projects:
 |---|---|---|
 | `Registry` | `schema: u32`, `settings`, `global`, `projects: BTreeMap<ProjectName, Project>` | `BTreeMap` keeps YAML sorted so diffs stay readable if the home folder is kept in a personal Git repo. Unknown fields are rejected (`deny_unknown_fields`). |
 | `Settings` | `link_targets: Vec<RelPath>`, `git_exclude: bool`, `global_link_targets: Vec<HomePath>`, `global_in_instances: bool`, `validate: ValidationSettings`, `previous_link_targets: Vec<RelPath>` | Defaults apply field by field, so a registry written by an older build loads with new settings defaulted. |
+| `Global` | `skills: BTreeMap<SkillName, Pin>`, `hooks: BTreeMap<SkillName, Pin>` | `hooks` is skipped when empty, so registries written before hooks existed round-trip unchanged. A name cannot be in both maps, nor in `hooks` and any project's `skills`. |
 | `Project` | `skills: BTreeMap<SkillName, Pin>`, `instances: Vec<Instance>` | |
 | `Instance` | `path: PathBuf`, `attached_at: DateTime<Utc>`, `created_dirs: Vec<RelPath>` | `path` is absolute and canonical. `created_dirs` lists folders skillctl created, shallowest first, so `detach` removes only those and only when empty. |
 | `Pin` | `Version(semver::Version)` or `Draft` | Serialised as `"1.4.0"` or `"draft"`. |
@@ -76,6 +80,7 @@ projects:
 - Project and skill names follow the spec pattern, enforced by the newtypes' `Deserialize`.
 - Instance paths are absolute, each path appears in at most one project, and no instance path is an ancestor of another, so any folder resolves to exactly one project.
 - Duplicate skill keys in one map are rejected rather than silently last-wins.
+- A hook name is never also a global or project skill name.
 - Pinned versions are **not** required to exist in the store at load time; a missing version is a `doctor` finding, so a damaged store never locks the user out of the registry.
 
 ### Save path
@@ -166,7 +171,7 @@ The clone happens before the exclusive registry lock is taken; everything select
 
 ## Garbage collection and doctor
 
-`gc` deletes versions that no project or global pin references and that are not among a skill's newest `--keep` versions. It restores write permission (`restore_write_mode`), removes the version folder, and removes the skill folder when it becomes empty. `doctor` recomputes every stored version's content hash against `meta.json`, walks each version for entries that gained write permission (`--fix` restores `0444`/`0555`), and reports pins whose folders are missing.
+`gc` deletes versions that no project pin, global skill pin or global hook pin references and that are not among a skill's newest `--keep` versions. It restores write permission (`restore_write_mode`), removes the version folder, and removes the skill folder when it becomes empty. `doctor` recomputes every stored version's content hash against `meta.json`, walks each version for entries that gained write permission (`--fix` restores `0444`/`0555`), and reports pins whose folders are missing.
 
 `doctor` also runs `commands/telemetry.rs`, an observability check that is deliberately not a problem: it reads the Claude Code OpenTelemetry variables and probes `PATH` for `ccusage` through injected closures (so the logic is unit-tested without process state), produces `Problem` values with severities `warning` and `info`, and returns them in a separate `telemetry` object. They are rendered above the problem list and never counted in `remaining`, so a machine without telemetry is reported as unmeasured, not broken.
 

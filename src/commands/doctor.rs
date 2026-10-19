@@ -194,10 +194,10 @@ fn diagnose(context: &Context<'_>, fix: bool) -> Result<Vec<Problem>, Error> {
         .projects
         .iter()
         .map(|(name, project)| (format!("project '{name}'"), &project.skills))
-        .chain(std::iter::once((
-            "the global skills".to_owned(),
-            &registry.global.skills,
-        )));
+        .chain([
+            ("the global skills".to_owned(), &registry.global.skills),
+            ("the global hooks".to_owned(), &registry.global.hooks),
+        ]);
     for (scope, pins) in scopes {
         for (skill, pin) in pins {
             let dir = store::store_dir(home, skill, pin);
@@ -250,6 +250,14 @@ fn diagnose(context: &Context<'_>, fix: bool) -> Result<Vec<Problem>, Error> {
                 "the global skills".to_owned(),
             ));
         }
+    }
+    let hook_target = crate::harness::hook_link_target().expand()?;
+    for (hook, pin) in &registry.global.hooks {
+        checks.push((
+            hook_target.join(hook.as_str()),
+            store::store_dir(home, hook, pin),
+            "the global hooks".to_owned(),
+        ));
     }
     let mut link_problem = false;
     for (path, want, scope) in checks {
@@ -415,6 +423,85 @@ fn diagnose(context: &Context<'_>, fix: bool) -> Result<Vec<Problem>, Error> {
             }
             Err(error) if error.kind() == io::ErrorKind::NotFound => {}
             Err(source) => return Err(inspect_error(&path, source)),
+        }
+    }
+
+    // Hook registration: every pinned hook's events are in the harness settings
+    // exactly once, and not also in Cursor's own hooks file.
+    if !registry.global.hooks.is_empty() {
+        let settings_path = crate::harness::claude_settings().expand()?;
+        match crate::harness::claude::load(fs, &settings_path) {
+            Err(Error::Usage { message, .. }) => problems.push(problem(
+                "settings-invalid",
+                "error",
+                message,
+                "Fix the JSON by hand; skillctl never rewrites a settings file it cannot parse",
+                Some(settings_path.clone()),
+            )),
+            Err(error) => return Err(error),
+            Ok(settings) => {
+                let cursor_path = crate::harness::cursor_hooks().expand()?;
+                let cursor = match fs.read(&cursor_path) {
+                    Ok(bytes) => serde_json::from_slice::<serde_json::Value>(&bytes).ok(),
+                    Err(_) => None,
+                };
+                for (hook, pin) in &registry.global.hooks {
+                    let dir = store::store_dir(home, hook, pin);
+                    let Ok(declared) = super::hook::declared(context, &dir) else {
+                        continue;
+                    };
+                    let registered = crate::harness::claude::registered_events(&settings, hook);
+                    let missing: Vec<&str> = declared
+                        .registrations
+                        .iter()
+                        .map(|registration| registration.event.as_str())
+                        .filter(|event| !registered.contains(*event))
+                        .collect();
+                    if !missing.is_empty() {
+                        problems.push(problem(
+                            "hook-unregistered",
+                            "error",
+                            format!(
+                                "Hook '{hook}' is pinned but not registered for {} in {}",
+                                missing.join(", "),
+                                settings_path.display()
+                            ),
+                            format!("skillctl hook add {hook}"),
+                            Some(settings_path.clone()),
+                        ));
+                    }
+                    let duplicated = crate::harness::claude::duplicated_events(&settings, hook);
+                    if !duplicated.is_empty() {
+                        problems.push(problem(
+                            "hook-duplicate",
+                            "warning",
+                            format!(
+                                "Hook '{hook}' is registered more than once for {}; it runs twice per event",
+                                duplicated.join(", ")
+                            ),
+                            format!(
+                                "skillctl hook remove {hook} && skillctl hook add {hook} leaves one entry per event"
+                            ),
+                            Some(settings_path.clone()),
+                        ));
+                    }
+                    if cursor
+                        .as_ref()
+                        .is_some_and(|value| crate::harness::claude::mentions(value, hook))
+                    {
+                        problems.push(problem(
+                            "hook-duplicate",
+                            "warning",
+                            format!(
+                                "Hook '{hook}' also appears in {}; Cursor reads the Claude settings too, so it runs twice there",
+                                cursor_path.display()
+                            ),
+                            format!("Remove the {hook} entries from {}", cursor_path.display()),
+                            Some(cursor_path.clone()),
+                        ));
+                    }
+                }
+            }
         }
     }
 

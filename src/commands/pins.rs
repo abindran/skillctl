@@ -123,6 +123,7 @@ pub(super) fn reconcile_everything(
     registry: &mut Registry,
 ) -> Result<Vec<ReconcileReport>, Error> {
     let mut reports = super::global::reconcile(context, registry)?;
+    reports.extend(super::hook::reconcile(context, registry)?);
     let names = registry.projects.keys().cloned().collect::<Vec<_>>();
     reports.extend(reconcile_projects(context, registry, &names)?);
     if !reports.iter().any(ReconcileReport::has_conflicts) {

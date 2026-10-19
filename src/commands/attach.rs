@@ -26,8 +26,8 @@ pub(super) fn now() -> chrono::DateTime<Utc> {
     std::time::SystemTime::now().into()
 }
 /// Resolve `name[@pin]` to a linkable skill. Hooks live in the same store but
-/// are registered with a harness rather than linked into skills folders, so
-/// they are refused here until hook registration exists.
+/// are registered with a harness (`hook add`) rather than linked into skills
+/// folders, so they are refused here.
 pub(super) fn skill_pin(context: &Context<'_>, value: &str) -> Result<(SkillName, Pin), Error> {
     let (name, version) = value
         .split_once('@')
@@ -43,7 +43,7 @@ pub(super) fn skill_pin(context: &Context<'_>, value: &str) -> Result<(SkillName
     let dir = store::store_dir(&context.home, &name, &pin);
     if crate::artifact::Kind::of(context.fs.as_ref(), &dir)? == crate::artifact::Kind::Hook {
         return Err(usage(format!(
-            "'{name}' is a hook, not a skill; hooks are registered with a harness rather than linked, and hook registration is not available yet"
+            "'{name}' is a hook, not a skill; register it with skillctl hook add {name}"
         )));
     }
     Ok((name, pin))

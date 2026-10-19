@@ -123,6 +123,29 @@ fn one_fixture_per_hook_rule_triggers_only_that_rule() {
 }
 
 #[test]
+fn registration_fields_are_checked_by_k111() {
+    let base = document("[SessionEnd, PostToolUse]", "hook.py");
+    for (extra, expect) in [
+        ("matchers:\n  PostToolUse: Skill\ntimeout: 30\n", vec![]),
+        ("matchers:\n  PreToolUse: Bash\n", vec!["K111"]),
+        ("matchers: [PostToolUse]\n", vec!["K111"]),
+        ("matchers:\n  PostToolUse: 3\n", vec!["K111"]),
+        ("timeout: 0\n", vec!["K111"]),
+        ("timeout: 601\n", vec!["K111"]),
+        ("timeout: ten\n", vec!["K111"]),
+    ] {
+        let (_temp, dir) = fixture();
+        write(
+            &dir,
+            "HOOK.md",
+            &base.replace("entry: hook.py\n", &format!("entry: hook.py\n{extra}")),
+            0o644,
+        );
+        assert_eq!(ids(&dir), expect, "{extra:?}");
+    }
+}
+
+#[test]
 fn entry_variants_are_all_k107() {
     for (entry, extra) in [
         ("/abs/hook.py", None),

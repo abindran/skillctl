@@ -33,7 +33,7 @@ The technical architecture lives in the [project wiki](https://github.com/abindr
 | **Project-specific skills that follow the project to every clone.** | A project is a registry entry with pinned skill versions. Attach any number of folders to it; `add` and `remove` reconcile all of them, and `relink` restores links after `git clean -fdx` or a fresh checkout. |
 | **Keep project repositories clean.** | Links are listed individually in `.git/info/exclude`, so `git status` stays empty and project-owned skills in the same folder remain visible to Git. |
 | **Validate skills against open standards.** | `validate` implements the Agent Skills spec rules (S001–S008), organisation quality rules (O101–O133) and harness-compatibility warnings (H201–H205); hooks get their own rules (K101–K110). JUnit output plugs into CI merge-request widgets. |
-| **Store hooks next to skills.** | A hook is a `HOOK.md` declaring lifecycle events plus the script a harness runs. Hooks are authored, validated, versioned and installed exactly like skills, in the same store. Registering them with a harness is the next step on the roadmap. |
+| **Store hooks next to skills, register them once.** | A hook is a `HOOK.md` declaring lifecycle events plus the script a harness runs. Hooks are authored, validated, versioned and installed exactly like skills, in the same store. `hook add` links one under `~/.claude/hooks/` and merges its events into `~/.claude/settings.json`, which Cursor reads too, so one registration serves both tools. |
 | **Skills that bundle scripts, references and assets.** | The validator checks that every bundled file is referenced, that scripts have a shebang and executable bit, and that no script downloads to a shell, asks for interactive input, or embeds secrets. Harnesses run the scripts; skillctl only lints them. |
 | **Skills that are safe from accidental edits by an AI agent.** | Sealed store versions are `0444`/`0555`. Editing happens in a writable draft under `~/.skills/drafts/`, which can be linked into a project with `add <skill> --draft` for trying out before sealing. |
 | **Personal skills available in every folder.** | `global add` pins a skill in the registry's `global` section and links it into `~/.claude/skills/`. Project and global names cannot clash, so a personal skill never silently shadows a project one. |
@@ -288,6 +288,16 @@ Every command that asks a question also accepts flags that answer it, so all of 
 | `skillctl seal <name> [--bump major\|minor\|patch]` | anywhere | Runs the full validator with the registry allow-list; errors leave the draft intact. Stages a read-only copy under `store/<name>/<version>/<name>/`, writes `meta.json` with `kind` (`skill` or `hook`) and `source.kind: local`, then deletes the draft. Fails if the version already exists. |
 | `skillctl edit <name>[@<version>] [--force]` | anywhere | Copies a stored version (default: highest stable) into a writable draft with its patch version bumped, restoring write permission on the copy. Refuses to replace an existing draft unless `--force` is given. Link a skill draft into a project with `add <skill> --draft`, then `seal` it as the next version. |
 
+### Hooks
+
+| Command | Where | What it does |
+|---|---|---|
+| `skillctl hook add <hook>[@<version>]` | anywhere | Pins a stored hook in the registry's `global.hooks`, links `~/.claude/hooks/<hook>` to the store version, and registers one entry per declared event in `~/.claude/settings.json` (with the hook's `matchers` and `timeout`). The file is read, merged and written back atomically; your other settings and hand-written hooks are untouched; the previous bytes go to `settings.json.bak`; a second run reports every event as `present` and writes nothing. A file that is not valid JSON is a hard stop, never overwritten. Cursor loads Claude Code hooks from this file through its third-party imports (on by default), so the hook runs in both tools. |
+| `skillctl hook remove <hook>` | anywhere | Unpins the hook, removes its link, and removes only its entries from `settings.json`, pruning events that become empty. |
+| `skillctl hook list` | anywhere | Each pinned hook with its pin, link health, declared events and which of them are not registered. |
+
+Hooks never go into `skills/` folders: `add`, `attach --skills` and `global add` refuse a hook and point at `hook add`. `relink --all` and `doctor --fix` restore hook links; `doctor` also reports a pinned hook whose events are missing from `settings.json` (`hook-unregistered`), the same command registered twice or also present in `~/.cursor/hooks.json` (`hook-duplicate`), and an unparsable settings file (`settings-invalid`).
+
 ### Store
 
 | Command | Run from | What it changes |
@@ -334,7 +344,7 @@ Errors print one `Error:` line and one `Hint:` line naming the command to run ne
 | Agent Skills spec | S001–S008 | error | `SKILL.md` present; YAML frontmatter is a mapping; `name` matches `^[a-z0-9]+(-[a-z0-9]+)*$` and the folder name; `description` is 1–1024 characters; `compatibility`, `metadata`, `license`, `allowed-tools` have the right types. |
 | Organisation rules | O101–O133 | mixed | `metadata.version` is semver; description length and "use when" clause; no `<`/`>`; body and reference-file size budgets; every referenced path exists and every bundled file is referenced; no symlinks or `..` escapes; scripts have a shebang and executable bit, no interactive input, no `curl … \| sh` or `sudo`, no likely secrets. |
 | Harness compatibility | H201–H205 | warning | Claude-only frontmatter fields, `allowed-tools`, Claude substitutions in the body, `context: fork` combined with asking the user, unknown fields. |
-| Hook artifacts | K101–K110 | mixed | `HOOK.md` present and parsable; `name` matches the folder; `description` 1–1024 characters; `metadata.version` is semver; `events` is a non-empty list (unknown event names warn); `entry` is a regular file inside the folder with a shebang and the executable bit; no interactive input, `sudo` or `curl … \| sh` in scripts; no likely secrets; no symlinks. K101–K105 and K107 cannot be allow-listed. |
+| Hook artifacts | K101–K111 | mixed | `HOOK.md` present and parsable; `name` matches the folder; `description` 1–1024 characters; `metadata.version` is semver; `events` is a non-empty list (unknown event names warn); `entry` is a regular file inside the folder with a shebang and the executable bit; no interactive input, `sudo` or `curl … \| sh` in scripts; no likely secrets; no symlinks; `matchers` names declared events and `timeout` is 1–600 seconds. K101–K105 and K107 cannot be allow-listed. |
 
 Examples:
 
@@ -355,7 +365,7 @@ skillctl validate ./skills/org-code-review --format junit > validation.xml
 - Failure reports are always exactly one JSON array or one XML document, so they can be redirected straight into a CI artifact. For GitLab, point `artifacts:reports:junit` at the redirected file.
 - `--with-reference` additionally runs the reference `skills-ref validate` tool if it is on `PATH` and merges a failed verdict as error `R001`. Missing tools are ignored; hooks are skipped because the reference tool knows only the Agent Skills spec.
 
-### Hooks
+### Hook artifacts
 
 A hook folder holds `HOOK.md` and the script the harness runs:
 
@@ -365,14 +375,27 @@ name: skillctl-logger
 description: Appends one JSONL line per lifecycle event so compactions and subagent runs can be counted per session.
 metadata:
   version: "1.0.0"
-events: [SessionEnd, SubagentStop, PreCompact, UserPromptSubmit]
+events: [SessionEnd, SubagentStop, PreCompact, UserPromptSubmit, PostToolUse]
+matchers:
+  PostToolUse: Skill
+timeout: 10
 entry: hook.py
 ---
 ```
 
-`events` lists the Claude Code lifecycle events the hook handles (`SessionStart`, `SessionEnd`, `UserPromptSubmit`, `PreToolUse`, `PostToolUse`, `Stop`, `SubagentStop`, `PreCompact` and the rest; Cursor runs a subset through its third-party imports). `entry` is the script, relative to the folder; any interpreter is fine as long as it has a shebang and the executable bit. The harness passes the event as JSON on stdin.
+`events` lists the Claude Code lifecycle events the hook handles, in Claude Code's spelling; Cursor maps them itself (`PreToolUse`, `PostToolUse`, `UserPromptSubmit`, `Stop`, `SubagentStop`, `SessionStart`, `SessionEnd` and `PreCompact` are mapped; `Notification` and `PermissionRequest` are not; anything else runs in Claude Code only). `matchers` optionally gives a tool-name pattern for tool events, and `timeout` the seconds a harness waits (default 10, at most 600); both are checked by K111. `entry` is the script, relative to the folder; any interpreter is fine as long as it has a shebang and the executable bit. The harness passes the event as JSON on stdin.
 
-Hooks share the store's flat namespace with skills, so a skill and a hook cannot have the same name. Because a hook is registered with a harness rather than linked into a `skills/` folder, `add`, `attach --skills` and `global add` refuse hooks until hook registration ships.
+Hooks share the store's flat namespace with skills, so a skill and a hook cannot have the same name. A hook is registered with `hook add`, never linked into a `skills/` folder.
+
+### The bundled logger
+
+[`hooks/skillctl-logger/`](hooks/skillctl-logger/) in this repository is the observability baseline of the LLM optimisation strategy: a Python hook that appends one JSON line per lifecycle event to `~/.skills/log/events.jsonl` (`$SKILLCTL_HOME/log/events.jsonl`), tagged `claude-code` or `cursor`, with the session, folder, compaction trigger, subagent type, activated skill name and prompt length (never the prompt text). Install and register it once per machine:
+
+```bash
+skillctl install ./hooks/skillctl-logger && skillctl hook add skillctl-logger
+```
+
+Its [HOOK.md](hooks/skillctl-logger/HOOK.md) documents every field.
 
 Suppress organisation or harness rules per skill with a frontmatter field, or for every validation run through the registry. Spec rules cannot be suppressed.
 
@@ -510,10 +533,10 @@ scripts/release/build-universal.sh && scripts/release/package.sh 0.1.0 && script
 | Registry model, locking, atomic writes with backup, `init` | Implemented |
 | Store: queries, `meta.json`, content hash, staging, read-only sealing | Implemented |
 | Authoring: `new`, `seal`, `add --draft` | Implemented |
-| Hook artifacts: `HOOK.md` + script in the store, `new --kind hook`, K101–K110 validation, `kind` in `meta.json` | Implemented (W02a) |
-| Hook registration into `~/.claude/settings.json` and the `skillctl-logger` hook | Planned (W02b) |
+| Hook artifacts: `HOOK.md` + script in the store, `new --kind hook`, K101–K111 validation, `kind` in `meta.json` | Implemented (W02a) |
+| Hook registration: `hook add/remove/list`, `~/.claude/hooks/` links, `settings.json` merge with backup, doctor checks, the bundled `skillctl-logger` | Implemented (W02b) |
 | Linking: instance resolution, reconcile, Git exclude block | Implemented |
-| `attach`, `detach`, `status`, `add`, `remove`, `relink`, `global add/remove/list`, `projects`, `skills` | Implemented |
+| `attach`, `detach`, `status`, `add`, `remove`, `relink`, `global add/remove/list`, `hook add/remove/list`, `projects`, `skills` | Implemented |
 | Validation: S, O, H and K rules; text, JSON and JUnit; allow-lists; `--strict`; `--with-reference` | Implemented |
 | `install` from Git and local folders, `edit`, `doctor --fix`, `gc`, `config`, `completions` | Implemented |
 | Release pipeline: universal build, optional signing and notarization, clean-runner verification, GitHub release, crates.io publish and verification | Implemented (GitHub Actions) |

@@ -88,7 +88,7 @@ Known-field lists live in `validate/fields.rs`, so updating them for a new harne
 
 ## Hook rules
 
-A folder whose root document is `HOOK.md` is validated with these rules instead of the S/O/H groups (`validate::hook::HookRules`). The runner's gate reports K101 where it would report S001/S002 for a skill. K101–K105 and K107 are structural: a hook failing them cannot be registered, so no allow-list suppresses them.
+A folder whose root document is `HOOK.md` is validated with these rules (K101–K111) instead of the S/O/H groups (`validate::hook::HookRules`). The runner's gate reports K101 where it would report S001/S002 for a skill. K101–K105 and K107 are structural: a hook failing them cannot be registered, so no allow-list suppresses them.
 
 | ID | Severity | Rule |
 |---|---|---|
@@ -102,8 +102,9 @@ A folder whose root document is `HOOK.md` is validated with these rules instead 
 | K108 | mixed | The entry script (and any other file starting with `#!`) requests no interactive input (warning) and contains no `sudo` or `curl … \| sh` (error); the heuristics are shared with O131/O132 |
 | K109 | error | No likely secrets in any file (shared with O133; values are never echoed) |
 | K110 | error | No symlinks inside the hook folder (`HOOK.md` itself included) |
+| K111 | error | Registration fields are well-formed: `matchers`, if present, is a mapping from declared event names to string tool patterns; `timeout`, if present, is a whole number of seconds from 1 to 600 (`hook::MAX_TIMEOUT`) |
 
-`events` and `entry` are read from the frontmatter's `extra` map rather than typed fields, so skill validation is unchanged: a skill carrying an `events:` key still gets H205.
+`events`, `entry`, `matchers` and `timeout` are read from the frontmatter's `extra` map rather than typed fields, so skill validation is unchanged: a skill carrying an `events:` key still gets H205.
 
 ## Suppression and strict mode
 

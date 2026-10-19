@@ -13,6 +13,25 @@ heading when cutting a release.
 
 ### Added
 
+- Hook registration (strategy work item W02b). `hook add <hook>[@version]`
+  pins a stored hook in the registry's new `global.hooks` section (omitted
+  while empty, so existing registries are unchanged), links
+  `~/.claude/hooks/<hook>` to the store version, and merges one entry per
+  declared event into `~/.claude/settings.json`: other settings and
+  hand-written hooks are kept, the previous bytes go to `settings.json.bak`,
+  the write is atomic, a second run changes nothing, and an unparsable file is
+  refused rather than overwritten. Cursor reads that file through its
+  third-party imports, so one registration serves both tools. `hook remove`
+  reverses all of it; `hook list` shows pin, link health and unregistered
+  events. `relink --all` and `doctor --fix` restore hook links; `doctor` adds
+  `hook-unregistered`, `hook-duplicate` (twice in settings, or also in
+  `~/.cursor/hooks.json`) and `settings-invalid`; `gc` treats pinned hooks as
+  pinned. `HOOK.md` gains optional `matchers` (per-event tool pattern) and
+  `timeout` (1–600 s, default 10), validated by K111.
+- The bundled `hooks/skillctl-logger/` hook: one JSON line per lifecycle
+  event in `$SKILLCTL_HOME/log/events.jsonl`, tagged `claude-code` or
+  `cursor`, accepting both tools' payload shapes, recording prompt length but
+  never prompt text, and always exiting 0.
 - Hook artifacts (strategy work item W02a). A folder with `HOOK.md` (frontmatter
   `name`, `description`, `metadata.version`, `events`, `entry`) and its entry
   script is a hook, stored, versioned, hashed and installed exactly like a
@@ -23,7 +42,7 @@ heading when cutting a release.
   records `kind` (absent means `skill`, so existing stores need no migration).
   Hook rules K101–K110 replace the S/O/H groups for hooks; K101–K105 and K107
   cannot be allow-listed. `add`, `attach --skills` and `global add` refuse
-  hooks until hook registration exists.
+  hooks and point at `hook add`.
 - `new` copies every regular file beside the template document into the draft
   (previously only `SKILL.md` was read), so templates can ship scripts.
 - `doctor` reports an observability baseline (strategy work item W01): whether
