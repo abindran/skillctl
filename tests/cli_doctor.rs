@@ -139,6 +139,99 @@ fn doctor_reports_and_fixes_link_drift_missing_instances_and_store_permissions()
 }
 
 #[test]
+fn doctor_reports_telemetry_without_changing_the_exit_status() {
+    let e = env();
+    ok(&e, &e.root, &["init"]);
+    // A PATH holding only git and a scratch bin folder, so ccusage is absent for
+    // sure, whatever the developer machine has installed.
+    let git_dir = std::env::split_paths(&std::env::var_os("PATH").unwrap())
+        .find(|dir| dir.join("git").is_file())
+        .expect("git on PATH");
+    let bin = e.root.parent().unwrap().join("bin");
+    fs::create_dir(&bin).unwrap();
+    let path = std::env::join_paths([bin.clone(), git_dir]).unwrap();
+    let telemetry_vars = [
+        "CLAUDE_CODE_ENABLE_TELEMETRY",
+        "OTEL_METRICS_EXPORTER",
+        "OTEL_LOGS_EXPORTER",
+        "OTEL_EXPORTER_OTLP_PROTOCOL",
+        "OTEL_EXPORTER_OTLP_ENDPOINT",
+        "OTEL_LOG_TOOL_DETAILS",
+    ];
+    let doctor = |vars: &[(&str, &str)]| {
+        let mut command = Command::new(env!("CARGO_BIN_EXE_skillctl"));
+        command
+            .env("SKILLCTL_HOME", &e.home)
+            .env("HOME", &e.user_home)
+            .env("PATH", &path)
+            .current_dir(&e.root)
+            .args(["--json", "doctor"])
+            .stdin(std::process::Stdio::null());
+        for name in telemetry_vars {
+            command.env_remove(name);
+        }
+        for (name, value) in vars {
+            command.env(name, value);
+        }
+        let out = command.output().unwrap();
+        let report: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
+        (out.status.code(), report)
+    };
+
+    // Nothing configured: advisory findings, but doctor still passes.
+    let (code, report) = doctor(&[]);
+    assert_eq!(code, Some(0));
+    assert_eq!(report["problems"].as_array().unwrap().len(), 0);
+    assert_eq!(report["telemetry"]["claude_code"]["enabled"], false);
+    assert_eq!(report["telemetry"]["ccusage_on_path"], false);
+    let checks: Vec<&str> = report["telemetry"]["findings"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|item| item["check"].as_str().unwrap())
+        .collect();
+    assert_eq!(
+        checks,
+        ["telemetry-off", "ccusage-missing", "cursor-telemetry"]
+    );
+    let out = Command::new(env!("CARGO_BIN_EXE_skillctl"))
+        .env("SKILLCTL_HOME", &e.home)
+        .env("HOME", &e.user_home)
+        .env("PATH", &path)
+        .env_remove("CLAUDE_CODE_ENABLE_TELEMETRY")
+        .current_dir(&e.root)
+        .arg("doctor")
+        .stdin(std::process::Stdio::null())
+        .output()
+        .unwrap();
+    let text = String::from_utf8_lossy(&out.stdout);
+    assert!(text.contains("Telemetry (advisory"), "{text}");
+    assert!(
+        text.contains("[warning] Claude Code OpenTelemetry export is off"),
+        "{text}"
+    );
+    assert!(text.ends_with("No problems found.\n"), "{text}");
+
+    // Everything configured and ccusage installed: only the Cursor note remains.
+    fs::write(bin.join("ccusage"), "#!/bin/sh\n").unwrap();
+    let (code, report) = doctor(&[
+        ("CLAUDE_CODE_ENABLE_TELEMETRY", "1"),
+        ("OTEL_METRICS_EXPORTER", "otlp"),
+        ("OTEL_LOGS_EXPORTER", "otlp"),
+        ("OTEL_EXPORTER_OTLP_PROTOCOL", "grpc"),
+        ("OTEL_EXPORTER_OTLP_ENDPOINT", "http://localhost:4317"),
+        ("OTEL_LOG_TOOL_DETAILS", "1"),
+    ]);
+    assert_eq!(code, Some(0));
+    assert_eq!(report["telemetry"]["claude_code"]["enabled"], true);
+    assert_eq!(report["telemetry"]["ccusage_on_path"], true);
+    let findings = report["telemetry"]["findings"].as_array().unwrap();
+    assert_eq!(findings.len(), 1);
+    assert_eq!(findings[0]["check"], "cursor-telemetry");
+    assert_eq!(findings[0]["severity"], "info");
+}
+
+#[test]
 fn doctor_reports_missing_pins_and_shadowing_personal_copies() {
     let e = env();
     ok(&e, &e.root, &["new", "demo"]);

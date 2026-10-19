@@ -11,6 +11,17 @@ heading when cutting a release.
 
 ## [Unreleased]
 
+### Added
+
+- `doctor` reports an observability baseline (strategy work item W01): whether
+  Claude Code's OpenTelemetry export is enabled and complete
+  (`CLAUDE_CODE_ENABLE_TELEMETRY`, the metrics and logs exporters, the OTLP
+  protocol and endpoint, and `OTEL_LOG_TOOL_DETAILS`, without which
+  `agent.name` is redacted), whether `ccusage` is on `PATH`, and a note that
+  Cursor's numbers come from its usage dashboard and hook logs. The findings
+  are advisory: they appear in the text report and under `telemetry` in
+  `--json`, and never change the exit status.
+
 ## [0.1.0] - 2026-10-18
 
 First release. Published as the crate `skillctl-cli` (the binary is `skillctl`)

@@ -164,6 +164,8 @@ The clone happens before the exclusive registry lock is taken; everything select
 
 `gc` deletes versions that no project or global pin references and that are not among a skill's newest `--keep` versions. It restores write permission (`restore_write_mode`), removes the version folder, and removes the skill folder when it becomes empty. `doctor` recomputes every stored version's content hash against `meta.json`, walks each version for entries that gained write permission (`--fix` restores `0444`/`0555`), and reports pins whose folders are missing.
 
+`doctor` also runs `commands/telemetry.rs`, an observability check that is deliberately not a problem: it reads the Claude Code OpenTelemetry variables and probes `PATH` for `ccusage` through injected closures (so the logic is unit-tested without process state), produces `Problem` values with severities `warning` and `info`, and returns them in a separate `telemetry` object. They are rendered above the problem list and never counted in `remaining`, so a machine without telemetry is reported as unmeasured, not broken.
+
 ## Locking and atomic writes
 
 | Mechanism | Detail |

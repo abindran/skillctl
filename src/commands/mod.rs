@@ -14,6 +14,7 @@ pub mod projects;
 pub mod seal;
 pub mod skills;
 pub mod status;
+pub mod telemetry;
 pub mod validate;
 
 use crate::{

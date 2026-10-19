@@ -37,7 +37,7 @@ Dependencies only point downward. Core modules never print, never prompt and nev
 | `validate/` | `mod.rs`: `Rule` trait, `Finding`, `Severity`, `run`, `run_all`, suppression and strict policy. `spec.rs`, `org.rs`, `harness.rs`: rule groups. `fields.rs`: known frontmatter fields per harness. `report.rs`: text, JSON and JUnit renderers. |
 | `services/` | `fs.rs`: `Fs` trait, `RealFs`, `DryRunFs`. `prompt.rs`: `Prompter` trait, `TermPrompter`, `ScriptedPrompter`. `git.rs`: `Git` trait and `GitCli`. |
 | `sources/` | `mod.rs`: `Source::classify` (existing folder → local, anything else → Git URL) and `discover` (every folder holding `SKILL.md`, or only `--path`, never following symlinks or entering dot-folders). `git.rs`: `Checkout`, a shallow clone in a temporary folder that is deleted on drop. |
-| `commands/` | `init`, `attach`, `detach`, `status`, `pins` (`add`, `remove`, `relink`, and `reconcile_everything` shared with `doctor --fix` and `config`), `global`, `projects`, `skills`, `new`, `edit`, `seal`, `install`, `validate`, `doctor`, `gc`, `config`, `completions`. Shared helpers `read_locked`, `load_registry` and `load_registry_or_default` live in `commands/mod.rs`. |
+| `commands/` | `init`, `attach`, `detach`, `status`, `pins` (`add`, `remove`, `relink`, and `reconcile_everything` shared with `doctor --fix` and `config`), `global`, `projects`, `skills`, `new`, `edit`, `seal`, `install`, `validate`, `doctor` (with `telemetry`, its advisory observability check), `gc`, `config`, `completions`. Shared helpers `read_locked`, `load_registry` and `load_registry_or_default` live in `commands/mod.rs`. |
 
 ## Context and swappable services
 

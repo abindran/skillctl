@@ -237,8 +237,17 @@ skillctl doctor --fix
 ```
 
 ```
+Telemetry (advisory; does not affect the exit status):
+  [warning] Claude Code OpenTelemetry export is off (CLAUDE_CODE_ENABLE_TELEMETRY is not 1), so tokens and cost per skill and agent are not recorded
+      fix: export CLAUDE_CODE_ENABLE_TELEMETRY=1 OTEL_METRICS_EXPORTER=otlp OTEL_LOGS_EXPORTER=otlp OTEL_EXPORTER_OTLP_PROTOCOL=grpc OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4317 OTEL_LOG_TOOL_DETAILS=1
+  [warning] ccusage is not on PATH; it sums tokens and cost from Claude Code's local session logs
+      fix: npm install -g ccusage (or run it ad hoc with npx ccusage)
+  [info] Cursor exports no telemetry; its baseline comes from the usage dashboard (cursor.com, Settings, Usage) and from hook logs
+      fix: Nothing to set; record Cursor numbers from the dashboard and the hook log
 No problems found.
 ```
+
+The telemetry block is the observability baseline: it tells you whether this machine records the token and cost numbers that every later optimisation is measured against, and it never fails `doctor`.
 
 ## Command reference
 
@@ -291,7 +300,7 @@ Every command that asks a question also accepts flags that answer it, so all of 
 | Command | Run from | What it changes |
 |---|---|---|
 | `skillctl validate [<skill>[@<version>\|@draft] \| <path>] [--format text\|json\|junit] [--strict] [--with-reference]` | anywhere | Validates one store version, a draft, any folder, or with no argument every draft and every store version. Nothing is written. |
-| `skillctl doctor [--fix]` | anywhere | Reports, each with the command that fixes it: a missing or too-old `git`; instance folders that no longer exist or were replaced; pinned versions missing from the store; missing, wrong, dangling or conflicting links in every instance and user-level folder; store versions whose content no longer matches `meta.json` or that gained write permission; personal copies in `~/.claude/skills`, `~/.agents/skills` or `~/.cursor/skills` that shadow a project skill; symlinked or repository-resident global targets; repositories with `core.symlinks=false`. `--fix` removes vanished instances from the registry, relinks everything and restores read-only modes. Exits 1 while problems remain. |
+| `skillctl doctor [--fix]` | anywhere | Reports, each with the command that fixes it: a missing or too-old `git`; instance folders that no longer exist or were replaced; pinned versions missing from the store; missing, wrong, dangling or conflicting links in every instance and user-level folder; store versions whose content no longer matches `meta.json` or that gained write permission; personal copies in `~/.claude/skills`, `~/.agents/skills` or `~/.cursor/skills` that shadow a project skill; symlinked or repository-resident global targets; repositories with `core.symlinks=false`. `--fix` removes vanished instances from the registry, relinks everything and restores read-only modes. Exits 1 while problems remain. A separate **Telemetry** section, which never affects the exit status, says whether Claude Code's OpenTelemetry export is on and complete (`CLAUDE_CODE_ENABLE_TELEMETRY=1`, `OTEL_METRICS_EXPORTER`, `OTEL_LOGS_EXPORTER`, `OTEL_EXPORTER_OTLP_PROTOCOL`, `OTEL_EXPORTER_OTLP_ENDPOINT`, and `OTEL_LOG_TOOL_DETAILS=1` so `agent.name` is not redacted), whether `ccusage` is on `PATH`, and that Cursor's usage comes from its dashboard and hook logs; `--json` carries it under `telemetry`. |
 | `skillctl config get\|set <key> [<value>]` | anywhere | Reads or changes `link_targets`, `global_link_targets`, `git_exclude`, `global_in_instances` and `validate.allow` (lists are comma-separated). After changing link targets it offers to run `relink --all` (`--yes` answers), which also removes managed links from targets that were dropped. |
 | `skillctl completions <shell>` | anywhere | Prints a completion script for bash, zsh, fish, elvish or PowerShell. Touches nothing else. |
 

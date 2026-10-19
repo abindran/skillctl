@@ -1,7 +1,9 @@
 //! Health checks: registry versus disk, link health, store integrity, user-level
 //! folders and the Git environment. `--fix` repairs what is safe to repair
 //! (missing instances, link drift, writable store entries); everything else is
-//! reported with the command that fixes it.
+//! reported with the command that fixes it. A telemetry section (see
+//! [`super::telemetry`]) reports whether the harnesses export token and cost
+//! data; it is advisory and never affects the exit status.
 use crate::{
     context::Context,
     error::Error,
@@ -53,9 +55,18 @@ pub fn run(context: &mut Context<'_>, fix: bool) -> Result<(), Error> {
         super::init::ensure_home(context)?;
         super::read_locked(context, || diagnose(context, false))?
     };
+    let telemetry = super::telemetry::inspect(
+        |name| std::env::var(name).ok(),
+        |binary| {
+            std::env::var_os("PATH").is_some_and(|path| {
+                std::env::split_paths(&path)
+                    .any(|dir| std::fs::metadata(dir.join(binary)).is_ok_and(|info| info.is_file()))
+            })
+        },
+    );
     let fixed = problems.iter().filter(|item| item.fixed).count();
     let remaining = problems.len() - fixed;
-    let text = if problems.is_empty() {
+    let problems_text = if problems.is_empty() {
         "No problems found.".to_owned()
     } else {
         let mut lines = problems
@@ -76,6 +87,12 @@ pub fn run(context: &mut Context<'_>, fix: bool) -> Result<(), Error> {
         ));
         lines.join("\n")
     };
+    let telemetry_text = telemetry.text();
+    let text = if telemetry_text.is_empty() {
+        problems_text
+    } else {
+        format!("{telemetry_text}\n{problems_text}")
+    };
     context
         .output
         .result(
@@ -83,6 +100,7 @@ pub fn run(context: &mut Context<'_>, fix: bool) -> Result<(), Error> {
                 "problems": problems,
                 "fixed": fixed,
                 "remaining": remaining,
+                "telemetry": telemetry,
                 "dry_run": context.flags.dry_run,
             }),
             &text,
