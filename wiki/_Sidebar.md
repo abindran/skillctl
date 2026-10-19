@@ -2,4 +2,5 @@
 - [Architecture](Architecture)
 - [Storage and Registry](Storage-and-Registry)
 - [Linking](Linking)
+- [Hooks](Hooks)
 - [Validation](Validation)

@@ -18,6 +18,7 @@ The technical architecture lives in the [project wiki](https://github.com/abindr
 - [Quick start](#quick-start)
 - [Command reference](#command-reference)
 - [Global flags and exit codes](#global-flags-and-exit-codes)
+- [Hooks](#hooks)
 - [Validation](#validation)
 - [Configuration](#configuration)
 - [Home folder layout](#home-folder-layout)
@@ -288,7 +289,7 @@ Every command that asks a question also accepts flags that answer it, so all of 
 | `skillctl seal <name> [--bump major\|minor\|patch]` | anywhere | Runs the full validator with the registry allow-list; errors leave the draft intact. Stages a read-only copy under `store/<name>/<version>/<name>/`, writes `meta.json` with `kind` (`skill` or `hook`) and `source.kind: local`, then deletes the draft. Fails if the version already exists. |
 | `skillctl edit <name>[@<version>] [--force]` | anywhere | Copies a stored version (default: highest stable) into a writable draft with its patch version bumped, restoring write permission on the copy. Refuses to replace an existing draft unless `--force` is given. Link a skill draft into a project with `add <skill> --draft`, then `seal` it as the next version. |
 
-### Hooks
+### Hook commands
 
 | Command | Where | What it does |
 |---|---|---|
@@ -335,9 +336,154 @@ Hooks never go into `skills/` folders: `add`, `attach --skills` and `global add`
 
 Errors print one `Error:` line and one `Hint:` line naming the command to run next. With `--json` the same information is emitted as a JSON object.
 
+## Hooks
+
+A hook is a script a harness runs on a lifecycle event (a prompt was submitted, a turn ended, the context was compacted, a subagent finished). skillctl stores hooks in the same store as skills, validates them, and registers them with one command for both Claude Code and Cursor.
+
+### Hook artifacts
+
+A hook folder holds `HOOK.md` and the script the harness runs:
+
+```yaml
+---
+name: skillctl-logger
+description: Appends one JSONL line per lifecycle event so compactions and subagent runs can be counted per session.
+metadata:
+  version: "1.0.0"
+events: [SessionEnd, SubagentStop, PreCompact, UserPromptSubmit, PostToolUse]
+matchers:
+  PostToolUse: Skill
+timeout: 10
+entry: hook.py
+---
+```
+
+| Field | Meaning |
+|---|---|
+| `events` | The Claude Code lifecycle events the hook handles, in Claude Code's spelling. Cursor maps them itself: `PreToolUse`, `PostToolUse`, `UserPromptSubmit`, `Stop`, `SubagentStop`, `SessionStart`, `SessionEnd` and `PreCompact` run in both tools; `Notification` and `PermissionRequest` are not supported by Cursor; anything else (`SubagentStart`, `PostCompact`, …) runs in Claude Code only. |
+| `matchers` | Optional tool-name pattern per tool event, for example `PostToolUse: Skill` to see only skill invocations. |
+| `timeout` | Optional seconds the harness waits (default 10, at most 600). |
+| `entry` | The script, relative to the folder. Any interpreter works as long as the file has a shebang and the executable bit. The harness passes the event as JSON on stdin; exit 0 to continue, 2 to block where the event allows it. |
+
+Hooks are validated with rules K101–K111 (see [Validation](#validation)). They share the store's flat namespace with skills, so a skill and a hook cannot have the same name, and they are never linked into a `skills/` folder.
+
+### Writing a hook
+
+```bash
+skillctl new --kind hook my-hook
+```
+
+This scaffolds `~/.skills/drafts/my-hook/` with a `HOOK.md` and an executable Python `hook.py` that reads the event from stdin and exits 0. Edit both, then:
+
+```bash
+skillctl validate my-hook@draft && skillctl seal my-hook
+```
+
+To change a sealed hook later, `skillctl edit my-hook` copies it back into a draft with a patch bump; seal again and re-run `hook add` to repoint the link.
+
+### Registering a hook
+
+```bash
+skillctl hook add my-hook
+```
+
+`hook add` does three things, all idempotent:
+
+1. Pins the hook in the registry's `global.hooks`.
+2. Links `~/.claude/hooks/my-hook` to the store version, so upgrading the hook repoints one symlink and never rewrites your settings.
+3. Merges one entry per declared event into `~/.claude/settings.json`, with the hook's `matchers` and `timeout`. The command stored is `"$HOME/.claude/hooks/my-hook/<entry>"`. Your other settings and any hooks you wrote by hand are left exactly as they are; the previous bytes are saved to `settings.json.bak` first; a file that is not valid JSON is refused rather than overwritten. Running `hook add` again reports every event as `present` and writes nothing.
+
+Cursor reads Claude Code hooks from `~/.claude/settings.json` through **Settings → Agents → Third-Party Imports** (on by default), so the same registration runs the hook in Cursor. Do not also add it to `~/.cursor/hooks.json`; it would run twice, and `doctor` warns when it finds that.
+
+`skillctl hook list` shows each pinned hook, its link health and any declared event that is not registered. `skillctl hook remove my-hook` unpins it, removes the link and removes only its entries from `settings.json`. `doctor` checks the link, reports `hook-unregistered` and `hook-duplicate`, and `doctor --fix` restores a missing link.
+
+### The skillctl-logger hook
+
+[`hooks/skillctl-logger/`](hooks/skillctl-logger/) is the observability baseline of the LLM optimisation strategy: one JSON line per harness event, from both tools, in one file. Every later measurement (sessions, prompts, compactions, subagent runs, skill activations) reads this log.
+
+**Install and register once per machine.** From a checkout of this repository:
+
+```bash
+skillctl install ./hooks/skillctl-logger && skillctl hook add skillctl-logger
+```
+
+or straight from Git:
+
+```bash
+skillctl install https://github.com/abindran/skillctl.git --path hooks/skillctl-logger && skillctl hook add skillctl-logger
+```
+
+Claude Code picks the new entries up without a restart. Check that everything is in place:
+
+```bash
+skillctl hook list
+```
+
+```
+skillctl-logger@1.0.0
+  /Users/me/.claude/hooks/skillctl-logger: ok
+  events: SessionStart, SessionEnd, UserPromptSubmit, PostToolUse, Stop, SubagentStart, SubagentStop, PreCompact, PostCompact (all registered)
+```
+
+Then send one prompt in Claude Code (or Cursor) and watch the log:
+
+```bash
+tail -f ~/.skills/log/events.jsonl
+```
+
+**What it records.** The log lives at `$SKILLCTL_HOME/log/events.jsonl` (`~/.skills/log/events.jsonl` by default). Each line is one event:
+
+```json
+{"ts":"2026-10-19T13:18:38Z","tool":"claude-code","event":"UserPromptSubmit","session":"cf27…","cwd":"/Users/me/work/crm","transcript":"/Users/me/.claude/projects/…/cf27….jsonl","prompt_chars":711}
+```
+
+| Field | Present on | Meaning |
+|---|---|---|
+| `ts` | all | UTC time the hook ran |
+| `tool` | all | `claude-code`, or `cursor` when the payload carries `cursor_version` or `CURSOR_VERSION` is set |
+| `event` | all | The event in Claude Code's spelling; Cursor's camelCase names are normalised (`preCompact` → `PreCompact`) so one log is comparable across tools |
+| `session` | all | Claude Code's `session_id` or Cursor's `conversation_id` |
+| `cwd` | all | The working folder (Claude Code `cwd`, or Cursor's first `workspace_roots` entry) |
+| `transcript` | when the harness provides it | Path to the conversation transcript, from which context size can be derived |
+| `prompt_chars` | `UserPromptSubmit` | Length of the prompt. The text itself is never recorded. |
+| `tool_name`, `skill` | `PostToolUse` | The tool that ran and, for the `Skill` tool, the skill name: this is how skill activations are counted |
+| `agent`, `agent_id` | subagent events | The subagent type and id. `agent` is absent for the harness's own auxiliary agents (for example the one that titles the session after each turn), which also fire `SubagentStop`; count only lines with `agent` when measuring delegation |
+| `trigger` | `PreCompact`, `PostCompact` | `auto` or `manual` |
+| `source`, `reason`, `stop_hook_active` | `SessionStart`, `SessionEnd`, `Stop`/`SubagentStop` | Copied from the event when present |
+
+The hook never slows or blocks a turn: it runs in tens of milliseconds, exits 0 on every path, and ignores malformed input or an unwritable log.
+
+**Reading the log.** A few `jq` one-liners that answer the strategy's questions:
+
+```bash
+jq -r 'select(.event=="PreCompact") | .session' ~/.skills/log/events.jsonl | sort | uniq -c | sort -rn
+```
+
+compactions per session, most first (the "tasks run too long in one context" signal);
+
+```bash
+jq -r 'select(.event=="PostToolUse" and .skill) | .skill' ~/.skills/log/events.jsonl | sort | uniq -c
+```
+
+skill activations by skill;
+
+```bash
+jq -r 'select(.event=="SubagentStop" and .agent) | .agent' ~/.skills/log/events.jsonl | sort | uniq -c
+```
+
+real subagent runs by type (the `.agent` filter drops the harness's auxiliary agents);
+
+```bash
+jq -r '.tool' ~/.skills/log/events.jsonl | sort | uniq -c
+```
+
+events per tool, which confirms that Cursor is importing the hook.
+
+**Upgrading, pausing, removing.** A new version of the logger is `skillctl install …` followed by `skillctl hook add skillctl-logger@<version>`; the link moves, the settings stay. To pause logging without losing the registration history, `skillctl hook remove skillctl-logger` and `hook add` it again later. The log file is plain JSONL; rotate or delete it whenever you like, the hook recreates it.
+
 ## Validation
 
-`skillctl validate` runs three rule groups on skills and one on hooks. Each rule has a stable ID, a default severity and a fix hint.
+`skillctl validate` runs three rule groups on skills and one on [hooks](#hooks). Each rule has a stable ID, a default severity and a fix hint.
 
 | Group | IDs | Severity | Covers |
 |---|---|---|---|
@@ -364,38 +510,6 @@ skillctl validate ./skills/org-code-review --format junit > validation.xml
 - `--format` overrides the global `--json` flag. `--quiet` hides the text report but keeps machine-readable reports intact.
 - Failure reports are always exactly one JSON array or one XML document, so they can be redirected straight into a CI artifact. For GitLab, point `artifacts:reports:junit` at the redirected file.
 - `--with-reference` additionally runs the reference `skills-ref validate` tool if it is on `PATH` and merges a failed verdict as error `R001`. Missing tools are ignored; hooks are skipped because the reference tool knows only the Agent Skills spec.
-
-### Hook artifacts
-
-A hook folder holds `HOOK.md` and the script the harness runs:
-
-```yaml
----
-name: skillctl-logger
-description: Appends one JSONL line per lifecycle event so compactions and subagent runs can be counted per session.
-metadata:
-  version: "1.0.0"
-events: [SessionEnd, SubagentStop, PreCompact, UserPromptSubmit, PostToolUse]
-matchers:
-  PostToolUse: Skill
-timeout: 10
-entry: hook.py
----
-```
-
-`events` lists the Claude Code lifecycle events the hook handles, in Claude Code's spelling; Cursor maps them itself (`PreToolUse`, `PostToolUse`, `UserPromptSubmit`, `Stop`, `SubagentStop`, `SessionStart`, `SessionEnd` and `PreCompact` are mapped; `Notification` and `PermissionRequest` are not; anything else runs in Claude Code only). `matchers` optionally gives a tool-name pattern for tool events, and `timeout` the seconds a harness waits (default 10, at most 600); both are checked by K111. `entry` is the script, relative to the folder; any interpreter is fine as long as it has a shebang and the executable bit. The harness passes the event as JSON on stdin.
-
-Hooks share the store's flat namespace with skills, so a skill and a hook cannot have the same name. A hook is registered with `hook add`, never linked into a `skills/` folder.
-
-### The bundled logger
-
-[`hooks/skillctl-logger/`](hooks/skillctl-logger/) in this repository is the observability baseline of the LLM optimisation strategy: a Python hook that appends one JSON line per lifecycle event to `~/.skills/log/events.jsonl` (`$SKILLCTL_HOME/log/events.jsonl`), tagged `claude-code` or `cursor`, with the session, folder, compaction trigger, subagent type, activated skill name and prompt length (never the prompt text). Install and register it once per machine:
-
-```bash
-skillctl install ./hooks/skillctl-logger && skillctl hook add skillctl-logger
-```
-
-Its [HOOK.md](hooks/skillctl-logger/HOOK.md) documents every field.
 
 Suppress organisation or harness rules per skill with a frontmatter field, or for every validation run through the registry. Spec rules cannot be suppressed.
 
