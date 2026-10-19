@@ -2,10 +2,11 @@
 name: skill-forced-eval
 description: Before each prompt in Claude Code, shortlists the skills the agent can see whose name, trigger phrasings or file paths match the prompt, and injects a mandatory YES/NO check so the agent decides explicitly whether to invoke each candidate. Silent in Cursor, in folders without skills, and for prompts that match nothing.
 metadata:
-  version: "1.0.0"
+  version: "1.0.1"
 events: [UserPromptSubmit]
 timeout: 10
 entry: hook.py
+companions: [skill-check]
 ---
 
 # skill-forced-eval
@@ -23,6 +24,10 @@ skillctl hook add skill-forced-eval
 
 `hook add` warns if any pinned skill still fails the directive-description
 rules: a prompt hook on top of weak descriptions measured worse than no hook.
+It also pins the companion rule `skill-check` (`rules/skill-check/` in the
+skillctl repository, install it first) into every project, so Cursor, whose
+prompt hook cannot inject text, gets the same check as an always-apply rule
+at `.cursor/rules/skill-check.mdc`.
 
 ## What it does on each prompt
 

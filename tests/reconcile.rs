@@ -53,6 +53,7 @@ impl Fixture {
             &mut self.instance,
             &self.project,
             &self.settings,
+            skillctl::linker::Layout::Kinds,
         )
         .unwrap()
     }
@@ -375,6 +376,7 @@ fn failed_atomic_update_preserves_old_link_and_cleans_temporary_link() {
         &mut f.instance,
         &f.project,
         &f.settings,
+        skillctl::linker::Layout::Kinds,
     )
     .unwrap_err();
     assert!(error.to_string().contains("injected rename failure"));

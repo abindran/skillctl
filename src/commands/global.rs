@@ -80,6 +80,7 @@ pub(super) fn reconcile_into(
             &mut instance,
             &project,
             &settings,
+            linker::Layout::Folders,
         )?);
     }
     Ok(reports)
@@ -95,6 +96,14 @@ pub fn run(context: &mut Context<'_>, command: GlobalCommand) -> Result<(), Erro
         match command {
             GlobalCommand::Add { skill } => {
                 let (name, pin) = super::attach::skill_pin(context, &skill)?;
+                let dir = store::store_dir(&context.home, &name, &pin);
+                if crate::artifact::Kind::of(context.fs.as_ref(), &dir)?
+                    != crate::artifact::Kind::Skill
+                {
+                    return Err(super::attach::usage(format!(
+                        "'{name}' is not a skill; rules and commands are project-level, pin them with skillctl add inside the project"
+                    )));
+                }
                 if registry
                     .projects
                     .values()

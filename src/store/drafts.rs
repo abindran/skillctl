@@ -7,7 +7,10 @@ use super::{
 use crate::{
     artifact::Kind,
     cli::Bump,
-    commands::init::{DEFAULT_HOOK_SCRIPT, DEFAULT_HOOK_TEMPLATE, DEFAULT_TEMPLATE},
+    commands::init::{
+        DEFAULT_COMMAND_TEMPLATE, DEFAULT_HOOK_SCRIPT, DEFAULT_HOOK_TEMPLATE,
+        DEFAULT_RULE_TEMPLATE, DEFAULT_TEMPLATE,
+    },
     error::Error,
     names::SkillName,
     paths::Paths,
@@ -28,6 +31,8 @@ fn default_template(kind: Kind) -> &'static str {
     match kind {
         Kind::Skill => "default",
         Kind::Hook => "hook",
+        Kind::Rule => "rule",
+        Kind::Command => "command",
     }
 }
 
@@ -73,6 +78,8 @@ pub fn new(
                     true,
                 )],
             ),
+            Kind::Rule => (DEFAULT_RULE_TEMPLATE.into(), Vec::new()),
+            Kind::Command => (DEFAULT_COMMAND_TEMPLATE.into(), Vec::new()),
         },
         Err(error) => return Err(io_error(&path, error)),
         Ok(_) => {
@@ -96,10 +103,7 @@ pub fn new(
     }
     let destination = paths.draft_dir(name);
     let parsed = Skill::parse_kind(&destination, &document, kind)?;
-    let findings = match kind {
-        Kind::Skill => validate::Rule::check(&validate::spec::SpecRules, &parsed),
-        Kind::Hook => validate::Rule::check(&validate::hook::HookRules, &parsed),
-    };
+    let findings = validate::Rule::check(validate::scaffold_rule(kind), &parsed);
     require_valid(&findings)?;
     real_dir(fs, &paths.drafts(), dry_run)?;
     missing(fs, &destination)?;
@@ -403,6 +407,8 @@ pub(crate) fn rewrite(
                     Kind::Hook => {
                         "Describe which lifecycle events this hook handles and what it does when they fire."
                     }
+                    Kind::Rule => "Describe when Cursor should attach this rule.",
+                    Kind::Command => "Describe what this slash command does.",
                 }),
             );
         }

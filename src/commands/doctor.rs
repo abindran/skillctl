@@ -269,19 +269,23 @@ fn diagnose(context: &Context<'_>, fix: bool) -> Result<Vec<Problem>, Error> {
         if registry.settings.global_in_instances {
             pins.extend(registry.global.skills.clone());
         }
+        let plans = crate::linker::plans(
+            fs,
+            home,
+            &pins,
+            &registry.settings.link_targets,
+            crate::linker::Layout::Kinds,
+        )?;
         for instance in &project.instances {
             if !is_dir(fs, &instance.path)? {
                 continue;
             }
-            for (skill, pin) in &pins {
-                let want = store::store_dir(home, skill, pin);
-                for target in &registry.settings.link_targets {
-                    checks.push((
-                        instance.path.join(target.as_path()).join(skill.as_str()),
-                        want.clone(),
-                        format!("project '{name}'"),
-                    ));
-                }
+            for plan in &plans {
+                checks.push((
+                    plan.path(&instance.path),
+                    plan.target.clone(),
+                    format!("project '{name}'"),
+                ));
             }
         }
     }

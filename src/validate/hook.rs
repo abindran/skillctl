@@ -88,6 +88,17 @@ pub fn matchers(skill: &Skill) -> Option<BTreeMap<String, String>> {
         .collect()
 }
 
+/// Artifact names pinned into every project together with the hook
+/// (`companions: [skill-check]`), or `None` when absent or malformed.
+pub fn companions(skill: &Skill) -> Option<Vec<String>> {
+    let value = skill.frontmatter.extra.get("companions")?;
+    value
+        .as_sequence()?
+        .iter()
+        .map(|item| item.as_str().map(str::to_owned))
+        .collect()
+}
+
 /// The declared `timeout` in seconds, or `None` when absent or malformed.
 pub fn timeout(skill: &Skill) -> Option<u64> {
     skill.frontmatter.extra.get("timeout")?.as_u64()
@@ -239,6 +250,22 @@ impl Rule for HookRules {
                         "Write matchers as a mapping, for example matchers: {PostToolUse: Skill}.",
                     ));
                 }
+            }
+        }
+        if fields.extra.contains_key("companions") {
+            let valid = companions(skill).is_some_and(|names| {
+                names
+                    .iter()
+                    .all(|name| SkillName::new(name.clone()).is_ok())
+            });
+            if !valid {
+                findings.push(finding(
+                    skill,
+                    "K111",
+                    false,
+                    "companions must be a list of artifact names",
+                    "Write companions: [skill-check] with valid artifact names.",
+                ));
             }
         }
         if let Some(value) = fields.extra.get("timeout") {

@@ -61,19 +61,22 @@ pub fn run(context: &mut Context<'_>, budget: bool) -> Result<(), Error> {
             found.project_name,
             found.instance.path.display()
         );
+        let plans = crate::linker::plans(
+            context.fs.as_ref(),
+            &context.home,
+            &found.project.skills,
+            &registry.settings.link_targets,
+            crate::linker::Layout::Kinds,
+        )?;
         for (name, pin) in &found.project.skills {
             let want = store::store_dir(&context.home, name, pin);
-            for target in &registry.settings.link_targets {
-                let path = found
-                    .instance
-                    .path
-                    .join(target.as_path())
-                    .join(name.as_str());
-                let state = health(context, &path, &want)?;
-                rows.push(serde_json::json!({"skill":name,"pin":pin,"path":path,"target":want,"status":state}));
+            for plan in plans.iter().filter(|plan| plan.target.starts_with(&want)) {
+                let path = plan.path(&found.instance.path);
+                let state = health(context, &path, &plan.target)?;
+                rows.push(serde_json::json!({"skill":name,"pin":pin,"path":path,"target":plan.target,"status":state}));
                 text.push_str(&format!(
                     "\n  {name}@{pin} {}: {state}",
-                    target.as_path().display()
+                    plan.dir.as_path().display()
                 ));
             }
         }

@@ -14,9 +14,11 @@ use std::{
 use serde::Serialize;
 
 use crate::{
+    artifact::Kind,
     error::Error,
+    names::SkillName,
     paths::{Paths, RelPath},
-    registry::{Instance, Project, Settings},
+    registry::{Instance, Pin, Project, Settings},
     services::fs::Fs,
     store,
 };
@@ -51,6 +53,86 @@ impl ReconcileReport {
     }
 }
 
+/// How pins map to links.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Layout {
+    /// By artifact kind: skills into every `link_targets` folder, rules into
+    /// `.cursor/rules/<name>.mdc`, commands into `.claude/commands/<name>.md`
+    /// and `.cursor/commands/<name>.md`. Project instances use this.
+    Kinds,
+    /// Every pin as a folder link into every `link_targets` folder, whatever
+    /// its kind. User-level folders (`~/.claude/skills`, `~/.claude/hooks`)
+    /// use this.
+    Folders,
+}
+
+/// One link to maintain: `<root>/<dir>/<name>` pointing at `target`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct LinkPlan {
+    pub dir: RelPath,
+    pub name: String,
+    pub target: PathBuf,
+}
+
+impl LinkPlan {
+    pub fn path(&self, root: &Path) -> PathBuf {
+        root.join(self.dir.as_path()).join(&self.name)
+    }
+}
+
+const RULES_DIR: &str = ".cursor/rules";
+const COMMAND_DIRS: [&str; 2] = [".claude/commands", ".cursor/commands"];
+
+/// The links a set of pins needs. A pin whose kind cannot be read (version
+/// missing from the store) is planned as a skill so its dangling links still
+/// show up for doctor.
+pub fn plans(
+    fs: &dyn Fs,
+    paths: &Paths,
+    pins: &std::collections::BTreeMap<SkillName, Pin>,
+    link_targets: &[RelPath],
+    layout: Layout,
+) -> Result<Vec<LinkPlan>, Error> {
+    let mut plans = Vec::new();
+    // A folder listed twice gets one link, not two outcomes.
+    let link_targets: BTreeSet<&RelPath> = link_targets.iter().collect();
+    for (name, pin) in pins {
+        let dir = store::store_dir(paths, name, pin);
+        let kind = match layout {
+            Layout::Folders => Kind::Skill,
+            Layout::Kinds => Kind::detect(fs, &dir)?.unwrap_or(Kind::Skill),
+        };
+        match kind {
+            Kind::Skill => {
+                for target in &link_targets {
+                    plans.push(LinkPlan {
+                        dir: (*target).clone(),
+                        name: name.as_str().to_owned(),
+                        target: dir.clone(),
+                    });
+                }
+            }
+            Kind::Rule => plans.push(LinkPlan {
+                dir: RelPath::new(RULES_DIR)?,
+                name: format!("{name}.mdc"),
+                target: dir.join(Kind::Rule.document()),
+            }),
+            Kind::Command => {
+                for commands in COMMAND_DIRS {
+                    plans.push(LinkPlan {
+                        dir: RelPath::new(commands)?,
+                        name: format!("{name}.md"),
+                        target: dir.join(Kind::Command.document()),
+                    });
+                }
+            }
+            // Hooks are registered with `hook add`, never linked into a project.
+            Kind::Hook => {}
+        }
+    }
+    Ok(plans)
+}
+
 /// Reconcile configured targets and clean managed links from obsolete targets.
 ///
 /// Missing pinned content still gets a link: doctor reports missing versions.
@@ -66,10 +148,22 @@ pub fn reconcile(
     instance: &mut Instance,
     project: &Project,
     settings: &Settings,
+    layout: Layout,
 ) -> Result<ReconcileReport, Error> {
     let mut report = ReconcileReport::default();
     let mut planned_dirs = BTreeSet::new();
-    let active: BTreeSet<_> = settings.link_targets.iter().cloned().collect();
+    let plans = plans(fs, paths, &project.skills, &settings.link_targets, layout)?;
+    // Folders to visit: every configured skills folder (to clean links of
+    // unpinned skills), every folder a plan needs, and obsolete folders.
+    let mut active: BTreeSet<RelPath> = settings.link_targets.iter().cloned().collect();
+    active.extend(plans.iter().map(|plan| plan.dir.clone()));
+    if layout == Layout::Kinds {
+        // Visit every kind folder even with no plan for it, so the links of
+        // an unpinned rule or command are removed.
+        for dir in std::iter::once(RULES_DIR).chain(COMMAND_DIRS) {
+            active.insert(RelPath::new(dir)?);
+        }
+    }
     let obsolete: BTreeSet<_> = settings
         .previous_link_targets
         .iter()
@@ -79,12 +173,13 @@ pub fn reconcile(
     for target in active.iter().chain(obsolete.iter()) {
         let dir = instance.path.join(target.as_path());
         let current = active.contains(target);
+        let here: Vec<&LinkPlan> = plans.iter().filter(|plan| &plan.dir == target).collect();
         if !safe_directory(fs, &instance.path, target)? {
             if current {
-                for (name, pin) in &project.skills {
+                for plan in &here {
                     report.links.push(LinkOutcome {
-                        path: dir.join(name.as_str()),
-                        target: Some(store::store_dir(paths, name, pin)),
+                        path: dir.join(&plan.name),
+                        target: Some(plan.target.clone()),
                         status: LinkStatus::Conflict,
                     });
                 }
@@ -102,7 +197,7 @@ pub fn reconcile(
                 && entry
                     .file_name()
                     .and_then(|name| name.to_str())
-                    .is_some_and(|name| project.skills.keys().any(|skill| skill.as_str() == name));
+                    .is_some_and(|name| here.iter().any(|plan| plan.name == name));
             if !wanted && managed_target(fs, paths, &entry)?.is_some() {
                 fs.remove_file(&entry)
                     .map_err(|error| io_error("Remove managed link", &entry, error))?;
@@ -116,9 +211,9 @@ pub fn reconcile(
         if !current {
             continue;
         }
-        for (name, pin) in &project.skills {
-            let path = dir.join(name.as_str());
-            let want = store::store_dir(paths, name, pin);
+        for plan in here {
+            let path = dir.join(&plan.name);
+            let want = plan.target.clone();
             let status = match fs.symlink_metadata(&path) {
                 Err(error) if error.kind() == io::ErrorKind::NotFound => {
                     ensure_dir(fs, instance, target, &mut planned_dirs)?;

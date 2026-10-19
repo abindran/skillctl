@@ -72,6 +72,7 @@ pub(super) fn reconcile_instance(
         instance,
         &project,
         &registry.settings,
+        linker::Layout::Kinds,
     );
     let report = match result {
         Ok(report) => report,

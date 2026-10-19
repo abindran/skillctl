@@ -35,6 +35,7 @@ pub fn run(context: &mut Context<'_>, keep_links: bool, delete_project: bool) ->
                 &mut instance,
                 &Project::default(),
                 &registry.settings,
+                linker::Layout::Kinds,
             )?;
             let mut removed: Vec<std::path::PathBuf> = report
                 .links

@@ -34,7 +34,8 @@ The technical architecture lives in the [project wiki](https://github.com/abindr
 | **Do not keep duplicate copies per harness or per clone.** | Each skill version exists exactly once in `~/.skills/store/`. Projects and harness folders only hold symlinks to it. |
 | **Project-specific skills that follow the project to every clone.** | A project is a registry entry with pinned skill versions. Attach any number of folders to it; `add` and `remove` reconcile all of them, and `relink` restores links after `git clean -fdx` or a fresh checkout. |
 | **Keep project repositories clean.** | Links are listed individually in `.git/info/exclude`, so `git status` stays empty and project-owned skills in the same folder remain visible to Git. |
-| **Validate skills against open standards.** | `validate` implements the Agent Skills spec rules (S001–S008), organisation quality rules (O101–O133), directive-description rules (O140–O145) and harness-compatibility warnings (H201–H205); hooks get their own rules (K101–K111). JUnit output plugs into CI merge-request widgets. |
+| **Validate skills against open standards.** | `validate` implements the Agent Skills spec rules (S001–S008), organisation quality rules (O101–O133), directive-description rules (O140–O145) and harness-compatibility warnings (H201–H205); hooks, rules and commands get their own rules (K101–K111, K201–K207, K301–K305). JUnit output plugs into CI merge-request widgets. |
+| **Rules and slash commands shared by both tools, never committed.** | A Cursor rule (`RULE.mdc`) or a slash command (`COMMAND.md`) is stored and versioned like a skill. Pinning it to a project links `.cursor/rules/<name>.mdc`, or `.claude/commands/<name>.md` and `.cursor/commands/<name>.md`, into the store, hidden through `.git/info/exclude` like every other link. One copy, both tools, nothing in the repository. |
 | **Store hooks next to skills, register them once.** | A hook is a `HOOK.md` declaring lifecycle events plus the script a harness runs. Hooks are authored, validated, versioned and installed exactly like skills, in the same store. `hook add` links one under `~/.claude/hooks/` and merges its events into `~/.claude/settings.json`, which Cursor reads too, so one registration serves both tools. |
 | **Skills that bundle scripts, references and assets.** | The validator checks that every bundled file is referenced, that scripts have a shebang and executable bit, and that no script downloads to a shell, asks for interactive input, or embeds secrets. Harnesses run the scripts; skillctl only lints them. |
 | **Skills that are safe from accidental edits by an AI agent.** | Sealed store versions are `0444`/`0555`. Editing happens in a writable draft under `~/.skills/drafts/`, which can be linked into a project with `add <skill> --draft` for trying out before sealing. |
@@ -275,7 +276,7 @@ Every command that asks a question also accepts flags that answer it, so all of 
 
 | Command | Run from | What it changes |
 |---|---|---|
-| `skillctl add <skill>[@<version>] [--project <name>] [--draft]` | instance folder | Pins a skill in the current (or named) project and reconciles every instance of it. Without a version, pins the highest stable store version. `--draft` links the writable draft instead. Re-adding with a different version changes the pin. Fails with a hint if the skill is not in the store. After pinning, prints any directive-description warnings (O140–O145) for the skill and the project's index budget (O143) on stderr; the same data is under `advisory` in `--json`. `global add` and `attach --skills` do the same. |
+| `skillctl add <name>[@<version>] [--project <name>] [--draft]` | instance folder | Pins a skill, rule or command in the current (or named) project and reconciles every instance of it. Where the link goes depends on the kind: skills into every `link_targets` folder, rules to `.cursor/rules/<name>.mdc`, commands to `.claude/commands/<name>.md` and `.cursor/commands/<name>.md`. Hooks are registered with `hook add` instead, and rules and commands are project-level (`global add` refuses them). Without a version, pins the highest stable store version. `--draft` links the writable draft instead. Re-adding with a different version changes the pin. Fails with a hint if the skill is not in the store. After pinning, prints any directive-description warnings (O140–O145) for the skill and the project's index budget (O143) on stderr; the same data is under `advisory` in `--json`. `global add` and `attach --skills` do the same. |
 | `skillctl remove <skill> [--project <name>]` | instance folder | Unpins the skill and reconciles every instance, deleting its links. |
 | `skillctl relink [--project <name>] [--all]` | instance folder or anywhere | Reconciles the current instance, every instance of one project, or everything. `--all` reconciles global skills first and cleans links in link targets that were removed from the settings. |
 | `skillctl global add <skill>[@<version>]` | anywhere | Pins a skill globally and links it into the user-level folders (`~/.claude/skills/` by default). Refuses a name that any project pins. |
@@ -286,7 +287,7 @@ Every command that asks a question also accepts flags that answer it, so all of 
 
 | Command | Run from | What it changes |
 |---|---|---|
-| `skillctl new <name> [--kind skill\|hook] [--from-template <name>]` | anywhere | Scaffolds `~/.skills/drafts/<name>/` with the name filled in and `metadata.version: 0.1.0`. A skill (the default) comes from `templates/default/SKILL.md`, whose description is a directive template with `[placeholders]` to replace (O144 flags any left in), with empty `scripts/` and `references/` folders. A hook (`--kind hook`) comes from `templates/hook/`: `HOOK.md` plus every other file in the template folder (the `hook.py` entry script, executable), with `{{name}}` substituted. Never replaces an existing draft. |
+| `skillctl new <name> [--kind skill\|hook\|rule\|command] [--from-template <name>]` | anywhere | Scaffolds `~/.skills/drafts/<name>/` with the name filled in and `metadata.version: 0.1.0`. A rule (`--kind rule`) comes from `templates/rule/RULE.mdc` and a command (`--kind command`) from `templates/command/COMMAND.md`. A skill (the default) comes from `templates/default/SKILL.md`, whose description is a directive template with `[placeholders]` to replace (O144 flags any left in), with empty `scripts/` and `references/` folders. A hook (`--kind hook`) comes from `templates/hook/`: `HOOK.md` plus every other file in the template folder (the `hook.py` entry script, executable), with `{{name}}` substituted. Never replaces an existing draft. |
 | `skillctl seal <name> [--bump major\|minor\|patch]` | anywhere | Runs the full validator with the registry allow-list; errors leave the draft intact. Stages a read-only copy under `store/<name>/<version>/<name>/`, writes `meta.json` with `kind` (`skill` or `hook`) and `source.kind: local`, then deletes the draft. Fails if the version already exists. |
 | `skillctl edit <name>[@<version>] [--force]` | anywhere | Copies a stored version (default: highest stable) into a writable draft with its patch version bumped, restoring write permission on the copy. Refuses to replace an existing draft unless `--force` is given. Link a skill draft into a project with `add <skill> --draft`, then `seal` it as the next version. |
 
@@ -342,6 +343,27 @@ Errors print one `Error:` line and one `Hint:` line naming the command to run ne
 
 A hook is a script a harness runs on a lifecycle event (a prompt was submitted, a turn ended, the context was compacted, a subagent finished). skillctl stores hooks in the same store as skills, validates them, and registers them with one command for both Claude Code and Cursor.
 
+### Rules and commands
+
+Two more artifact kinds live in the same store and go through the same `new`, `validate`, `seal`, `install`, `edit` and `add` lifecycle. They differ only in their root document and where they link:
+
+| Kind | Root document | Linked as | Read by |
+|---|---|---|---|
+| rule | `RULE.mdc`: Cursor's `description`, optional `globs`, `alwaysApply`, plus `name` and `metadata.version`; the body is the rule text | `.cursor/rules/<name>.mdc` | Cursor |
+| command | `COMMAND.md`: `description`, optional `argument-hint`, `allowed-tools`, `model`, plus `name` and `metadata.version`; the body is the prompt, with `$ARGUMENTS` for what the user typed | `.claude/commands/<name>.md` and `.cursor/commands/<name>.md` | Claude Code and Cursor |
+
+```bash
+skillctl new --kind command checkpoint && skillctl seal checkpoint && skillctl add checkpoint
+```
+
+Rules are validated with K201–K207 (an always-apply rule over 100 lines or any rule over 500 lines warns, as in `lint`'s I302) and commands with K301–K305; both reject a missing name, description, version or body. A hook can name companions (`companions: [skill-check]` in `HOOK.md`): `hook add` pins them into every project and `hook remove` unpins them, which is how the Cursor stand-in rule for the forced-eval hook travels with it.
+
+The bundled [`rules/skill-check/`](rules/skill-check/) is that stand-in: an always-apply rule telling Cursor's agent to check the available skills before acting. Install it before registering `skill-forced-eval`:
+
+```bash
+skillctl install ./rules/skill-check && skillctl install ./hooks/skill-forced-eval && skillctl hook add skill-forced-eval
+```
+
 ### Hook artifacts
 
 A hook folder holds `HOOK.md` and the script the harness runs:
@@ -362,6 +384,7 @@ entry: hook.py
 
 | Field | Meaning |
 |---|---|
+| `companions` | Optional list of artifacts (rules, commands, skills) that `hook add` pins into every project and `hook remove` unpins; they must already be in the store. |
 | `events` | The Claude Code lifecycle events the hook handles, in Claude Code's spelling. Cursor maps them itself: `PreToolUse`, `PostToolUse`, `UserPromptSubmit`, `Stop`, `SubagentStop`, `SessionStart`, `SessionEnd` and `PreCompact` run in both tools; `Notification` and `PermissionRequest` are not supported by Cursor; anything else (`SubagentStart`, `PostCompact`, …) runs in Claude Code only. |
 | `matchers` | Optional tool-name pattern per tool event, for example `PostToolUse: Skill` to see only skill invocations. |
 | `timeout` | Optional seconds the harness waits (default 10, at most 600). |
@@ -519,7 +542,9 @@ It stays silent, and costs nothing, when there is nothing to say: in Cursor (`CU
 | Directive descriptions | O140–O145 | warning | The description is the activation surface, so it must read as a directive: a trigger verb addressing "this skill" (O140), a negative constraint such as "Do not … without this skill" (O141), concrete trigger phrasings, quoted or introduced with "including"/"such as" (O142), no hedging ("helps with", "various", "etc.") and no scaffold `[placeholders]` left in (O144), and no `keywords` field, which has no measured effect (O145). O143 is the index budget, reported by `status --budget` and after `add`. |
 | Organisation rules | O101–O133 | mixed | `metadata.version` is semver; description length and "when" clause; no `<`/`>`; body and reference-file size budgets; every referenced path exists and every bundled file is referenced; no symlinks or `..` escapes; scripts have a shebang and executable bit, no interactive input, no `curl … \| sh` or `sudo`, no likely secrets. |
 | Harness compatibility | H201–H205 | warning | Claude-only frontmatter fields, `allowed-tools`, Claude substitutions in the body, `context: fork` combined with asking the user, unknown fields. |
-| Hook artifacts | K101–K111 | mixed | `HOOK.md` present and parsable; `name` matches the folder; `description` 1–1024 characters; `metadata.version` is semver; `events` is a non-empty list (unknown event names warn); `entry` is a regular file inside the folder with a shebang and the executable bit; no interactive input, `sudo` or `curl … \| sh` in scripts; no likely secrets; no symlinks; `matchers` names declared events and `timeout` is 1–600 seconds. K101–K105 and K107 cannot be allow-listed. |
+| Rule artifacts | K201–K207 | mixed | `RULE.mdc` present and parsable; `name` matches the folder; `description`; `metadata.version`; `alwaysApply` boolean and `globs` string or list; non-empty body; size budget (500 lines, 100 for always-apply) as a warning. K201–K204 cannot be allow-listed. |
+| Command artifacts | K301–K305 | error | `COMMAND.md` present and parsable; `name` matches the folder; `description`; `metadata.version`; non-empty body. K301–K304 cannot be allow-listed. |
+| Hook artifacts | K101–K111 | mixed | `HOOK.md` present and parsable; `name` matches the folder; `description` 1–1024 characters; `metadata.version` is semver; `events` is a non-empty list (unknown event names warn); `entry` is a regular file inside the folder with a shebang and the executable bit; no interactive input, `sudo` or `curl … \| sh` in scripts; no likely secrets; no symlinks; `matchers` names declared events, `timeout` is 1–600 seconds and `companions` is a list of artifact names. K101–K105 and K107 cannot be allow-listed. |
 
 Examples:
 
@@ -726,6 +751,7 @@ scripts/release/build-universal.sh && scripts/release/package.sh 0.1.0 && script
 | Store: queries, `meta.json`, content hash, staging, read-only sealing | Implemented |
 | Authoring: `new`, `seal`, `add --draft` | Implemented |
 | Hook artifacts: `HOOK.md` + script in the store, `new --kind hook`, K101–K111 validation, `kind` in `meta.json` | Implemented (W02a) |
+| Rule and command artifacts linked by kind (`.cursor/rules`, `.claude/commands`, `.cursor/commands`), K201–K207 and K301–K305, hook companions, the bundled `skill-check` rule | Implemented (W15, W31) |
 | Hook registration: `hook add/remove/list`, `~/.claude/hooks/` links, `settings.json` merge with backup, doctor checks, the bundled `skillctl-logger` | Implemented (W02b) |
 | Linking: instance resolution, reconcile, Git exclude block | Implemented |
 | `attach`, `detach`, `status`, `add`, `remove`, `relink`, `global add/remove/list`, `hook add/remove/list`, `projects`, `skills` | Implemented |

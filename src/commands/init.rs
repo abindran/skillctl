@@ -19,6 +19,14 @@ pub const DEFAULT_HOOK_TEMPLATE: &str = "---\nname: {{name}}\ndescription: Descr
 /// The hook entry script scaffold. It must never fail the harness, so malformed\n/// input is swallowed and every path exits 0.
 pub const DEFAULT_HOOK_SCRIPT: &str = "#!/usr/bin/env python3\n\"\"\"{{name}}: a skillctl hook. Reads one lifecycle event from stdin and exits 0.\"\"\"\nimport json\nimport sys\n\n\ndef main() -> int:\n    try:\n        event = json.load(sys.stdin)\n    except ValueError:\n        return 0  # never fail the harness over malformed input\n    _ = event.get(\"hook_event_name\")\n    return 0\n\n\nif __name__ == \"__main__\":\n    sys.exit(main())\n";
 
+/// The Cursor rule scaffold: `RULE.mdc` with Cursor's frontmatter plus name
+/// and version, linked as `.cursor/rules/<name>.mdc`.
+pub const DEFAULT_RULE_TEMPLATE: &str = "---\nname: {{name}}\ndescription: Describe when Cursor should attach this rule.\nglobs: \"**/*\"\nalwaysApply: false\nmetadata:\n  version: \"0.1.0\"\n---\n\nWrite the rule text here. Keep it to facts and constraints; put procedures in a skill.\n";
+
+/// The slash-command scaffold: `COMMAND.md` whose body is the prompt, linked as
+/// `.claude/commands/<name>.md` and `.cursor/commands/<name>.md`.
+pub const DEFAULT_COMMAND_TEMPLATE: &str = "---\nname: {{name}}\ndescription: Describe what this slash command does.\nargument-hint: \"[what to pass]\"\nmetadata:\n  version: \"0.1.0\"\n---\n\nWrite the prompt the command expands to. $ARGUMENTS is replaced by what the user typed after /{{name}}.\n";
+
 #[derive(Debug, Serialize)]
 pub struct InitReport {
     pub home: PathBuf,
@@ -95,6 +103,8 @@ pub fn initialize(context: &Context<'_>) -> Result<InitReport, Error> {
             context.home.drafts(),
             context.home.templates().join("default"),
             context.home.templates().join("hook"),
+            context.home.templates().join("rule"),
+            context.home.templates().join("command"),
         ] {
             ensure_dir(fs, &dir, &mut report.created)?;
         }
@@ -107,6 +117,8 @@ pub fn initialize(context: &Context<'_>) -> Result<InitReport, Error> {
             ("default/SKILL.md", DEFAULT_TEMPLATE, 0o644),
             ("hook/HOOK.md", DEFAULT_HOOK_TEMPLATE, 0o644),
             ("hook/hook.py", DEFAULT_HOOK_SCRIPT, 0o755),
+            ("rule/RULE.mdc", DEFAULT_RULE_TEMPLATE, 0o644),
+            ("command/COMMAND.md", DEFAULT_COMMAND_TEMPLATE, 0o644),
         ] {
             let template = context.home.templates().join(relative);
             if !exists(fs, &template)? {

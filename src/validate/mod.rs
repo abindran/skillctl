@@ -1,5 +1,6 @@
 //! Native validation. Structural failures suppress dependent field checks, not I/O errors.
 
+pub mod command;
 pub mod description;
 pub mod fields;
 pub mod harness;
@@ -7,6 +8,7 @@ pub mod hook;
 pub mod instructions;
 pub mod org;
 pub mod report;
+pub mod rule;
 pub mod spec;
 
 use crate::{artifact::Kind, error::Error, services::fs::Fs, skill::Skill};
@@ -73,7 +75,46 @@ pub fn run(fs: &dyn Fs, dir: &Path) -> Result<Vec<Finding>, Error> {
 /// Rules that make an artifact unloadable or unregistrable are never suppressed
 /// by an allow-list: the spec rules for skills, and the structural hook rules.
 fn suppressible(rule: &str) -> bool {
-    !(rule.starts_with('S') || hook::STRUCTURAL.contains(&rule))
+    !(rule.starts_with('S')
+        || hook::STRUCTURAL.contains(&rule)
+        || self::rule::STRUCTURAL.contains(&rule)
+        || command::STRUCTURAL.contains(&rule))
+}
+
+/// The rule groups a kind is validated with.
+pub fn rules_for(kind: Kind) -> &'static [&'static dyn Rule] {
+    match kind {
+        Kind::Skill => &[
+            &spec::SpecRules,
+            &org::OrgRules,
+            &description::DescriptionRules,
+            &harness::HarnessRules,
+        ],
+        Kind::Hook => &[&hook::HookRules],
+        Kind::Rule => &[&self::rule::RuleRules],
+        Kind::Command => &[&command::CommandRules],
+    }
+}
+
+/// The frontmatter-only rule `new` applies to a scaffold before writing it.
+pub fn scaffold_rule(kind: Kind) -> &'static dyn Rule {
+    match kind {
+        Kind::Skill => &spec::SpecRules,
+        Kind::Hook => &hook::HookRules,
+        Kind::Rule => &self::rule::RuleRules,
+        Kind::Command => &command::CommandRules,
+    }
+}
+
+/// The rule ids the runner uses when the root document is missing or does not
+/// parse, and the id for a symlinked root document.
+fn gate_rules(kind: Kind) -> (&'static str, &'static str, &'static str) {
+    match kind {
+        Kind::Skill => ("S001", "S002", "O122"),
+        Kind::Hook => ("K101", "K101", "K110"),
+        Kind::Rule => ("K201", "K201", "K201"),
+        Kind::Command => ("K301", "K301", "K301"),
+    }
 }
 
 /// Run all native groups for the folder's kind, suppress allowed IDs, then
@@ -93,10 +134,8 @@ pub fn run_all(
         .symlink_metadata(&document)
         .is_ok_and(|info| info.is_symlink())
     {
-        let (rule, what) = match kind {
-            Kind::Skill => ("O122", "skill"),
-            Kind::Hook => ("K110", "hook"),
-        };
+        let (_, _, rule) = gate_rules(kind);
+        let what = kind.label();
         return Ok(vec![Finding::error(
             rule,
             document,
@@ -107,19 +146,11 @@ pub fn run_all(
             ),
         )]);
     }
-    let rules: &[&dyn Rule] = match kind {
-        Kind::Skill => &[
-            &spec::SpecRules,
-            &org::OrgRules,
-            &description::DescriptionRules,
-            &harness::HarnessRules,
-        ],
-        Kind::Hook => &[&hook::HookRules],
-    };
-    let mut findings = run_with_rules_kind(fs, dir, kind, rules)?;
+    let mut findings = run_with_rules_kind(fs, dir, kind, rules_for(kind))?;
+    let (missing_rule, parse_rule, _) = gate_rules(kind);
     let local = if findings
         .iter()
-        .any(|finding| matches!(finding.rule.as_str(), "S001" | "S002" | "K101"))
+        .any(|finding| finding.rule == missing_rule || finding.rule == parse_rule)
     {
         String::new()
     } else {
@@ -158,10 +189,8 @@ pub fn run_with_rules_kind(
 ) -> Result<Vec<Finding>, Error> {
     let path = dir.join(kind.document());
     let document = kind.document();
-    let (missing_rule, parse_rule, what) = match kind {
-        Kind::Skill => ("S001", "S002", "skill"),
-        Kind::Hook => ("K101", "K101", "hook"),
-    };
+    let (missing_rule, parse_rule, _) = gate_rules(kind);
+    let what = kind.label();
     match fs.symlink_metadata(&path) {
         Err(source) if source.kind() == io::ErrorKind::NotFound => {
             return Ok(vec![Finding::error(

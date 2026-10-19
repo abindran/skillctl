@@ -21,6 +21,9 @@ use std::path::{Path, PathBuf};
 pub(super) struct Declared {
     pub entry: String,
     pub registrations: Vec<claude::Registration>,
+    /// Artifacts (rules, commands, skills) pinned into every project with
+    /// the hook, for example the Cursor rule that stands in for a prompt hook.
+    pub companions: Vec<SkillName>,
 }
 
 /// Read `HOOK.md` from a stored (or draft) hook folder.
@@ -40,10 +43,48 @@ pub(super) fn declared(context: &Context<'_>, dir: &Path) -> Result<Declared, Er
             timeout,
         })
         .collect();
+    let companions = rules::companions(&hook)
+        .unwrap_or_default()
+        .into_iter()
+        .map(|name| name.parse::<SkillName>())
+        .collect::<Result<Vec<_>, _>>()?;
     Ok(Declared {
         entry,
         registrations,
+        companions,
     })
+}
+
+/// Pin a hook's companions into every project (or unpin them), returning
+/// `(name, pin)` for what changed. Companions must already be in the store.
+fn companions(
+    context: &Context<'_>,
+    registry: &mut Registry,
+    names: &[SkillName],
+    add: bool,
+) -> Result<Vec<(SkillName, crate::registry::Pin)>, Error> {
+    let mut changed = Vec::new();
+    for name in names {
+        let pin = store::resolve_pin(context.fs.as_ref(), &context.home, name, None).map_err(
+            |error| Error::Usage {
+                message: format!("Companion '{name}' is not in the store: {error}"),
+                hint: format!(
+                    "Install it first (skillctl install <folder containing {name}>) and run hook add again."
+                ),
+            },
+        )?;
+        for project in registry.projects.values_mut() {
+            if add {
+                if !project.skills.contains_key(name) {
+                    project.skills.insert(name.clone(), pin.clone());
+                    changed.push((name.clone(), pin.clone()));
+                }
+            } else if project.skills.remove(name).is_some() {
+                changed.push((name.clone(), pin.clone()));
+            }
+        }
+    }
+    Ok(changed)
 }
 
 fn invalid(dir: &Path, message: &str) -> Error {
@@ -86,6 +127,7 @@ pub fn run(context: &mut Context<'_>, command: HookCommand) -> Result<(), Error>
         let mut registry = super::load_registry(context)?;
         let settings_path = harness::claude_settings().expand()?;
         let mut settings = claude::load(context.fs.as_ref(), &settings_path)?;
+        let mut companion_changes = Vec::new();
         let (name, outcomes) = match command {
             HookCommand::Add { hook } => {
                 let (name, pin, dir) = hook_pin(context, &hook)?;
@@ -101,6 +143,7 @@ pub fn run(context: &mut Context<'_>, command: HookCommand) -> Result<(), Error>
                 }
                 let declared = declared(context, &dir)?;
                 registry.global.hooks.insert(name.clone(), pin);
+                companion_changes = companions(context, &mut registry, &declared.companions, true)?;
                 let outcomes = claude::register(
                     &mut settings,
                     &name,
@@ -110,16 +153,31 @@ pub fn run(context: &mut Context<'_>, command: HookCommand) -> Result<(), Error>
                 (name, outcomes)
             }
             HookCommand::Remove { hook } => {
-                registry.global.hooks.remove(&hook);
+                if let Some(pin) = registry.global.hooks.remove(&hook) {
+                    let dir = store::store_dir(&context.home, &hook, &pin);
+                    if let Ok(declared) = declared(context, &dir) {
+                        companion_changes =
+                            companions(context, &mut registry, &declared.companions, false)?;
+                    }
+                }
                 let outcomes = claude::unregister(&mut settings, &hook);
                 (hook, outcomes)
             }
             HookCommand::List => unreachable!("handled above"),
         };
+        registry.validate()?;
         if !context.flags.dry_run {
             registry.save(context.fs.as_ref(), &context.home.registry())?;
         }
-        let reports = reconcile(context, &registry)?;
+        let mut reports = reconcile(context, &registry)?;
+        if !companion_changes.is_empty() {
+            let names = registry.projects.keys().cloned().collect::<Vec<_>>();
+            reports.extend(super::pins::reconcile_projects(
+                context,
+                &mut registry,
+                &names,
+            )?);
+        }
         // An activation hook on top of weak descriptions measured worse than no
         // hook at all, so say so for every skill pinned anywhere.
         let activation = outcomes
@@ -181,6 +239,16 @@ pub fn run(context: &mut Context<'_>, command: HookCommand) -> Result<(), Error>
         for outcome in &outcomes {
             text.push_str(&format!("\n  {}: {}", outcome.event, outcome.status));
         }
+        for (companion, pin) in &companion_changes {
+            text.push_str(&format!(
+                "\n  companion {companion}@{pin} {} every project",
+                if registry.global.hooks.contains_key(&name) {
+                    "pinned in"
+                } else {
+                    "unpinned from"
+                }
+            ));
+        }
         for report in &reports {
             for link in &report.links {
                 text.push_str(&format!("\n  {:?} {}", link.status, link.path.display()));
@@ -207,6 +275,7 @@ pub fn run(context: &mut Context<'_>, command: HookCommand) -> Result<(), Error>
                     "settings": settings_path,
                     "backup": backup,
                     "registered": outcomes,
+                    "companions": companion_changes.iter().map(|(name, pin)| serde_json::json!({"name": name, "pin": pin})).collect::<Vec<_>>(),
                     "reports": reports,
                     "advisory": advisory,
                     "dry_run": context.flags.dry_run,

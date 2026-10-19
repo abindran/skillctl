@@ -20,16 +20,24 @@ pub enum Kind {
     Skill,
     /// A lifecycle hook: `HOOK.md` declaring the events and the script to run.
     Hook,
+    /// A Cursor rule: `RULE.mdc` with `description`, `globs` and `alwaysApply`,
+    /// linked as `.cursor/rules/<name>.mdc`.
+    Rule,
+    /// A slash command: `COMMAND.md` whose body is the prompt, linked as
+    /// `.claude/commands/<name>.md` and `.cursor/commands/<name>.md`.
+    Command,
 }
 
 impl Kind {
-    pub const ALL: [Kind; 2] = [Kind::Skill, Kind::Hook];
+    pub const ALL: [Kind; 4] = [Kind::Skill, Kind::Hook, Kind::Rule, Kind::Command];
 
     /// The frontmatter document at the folder root.
     pub fn document(self) -> &'static str {
         match self {
             Self::Skill => "SKILL.md",
             Self::Hook => "HOOK.md",
+            Self::Rule => "RULE.mdc",
+            Self::Command => "COMMAND.md",
         }
     }
 
@@ -37,7 +45,15 @@ impl Kind {
         match self {
             Self::Skill => "skill",
             Self::Hook => "hook",
+            Self::Rule => "rule",
+            Self::Command => "command",
         }
+    }
+
+    /// Whether `add`/`attach` may pin this kind into a project. Hooks are
+    /// registered with `hook add` instead.
+    pub fn linkable(self) -> bool {
+        !matches!(self, Self::Hook)
     }
 
     /// Which kind a folder holds, from the document present at its root; `None`
@@ -62,8 +78,16 @@ impl Kind {
             [] => Ok(None),
             [kind] => Ok(Some(*kind)),
             _ => Err(Error::Validation {
-                summary: format!("{} contains both SKILL.md and HOOK.md", dir.display()),
-                hint: "A folder is either a skill or a hook; remove one of the documents.".into(),
+                summary: format!(
+                    "{} contains more than one root document ({})",
+                    dir.display(),
+                    present
+                        .iter()
+                        .map(|kind| kind.document())
+                        .collect::<Vec<_>>()
+                        .join(", ")
+                ),
+                hint: "A folder is one artifact kind; keep exactly one of SKILL.md, HOOK.md, RULE.mdc or COMMAND.md.".into(),
             }),
         }
     }
@@ -71,8 +95,11 @@ impl Kind {
     /// Like [`Kind::detect`], but a folder without either document is an error.
     pub fn of(fs: &dyn Fs, dir: &Path) -> Result<Kind, Error> {
         Self::detect(fs, dir)?.ok_or_else(|| Error::Validation {
-            summary: format!("{} contains neither SKILL.md nor HOOK.md", dir.display()),
-            hint: "Point skillctl at a skill folder (SKILL.md) or a hook folder (HOOK.md).".into(),
+            summary: format!(
+                "{} contains no root document (SKILL.md, HOOK.md, RULE.mdc or COMMAND.md)",
+                dir.display()
+            ),
+            hint: "Point skillctl at an artifact folder: a skill (SKILL.md), hook (HOOK.md), rule (RULE.mdc) or command (COMMAND.md).".into(),
         })
     }
 }

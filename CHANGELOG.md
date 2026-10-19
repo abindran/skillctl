@@ -13,6 +13,21 @@ heading when cutting a release.
 
 ### Added
 
+- Rule and command artifacts (strategy work items W15 and W31). A folder with
+  `RULE.mdc` is a Cursor rule, linked as `.cursor/rules/<name>.mdc`; one with
+  `COMMAND.md` is a slash command, linked as `.claude/commands/<name>.md` and
+  `.cursor/commands/<name>.md`. Both go through `new --kind rule|command`
+  (templates created by `init`), `validate` (K201–K207, K301–K305), `seal`,
+  `install`, `edit` and `add`; links are hidden through `.git/info/exclude`
+  like skill links; `status`, `doctor` and `relink` cover them. The linker now
+  plans links by artifact kind (`Layout::Kinds` for projects, `Layout::Folders`
+  for user-level folders) and sweeps the kind folders so an unpinned rule or
+  command loses its links. `global add` refuses rules and commands, which are
+  project-level.
+- `HOOK.md` `companions`: artifacts `hook add` pins into every project and
+  `hook remove` unpins (checked by K111). `skill-forced-eval` 1.0.1 names
+  the new bundled `rules/skill-check/` always-apply rule as its companion, so
+  Cursor gets the same skill check as a rule.
 - The bundled `hooks/skill-forced-eval/` hook (strategy work items W13 and
   W14): on `UserPromptSubmit` in Claude Code it shortlists the skills the
   agent can see (`.claude/skills/`, `.agents/skills/`, `~/.claude/skills/`)

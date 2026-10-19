@@ -56,17 +56,31 @@ flowchart TD
 
 ## Reconcile
 
-`linker::reconcile(fs, paths, instance, pins, settings)` is the **only** code path that creates or deletes links. Every command that changes links calls it, and `--dry-run` runs the identical function over `DryRunFs` with a cloned instance.
+`linker::reconcile(fs, paths, instance, pins, settings, layout)` is the **only** code path that creates or deletes links. Every command that changes links calls it, and `--dry-run` runs the identical function over `DryRunFs` with a cloned instance.
+
+### Link plans by kind
+
+Before anything is touched, `linker::plans` turns the pins into `LinkPlan { dir, name, target }` records. With `Layout::Kinds` (project instances) the artifact's kind, read from its store folder, decides the plan; with `Layout::Folders` (user-level folders such as `~/.claude/skills` and `~/.claude/hooks`) every pin is a folder link into every target, whatever its kind.
+
+| Kind | Plans |
+|---|---|
+| skill | `<target>/<name>` → `store/<name>/<ver>/<name>` for every `settings.link_targets` entry (duplicates collapsed) |
+| rule | `.cursor/rules/<name>.mdc` → `…/<name>/RULE.mdc` |
+| command | `.claude/commands/<name>.md` and `.cursor/commands/<name>.md` → `…/<name>/COMMAND.md` |
+| hook | none here; `hook add` links it under `~/.claude/hooks` with `Layout::Folders` |
+
+A pin whose store folder is missing is planned as a skill so its dangling links still show up for `doctor`. The folders visited are every `link_targets` entry, every folder a plan names, and (in `Kinds` layout) the three kind folders even when nothing is planned for them, so the links of an unpinned rule or command are removed. `status`, `doctor` and `global list` compute link health from the same plans, so what is reported is exactly what reconcile maintains.
 
 ```
-desired = { name -> store_dir(name, pin) for (name, pin) in pins }
-for target in settings.link_targets:
+plans = linker::plans(pins, settings.link_targets, layout)
+for dir in link_targets ∪ {plan.dir} ∪ kind folders:
     dir = instance.path / target
+    here = plans with plan.dir == dir
     for entry in list(dir) if dir exists:
-        if entry is a managed link and entry.name not in desired:
+        if entry is a managed link and entry.name not in {plan.name for plan in here}:
             delete link                                         -> removed
-    for (name, want) in desired:
-        p = dir / name
+    for plan in here:
+        p = dir / plan.name; want = plan.target
         match inspect(p):
             missing                 -> ensure_dir(dir); symlink(want, p)   -> linked
             managed link == want    -> nothing                             -> ok

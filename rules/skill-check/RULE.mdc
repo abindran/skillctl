@@ -1,0 +1,14 @@
+---
+name: skill-check
+description: Cursor stand-in for the skill-forced-eval hook. Before acting on any request, check the available skills; if one matches, read and follow its SKILL.md before doing anything else.
+alwaysApply: true
+metadata:
+  version: "1.0.0"
+---
+
+Before acting on a request, check the skills available in this project (the
+`SKILL.md` files under `.agents/skills/`, `.claude/skills/` and your personal
+skills). If a skill's description matches the request, including indirect
+phrasing such as the examples quoted in its description, read its `SKILL.md`
+and follow it before using any other tool. If no skill matches, proceed
+without one and do not invent a skill name.

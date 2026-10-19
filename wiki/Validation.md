@@ -121,6 +121,27 @@ A folder whose root document is `HOOK.md` is validated with these rules (K101–
 
 `events`, `entry`, `matchers` and `timeout` are read from the frontmatter's `extra` map rather than typed fields, so skill validation is unchanged: a skill carrying an `events:` key still gets H205.
 
+## Rule and command rules
+
+A folder whose root document is `RULE.mdc` is a Cursor rule (`validate::rule::RuleRules`); `COMMAND.md` makes a slash command (`validate::command::CommandRules`). `validate::rules_for(kind)` selects the group and `gate_rules(kind)` the ids the runner uses for a missing or unparsable root document (K201, K301). `validate::scaffold_rule(kind)` is the frontmatter-only rule `new` applies before writing a draft.
+
+| ID | Severity | Rule |
+|---|---|---|
+| K201 | error | `RULE.mdc` exists, is UTF-8 and parses as frontmatter (also the id for a symlinked document) |
+| K202 | error | `name` matches the artifact-name pattern and the folder name |
+| K203 | error | `description` present, at most 1,024 characters |
+| K204 | error | `metadata.version` parses as semver |
+| K205 | error | `alwaysApply`, if present, is a boolean; `globs`, if present, is a non-empty string or list of strings |
+| K206 | error | The body is not empty |
+| K207 | warning | Body at most 500 lines, or 100 when `alwaysApply: true` (the same budgets as `lint`'s I302) |
+| K301 | error | `COMMAND.md` exists and parses |
+| K302 | error | `name` matches the pattern and the folder (it becomes the slash command) |
+| K303 | error | `description` present, at most 1,024 characters |
+| K304 | error | `metadata.version` parses as semver |
+| K305 | error | The body, the prompt the command expands to, is not empty |
+
+K201–K204 and K301–K304 are structural and never suppressed. Hook rule K111 also checks `companions`, a list of valid artifact names that `hook add` pins into every project.
+
 ## Instruction-file rules
 
 `skillctl lint [<folder>]` runs `validate::instructions::check` on a project folder rather than on a store artifact. It reads `AGENTS.md`, `CLAUDE.md`, `.claude/CLAUDE.md` and `CLAUDE.local.md` into a `Layout` (and `.cursor/rules/*.mdc` for I302), decides whether any `CLAUDE.md` imports `AGENTS.md` (an `@AGENTS.md` or `@./AGENTS.md` token anywhere on a line for `./CLAUDE.md`, `@../AGENTS.md` for `.claude/CLAUDE.md`, since Claude Code resolves imports relative to the importing file; quoted paths do not count), and for I309 climbs the parents up to the Git top level (`Git::toplevel`) or the filesystem root. Nothing is written: these files are team-owned.

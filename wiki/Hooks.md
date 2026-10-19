@@ -4,7 +4,7 @@ A hook is the second artifact kind in the store: a folder with `HOOK.md` and the
 
 ## Artifact model
 
-`artifact::Kind` is `Skill` or `Hook`. The kind is **detected from the folder**: `SKILL.md` makes a skill, `HOOK.md` makes a hook, both is an error (`Kind::detect`). It is also written to `meta.json` as `kind` so listings can read it without opening the folder; a missing `kind` means `skill`, which is how stores created before hooks existed keep working.
+`artifact::Kind` is `Skill`, `Hook`, `Rule` or `Command`. The kind is **detected from the folder**: `SKILL.md`, `HOOK.md`, `RULE.mdc` or `COMMAND.md`; more than one is an error (`Kind::detect`). It is also written to `meta.json` as `kind` so listings can read it without opening the folder; a missing `kind` means `skill`, which is how stores created before hooks existed keep working.
 
 Everything else is shared: the same `store/<name>/<version>/<name>/` layout and flat namespace (a skill and a hook cannot share a name), the same content hash, staging, read-only sealing, drafts (`new --kind hook`, `edit`, `seal`), discovery on `install`, and the same `Skill` struct for the parsed document (`Skill { dir, kind, frontmatter, body }`, loaded with `load_kind`).
 
@@ -17,6 +17,7 @@ Everything else is shared: the same `store/<name>/<version>/<name>/` layout and 
 | `matchers` | map event → tool-name regex | K111, `hook add` |
 | `timeout` | seconds, 1–600, default 10 | K111, `hook add` |
 | `entry` | script path relative to the folder | K107, `hook add` |
+| `companions` | list of artifact names pinned into every project with the hook | K111, `hook add`/`hook remove` |
 
 The hook-specific fields live in the frontmatter's `extra` map rather than typed fields, so skill validation is untouched (a skill with an `events:` key still gets H205). Accessors are in `validate::hook` (`events`, `entry`, `matchers`, `timeout`). Rules K101–K111 are listed on [Validation](Validation#hook-rules).
 
@@ -111,6 +112,7 @@ Decisions:
 2. **Three match signals, no LLM.** Quoted phrasings from the description (`"add a column"`) found verbatim in the prompt score 3; a shared path component or extension (`jsapps`, `.hbs`) scores 2; shared keywords (stop-words removed, ≥ 3 characters) score 1 each and need at least two to count alone. Skills with no signal are not candidates; the best three are listed. This is what keeps no-skill prompts free of injection (W14's acceptance), and it is the part to tune from the logger's `PostToolUse`/`Skill` lines if a skill keeps being missed.
 3. **Never block.** Exit 0 on every path; malformed input, an empty prompt or an unreadable folder produce no output. `SKILLCTL_FORCED_EVAL_DEBUG=1` writes the shortlist reasons to stderr.
 4. **Validates clean** under K101–K111, like the logger.
+5. **A Cursor companion.** `companions: [skill-check]` makes `hook add` pin the bundled always-apply rule `rules/skill-check/` (`RULE.mdc`, linked as `.cursor/rules/skill-check.mdc`) into every project, and `hook remove` unpins it, so Cursor's agent gets the same instruction the hook injects in Claude Code. The companion must be in the store first; a missing one is a refusal naming the install step.
 
 ## doctor
 
