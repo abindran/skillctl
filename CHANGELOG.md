@@ -13,6 +13,22 @@ heading when cutting a release.
 
 ### Added
 
+- Directive-description rules O140–O145 (strategy work item W09), all
+  warnings, in `validate`, `seal` and `install`: O140 a trigger verb
+  addressing "this skill"; O141 a negative constraint; O142 concrete trigger
+  phrasings (quoted, or introduced with "including"/"such as"); O144 no
+  hedging language and no scaffold `[placeholder]` left in; O145 no
+  `keywords` field. O103 now accepts any "when" clause rather than the literal
+  "use when", so the directive form passes it.
+- The skill index budget (O143): `status --budget` sizes the listing the
+  agent sees (project pins plus global skills) against 1% of a 200,000-token
+  context window and flags descriptions over 1,536 characters, which
+  harnesses truncate. `add`, `global add` and `attach --skills` print the
+  description warnings for the pinned skill and the budget line on stderr,
+  and carry both under `advisory` in `--json`. `hook add` for a hook on
+  `UserPromptSubmit` warns when any pinned skill fails O140–O145.
+- `new` scaffolds the skill description in directive form with
+  `[placeholders]`; existing templates are left untouched.
 - `lint` rules I301–I303 (strategy work item W07), all warnings: I301 for an
   `AGENTS.md` over 200 lines; I303 for a section of `AGENTS.md` that reads
   like a procedure (five or more ordered steps, three or more code blocks, or

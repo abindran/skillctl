@@ -5,8 +5,9 @@ use crate::{
     error::Error,
     linker::ReconcileReport,
     names::{ProjectName, SkillName},
-    registry::{Registry, lock::RegistryLock, resolve::InstanceResolver},
+    registry::{Pin, Registry, lock::RegistryLock, resolve::InstanceResolver},
 };
+use std::collections::BTreeMap;
 
 pub(super) fn selected(
     registry: &Registry,
@@ -51,6 +52,7 @@ fn finish(
     context: &mut Context<'_>,
     reports: &[ReconcileReport],
     action: &str,
+    advisory: Option<serde_json::Value>,
 ) -> Result<(), Error> {
     let mut text = action.to_owned();
     for report in reports {
@@ -58,8 +60,15 @@ fn finish(
             text.push_str(&format!("\n  {:?} {}", link.status, link.path.display()));
         }
     }
-    context.output.result(&serde_json::json!({"action":action,"instances":reports,"dry_run":context.flags.dry_run}), &text).map_err(super::output_error)?;
+    context.output.result(&serde_json::json!({"action":action,"instances":reports,"advisory":advisory,"dry_run":context.flags.dry_run}), &text).map_err(super::output_error)?;
     attach::conflicts(reports.iter().any(ReconcileReport::has_conflicts))
+}
+
+/// Everything an agent in this project sees: its pins plus the global skills.
+pub(super) fn visible(registry: &Registry, project: &ProjectName) -> BTreeMap<SkillName, Pin> {
+    let mut visible = registry.projects[project].skills.clone();
+    visible.extend(registry.global.skills.clone());
+    visible
 }
 pub fn add(
     context: &mut Context<'_>,
@@ -87,12 +96,14 @@ pub fn add(
             .get_mut(&name)
             .expect("selected")
             .skills
-            .insert(skill, pin);
+            .insert(skill.clone(), pin.clone());
         if !context.flags.dry_run {
             registry.save(context.fs.as_ref(), &context.home.registry())?;
         }
-        let reports = reconcile_projects(context, &mut registry, &[name])?;
-        finish(context, &reports, "Updated project pins")
+        let reports = reconcile_projects(context, &mut registry, std::slice::from_ref(&name))?;
+        let checked = BTreeMap::from([(skill, pin)]);
+        let advisory = super::advisory::report(context, &checked, &visible(&registry, &name))?;
+        finish(context, &reports, "Updated project pins", Some(advisory))
     })
 }
 pub fn remove(
@@ -113,7 +124,7 @@ pub fn remove(
             registry.save(context.fs.as_ref(), &context.home.registry())?;
         }
         let reports = reconcile_projects(context, &mut registry, &[name])?;
-        finish(context, &reports, "Removed project pin")
+        finish(context, &reports, "Removed project pin", None)
     })
 }
 /// `relink --all`: globals first, then every instance. Obsolete-target history is
@@ -165,6 +176,6 @@ pub fn relink(
                 index,
             )?]
         };
-        finish(context, &reports, "Reconciled links")
+        finish(context, &reports, "Reconciled links", None)
     })
 }

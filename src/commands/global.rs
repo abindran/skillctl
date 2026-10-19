@@ -91,6 +91,7 @@ pub fn run(context: &mut Context<'_>, command: GlobalCommand) -> Result<(), Erro
     }
     super::pins::write_locked(context, |context| {
         let mut registry = super::load_registry(context)?;
+        let mut added = None;
         match command {
             GlobalCommand::Add { skill } => {
                 let (name, pin) = super::attach::skill_pin(context, &skill)?;
@@ -103,7 +104,8 @@ pub fn run(context: &mut Context<'_>, command: GlobalCommand) -> Result<(), Erro
                         "Skill '{name}' is pinned by a project"
                     )));
                 }
-                registry.global.skills.insert(name, pin);
+                registry.global.skills.insert(name.clone(), pin.clone());
+                added = Some((name, pin));
             }
             GlobalCommand::Remove { skill } => {
                 registry.global.skills.remove(&skill);
@@ -122,7 +124,16 @@ pub fn run(context: &mut Context<'_>, command: GlobalCommand) -> Result<(), Erro
                 &names,
             )?);
         }
-        context.output.result(&serde_json::json!({"skills":registry.global.skills,"reports":reports,"dry_run":context.flags.dry_run}),"Updated global skills").map_err(super::output_error)?;
+        // A global skill is in every listing, so size the global set itself.
+        let advisory = match &added {
+            Some((name, pin)) => Some(super::advisory::report(
+                context,
+                &BTreeMap::from([(name.clone(), pin.clone())]),
+                &registry.global.skills,
+            )?),
+            None => None,
+        };
+        context.output.result(&serde_json::json!({"skills":registry.global.skills,"reports":reports,"advisory":advisory,"dry_run":context.flags.dry_run}),"Updated global skills").map_err(super::output_error)?;
         super::attach::conflicts(reports.iter().any(ReconcileReport::has_conflicts))
     })
 }

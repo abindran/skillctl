@@ -294,6 +294,16 @@ fn attach(
         registry.save(context.fs.as_ref(), &context.home.registry())?;
     }
     let report = reconcile_instance(context, &mut registry, &name, index)?;
+    let advisory = if create && !registry.projects[&name].skills.is_empty() {
+        let checked = registry.projects[&name].skills.clone();
+        Some(super::advisory::report(
+            context,
+            &checked,
+            &super::pins::visible(&registry, &name),
+        )?)
+    } else {
+        None
+    };
     let text = format!(
         "{}Attached {} to {name}\n{}",
         if context.flags.dry_run {
@@ -309,7 +319,7 @@ fn attach(
             .collect::<Vec<_>>()
             .join("\n")
     );
-    context.output.result(&serde_json::json!({"project":name,"instance":path,"links":report.links,"dry_run":context.flags.dry_run}), &text).map_err(super::output_error)?;
+    context.output.result(&serde_json::json!({"project":name,"instance":path,"links":report.links,"advisory":advisory,"dry_run":context.flags.dry_run}), &text).map_err(super::output_error)?;
     conflicts(report.has_conflicts())
 }
 pub(super) fn conflicts(has: bool) -> Result<(), Error> {

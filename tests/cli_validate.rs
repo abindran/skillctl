@@ -5,7 +5,9 @@ use std::{
     process::{Command, Output},
 };
 
-const DESCRIPTION: &str = "Use when reviewing code changes to provide consistent, actionable and carefully verified engineering guidance.";
+/// Directive but under 80 characters: trips O102 and nothing else.
+const SHORT: &str = r#"Use this skill when asked to "review" or "check" code. Do not skip it."#;
+const DESCRIPTION: &str = r#"ALWAYS invoke this skill when reviewing code changes, including requests like "review this diff" or "check my PR", to give consistent and verified engineering guidance. Do not approve a change without this skill."#;
 fn run(home: &Path, args: &[&str]) -> Output {
     Command::new(env!("CARGO_BIN_EXE_skillctl"))
         .env("SKILLCTL_HOME", home)
@@ -58,7 +60,7 @@ fn warning_success_strict_failure_and_error_json_are_single_documents() {
     let temp = tempfile::tempdir().unwrap();
     let home = temp.path().join("home");
     ok(&home, &["new", "demo"]);
-    skill(&home.join("drafts/demo"), "Use when reviewing.");
+    skill(&home.join("drafts/demo"), SHORT);
     let output = ok(&home, &["validate", "demo@draft", "--format", "json"]);
     let findings: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
     assert!(
@@ -126,13 +128,15 @@ fn global_allow_list_is_honored_by_cli_and_seal_preserves_invalid_drafts() {
     let home = temp.path().join("home");
     ok(&home, &["new", "demo"]);
     let mut registry = Registry::load(&RealFs, &home.join("registry.yml")).unwrap();
-    registry.settings.validate.allow = vec!["O102".into()];
+    // The scaffold's description is a directive template whose [placeholders]
+    // are O144 until filled in; a fresh draft is otherwise clean.
+    registry.settings.validate.allow = vec!["O102".into(), "O144".into()];
     registry.save(&RealFs, &home.join("registry.yml")).unwrap();
     ok(&home, &["validate", "demo@draft", "--strict"]);
     let path = home.join("drafts/demo/SKILL.md");
     let text = fs::read_to_string(&path)
         .unwrap()
-        .replace("Describe what", "<Describe> what");
+        .replace("[describe the task]", "<describe the task>");
     fs::write(&path, &text).unwrap();
     let output = run(&home, &["seal", "demo"]);
     assert_eq!(output.status.code(), Some(3));

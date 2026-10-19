@@ -92,7 +92,12 @@ pub enum Command {
     },
 
     /// Show the current status.
-    Status,
+    Status {
+        /// Also size the skill listing the agent sees here against the index
+        /// budget (1% of the context window; descriptions over 1,536 characters).
+        #[arg(long)]
+        budget: bool,
+    },
 
     /// Add a skill to a project.
     Add {
@@ -390,6 +395,6 @@ mod tests {
         let cli = Cli::try_parse_from(["skillctl", "status", "--json"]).unwrap();
 
         assert!(cli.json);
-        assert!(matches!(cli.command, Command::Status));
+        assert!(matches!(cli.command, Command::Status { budget: false }));
     }
 }

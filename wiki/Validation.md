@@ -58,7 +58,7 @@ pub trait Rule {
 |---|---|---|
 | O101 | error | `metadata.version` is present and parses as semver |
 | O102 | warning | `description` is at least 80 characters |
-| O103 | warning | `description` contains a "use when" clause (case-insensitive) |
+| O103 | warning | `description` contains a "when" clause describing the trigger (the word `when` or `whenever`) |
 | O104 | error | `description` contains no `<` or `>` |
 | O110 | warning | Body is at most 500 lines |
 | O111 | warning | Body is at most 5,000 estimated tokens (Unicode characters ÷ 4) |
@@ -73,6 +73,21 @@ pub trait Rule {
 | O133 | error | No likely secrets: private key headers, AWS-style access keys, tokens with common provider prefixes. Findings name the path and line but never echo the matched value. |
 
 The O13x rules are static heuristics, not a sandbox or an exhaustive security audit.
+
+## Directive-description rules (warnings)
+
+`validate::description::DescriptionRules` runs on skills after the organisation rules. The description is the activation surface (only name and description are in context before a skill is chosen), and the rules encode the form that measured 100% activation without a hook. All are warnings so legacy skills still seal; `--strict` makes them errors in CI.
+
+| ID | Rule |
+|---|---|
+| O140 | A trigger verb (`invoke`, `use`, `apply`, `run`, `load`, `activate`, `call`, optionally after `always`/`must`) addresses `this skill` within one sentence. The "when" clause is O103, so the two compose |
+| O141 | A negative constraint is present: `do not`, `don't`, `never` or `must not` |
+| O142 | Concrete trigger phrasings: at least two quoted phrases, or an `including` / `such as` / `for example` / `e.g.` / `phrasing like` clause |
+| O143 | Not a per-skill rule: the index budget, computed by `commands::advisory::index` over the skills an agent sees (project pins plus global skills). Name plus description characters per skill, tokens as characters ÷ 4, total against `CONTEXT_WINDOW_TOKENS × INDEX_SHARE_PERCENT` (200,000 × 1%), and any description over `DESCRIPTION_MAX_CHARS` (1,536). Reported by `status --budget` and after `add`/`global add`/`attach --skills` |
+| O144 | No hedging (`helps with`, `assists`, `can be used`, `useful for`, `various`, `general-purpose`, `and more`, `etc.`) and no scaffold `[placeholder]` left in |
+| O145 | No `keywords` frontmatter field; it has no measured effect and its presence suggests the description relies on it |
+
+`commands::advisory` also runs O140–O145 over the pinned skill after a pin changes and writes the findings and the budget line to stderr in text mode (never in `--json`, where the result object carries them under `advisory`). `hook add` runs the same rules over every pinned skill when the hook handles `UserPromptSubmit`.
 
 ## Harness compatibility rules (warnings)
 

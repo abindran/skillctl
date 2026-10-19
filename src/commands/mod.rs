@@ -1,3 +1,4 @@
+pub mod advisory;
 pub mod attach;
 pub mod completions;
 pub mod config;

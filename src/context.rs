@@ -218,7 +218,7 @@ mod tests {
                 ..Flags::default()
             },
         );
-        crate::run(Command::Status, &mut ctx).unwrap();
+        crate::run(Command::Status { budget: false }, &mut ctx).unwrap();
         assert!(!home.exists());
     }
 }

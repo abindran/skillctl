@@ -120,6 +120,41 @@ pub fn run(context: &mut Context<'_>, command: HookCommand) -> Result<(), Error>
             registry.save(context.fs.as_ref(), &context.home.registry())?;
         }
         let reports = reconcile(context, &registry)?;
+        // An activation hook on top of weak descriptions measured worse than no
+        // hook at all, so say so for every skill pinned anywhere.
+        let activation = outcomes
+            .iter()
+            .any(|outcome| outcome.event == "UserPromptSubmit" && outcome.status != "removed");
+        let advisory = if activation {
+            let mut everywhere = registry.global.skills.clone();
+            for project in registry.projects.values() {
+                everywhere.extend(project.skills.clone());
+            }
+            let findings = super::advisory::description_findings(context, &everywhere)?;
+            if !findings.is_empty() && !context.flags.json {
+                let names: std::collections::BTreeSet<String> = findings
+                    .iter()
+                    .filter_map(|finding| {
+                        finding
+                            .path
+                            .parent()
+                            .and_then(|dir| dir.file_name())
+                            .map(|name| name.to_string_lossy().into_owned())
+                    })
+                    .collect();
+                context
+                    .output
+                    .message(&format!(
+                        "warning: {} pinned skill(s) fail the directive-description rules O140–O145 ({}); a prompt hook on top of weak descriptions measured worse than no hook. Run skillctl validate and rewrite them first.",
+                        names.len(),
+                        names.into_iter().collect::<Vec<_>>().join(", ")
+                    ))
+                    .map_err(super::output_error)?;
+            }
+            Some(serde_json::json!({ "descriptions": findings }))
+        } else {
+            None
+        };
         let changed = outcomes.iter().any(|outcome| outcome.status != "present");
         let backup = if changed {
             Some(claude::save(
@@ -173,6 +208,7 @@ pub fn run(context: &mut Context<'_>, command: HookCommand) -> Result<(), Error>
                     "backup": backup,
                     "registered": outcomes,
                     "reports": reports,
+                    "advisory": advisory,
                     "dry_run": context.flags.dry_run,
                 }),
                 &text,

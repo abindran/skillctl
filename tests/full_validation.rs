@@ -4,7 +4,9 @@ use skillctl::{
 };
 use std::{fs, path::Path};
 
-const DESCRIPTION: &str = "Use when reviewing a software change to provide consistent, actionable, and carefully verified engineering guidance.";
+const DESCRIPTION: &str = r#"ALWAYS invoke this skill when reviewing a software change, including requests like "review this diff" or "check my PR", to give consistent and verified engineering guidance. Do not approve a change without this skill."#;
+/// Directive but under 80 characters: trips O102 and nothing else.
+const SHORT: &str = r#"Use this skill when asked to "review" or "check" code. Do not skip it."#;
 fn document(extra: &str, body: &str) -> String {
     format!(
         "---\nname: demo\ndescription: {DESCRIPTION}\nmetadata:\n  version: '1.0.0'\n{extra}---\n{body}"
@@ -48,8 +50,8 @@ fn one_fixture_per_org_rule_triggers_only_that_rule() {
         let mut text = document("", "Review carefully.\n");
         match id {
             "O101" => text = text.replace("  version: '1.0.0'", "  other: value"),
-            "O102" => text = text.replace(DESCRIPTION, "Use when reviewing code."),
-            "O103" => text = text.replace("Use when", "Apply while"),
+            "O102" => text = text.replace(DESCRIPTION, SHORT),
+            "O103" => text = text.replace(" when reviewing", " while reviewing"),
             "O104" => text = text.replace("software change", "<software> change"),
             "O110" => text = document("", &"line\n".repeat(501)),
             "O111" => text = document("", &"a".repeat(20_001)),
@@ -139,7 +141,7 @@ fn allow_lists_combine_before_strict_and_cannot_disable_spec_rules() {
             "  version: '1.0.0'",
             "  version: '1.0.0'\n  skillctl-allow: ' H205, S005 '",
         )
-        .replace(DESCRIPTION, "Use when reviewing.");
+        .replace(DESCRIPTION, SHORT);
     fs::write(dir.join("SKILL.md"), &text).unwrap();
     assert!(
         validate::run_all(&RealFs, &dir, &["O102".into()], true)
@@ -150,11 +152,7 @@ fn allow_lists_combine_before_strict_and_cannot_disable_spec_rules() {
     assert_eq!(findings.len(), 1);
     assert_eq!(findings[0].rule, "O102");
     assert_eq!(findings[0].severity, Severity::Error);
-    fs::write(
-        dir.join("SKILL.md"),
-        text.replace("Use when reviewing.", "''"),
-    )
-    .unwrap();
+    fs::write(dir.join("SKILL.md"), text.replace(SHORT, "''")).unwrap();
     assert!(
         validate::run_all(&RealFs, &dir, &["S005".into()], false)
             .unwrap()

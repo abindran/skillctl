@@ -398,7 +398,7 @@ pub(crate) fn rewrite(
                 Value::from("description"),
                 Value::from(match kind {
                     Kind::Skill => {
-                        "Describe what this skill does and use when its specialized guidance is needed."
+                        "ALWAYS invoke this skill when the user asks to [describe the task], including indirect phrasing like \"[example request]\" or \"[another example]\". Do not [do the task] directly without this skill."
                     }
                     Kind::Hook => {
                         "Describe which lifecycle events this hook handles and what it does when they fire."

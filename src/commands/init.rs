@@ -11,7 +11,7 @@ use crate::registry::{Registry, lock::RegistryLock};
 use crate::services::fs::Fs;
 
 /// `new` substitutes the artifact name for `{{name}}` when scaffolding a draft.
-pub const DEFAULT_TEMPLATE: &str = "---\nname: {{name}}\ndescription: Describe what this skill does and use when the task calls for its specialized workflow or guidance.\nmetadata:\n  version: \"0.1.0\"\n---\n\n# {{name}}\n\n## Instructions\n\nDescribe the steps to follow when using this skill.\n";
+pub const DEFAULT_TEMPLATE: &str = "---\nname: {{name}}\ndescription: ALWAYS invoke this skill when the user asks to [describe the task], including indirect phrasing like \"[example request]\" or \"[another example]\". Do not [do the task] directly without this skill.\nmetadata:\n  version: \"0.1.0\"\n---\n\n# {{name}}\n\n## Instructions\n\nDescribe the steps to follow when using this skill.\n";
 
 /// The hook scaffold: a `HOOK.md` declaring one event and an entry script.
 pub const DEFAULT_HOOK_TEMPLATE: &str = "---\nname: {{name}}\ndescription: Describe which lifecycle events this hook handles and what it records or enforces when they fire.\nmetadata:\n  version: \"0.1.0\"\nevents: [SessionEnd]\nentry: hook.py\n---\n\n# {{name}}\n\nRuns on the events listed in the frontmatter. The harness passes the event as\nJSON on stdin; exit 0 to continue, or 2 to block where the event allows it.\n";

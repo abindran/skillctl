@@ -1,5 +1,6 @@
 //! Native validation. Structural failures suppress dependent field checks, not I/O errors.
 
+pub mod description;
 pub mod fields;
 pub mod harness;
 pub mod hook;
@@ -107,7 +108,12 @@ pub fn run_all(
         )]);
     }
     let rules: &[&dyn Rule] = match kind {
-        Kind::Skill => &[&spec::SpecRules, &org::OrgRules, &harness::HarnessRules],
+        Kind::Skill => &[
+            &spec::SpecRules,
+            &org::OrgRules,
+            &description::DescriptionRules,
+            &harness::HarnessRules,
+        ],
         Kind::Hook => &[&hook::HookRules],
     };
     let mut findings = run_with_rules_kind(fs, dir, kind, rules)?;

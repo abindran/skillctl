@@ -40,7 +40,7 @@ pub fn run(command: Command, context: &mut Context<'_>) -> Result<(), Error> {
             keep_links,
             delete_project,
         } => commands::detach::run(context, keep_links, delete_project),
-        Command::Status => commands::status::run(context),
+        Command::Status { budget } => commands::status::run(context, budget),
         Command::Add {
             skill,
             project,

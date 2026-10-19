@@ -54,13 +54,17 @@ impl Rule for OrgRules {
                     "Explain the skill and when it should be used in at least 80 characters.",
                 ));
             }
-            if !description.to_lowercase().contains("use when") {
+            if !description
+                .to_lowercase()
+                .split(|c: char| !c.is_alphanumeric())
+                .any(|word| word == "when" || word == "whenever")
+            {
                 findings.push(finding(
                     skill,
                     "O103",
                     true,
-                    "description has no use when clause",
-                    "Include a use when clause describing the trigger.",
+                    "description has no when clause describing the trigger",
+                    "Say when the skill applies, for example: ALWAYS invoke this skill when the user asks to …",
                 ));
             }
             if description.contains(['<', '>']) {

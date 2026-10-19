@@ -47,9 +47,9 @@ pub(super) fn health(
         Ok(_) => Ok("conflict"),
     }
 }
-pub fn run(context: &mut Context<'_>) -> Result<(), Error> {
+pub fn run(context: &mut Context<'_>, budget: bool) -> Result<(), Error> {
     super::init::ensure_home(context)?;
-    let (value, text) = super::read_locked(context, || {
+    let (mut value, mut text) = super::read_locked(context, || {
         let registry = super::load_registry(context)?;
         let resolver = InstanceResolver::new(&registry)?;
         let Some(found) = resolver.resolve(&super::attach::cwd()?)? else {
@@ -88,6 +88,52 @@ pub fn run(context: &mut Context<'_>) -> Result<(), Error> {
             text,
         ))
     })?;
+    if budget {
+        // What the agent sees here: project pins (if attached) plus globals.
+        let registry = super::read_locked(context, || super::load_registry(context))?;
+        let mut visible = registry.global.skills.clone();
+        if let Some(name) = value["project"].as_str() {
+            let name: crate::names::ProjectName = name.parse()?;
+            visible.extend(registry.projects[&name].skills.clone());
+        }
+        let index = super::advisory::index(context, &visible)?;
+        text.push_str("\nSkill index:");
+        for entry in &index.skills {
+            text.push_str(&format!(
+                "\n  {}@{}: {} chars, ~{} tokens{}",
+                entry.name,
+                entry.pin,
+                entry.chars,
+                entry.tokens,
+                if entry.truncated {
+                    format!(
+                        " (description {} chars; truncated at {})",
+                        entry.description_chars,
+                        super::advisory::DESCRIPTION_MAX_CHARS
+                    )
+                } else {
+                    String::new()
+                }
+            ));
+        }
+        text.push_str(&format!(
+            "\n  total ~{} / {} tokens ({}% of a {}-token context window){}",
+            index.tokens,
+            index.budget_tokens,
+            super::advisory::INDEX_SHARE_PERCENT,
+            super::advisory::CONTEXT_WINDOW_TOKENS,
+            if index.over_budget {
+                " — O143 warning: over budget; skills past the cap lose their description"
+            } else {
+                ""
+            }
+        ));
+        value["budget"] = serde_json::to_value(&index).map_err(|error| Error::Io {
+            operation: "Serialize budget".into(),
+            source: std::io::Error::other(error),
+            hint: "Report this as a skillctl bug.".into(),
+        })?;
+    }
     context
         .output
         .result(&value, &text)
