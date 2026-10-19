@@ -3,6 +3,7 @@ use std::{fs, io};
 use semver::Version;
 use serde_json::{Value, json};
 use skillctl::{
+    artifact::Kind,
     error::Error,
     services::fs::{DryRunFs, FsAction, RealFs},
     store::{
@@ -15,6 +16,7 @@ fn example() -> Value {
     json!({
         "name": "org-code-review",
         "version": "1.4.0",
+        "kind": "skill",
         "source": {
             "kind": "git",
             "url": "git@gitlab.zoho.com:platform/org-skills.git",
@@ -46,6 +48,25 @@ fn design_example_round_trips_every_field() {
     assert!(json.ends_with('\n'));
     assert_eq!(serde_json::from_str::<Value>(&json).unwrap(), value);
     assert_eq!(Metadata::from_json(json.as_bytes()).unwrap(), metadata);
+}
+
+#[test]
+fn metadata_without_kind_is_a_skill_and_hooks_round_trip() {
+    // Versions stored before hooks existed have no kind field.
+    let mut value = example();
+    value.as_object_mut().unwrap().remove("kind");
+    let metadata = parse(&value);
+    assert_eq!(metadata.kind, Kind::Skill);
+    let json: Value = serde_json::from_str(&metadata.to_json().unwrap()).unwrap();
+    assert_eq!(json["kind"], "skill");
+    let mut value = example();
+    value["kind"] = json!("hook");
+    let metadata = parse(&value);
+    assert_eq!(metadata.kind, Kind::Hook);
+    assert_eq!(
+        serde_json::from_str::<Value>(&metadata.to_json().unwrap()).unwrap(),
+        value
+    );
 }
 
 #[test]

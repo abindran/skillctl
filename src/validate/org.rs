@@ -97,7 +97,15 @@ impl Rule for OrgRules {
     fn check_fs(&self, fs: &dyn Fs, skill: &Skill) -> Result<Vec<Finding>, Error> {
         let mut findings = self.check(skill);
         let mut files = Vec::new();
-        walk(fs, &skill.dir, &mut files, &mut findings)?;
+        walk(
+            fs,
+            &skill.dir,
+            &mut files,
+            &mut findings,
+            "O122",
+            "Symlinks are not allowed inside a skill",
+            "Replace the link with a regular file inside the skill.",
+        )?;
         let refs = references(&skill.body);
         let mut referenced = BTreeSet::new();
         let mut referenced_dirs = BTreeSet::new();
@@ -191,14 +199,7 @@ impl Rule for OrgRules {
                 let info = fs
                     .symlink_metadata(&path)
                     .map_err(|error| io_error(&path, error))?;
-                #[cfg(unix)]
-                let executable = {
-                    use std::os::unix::fs::PermissionsExt;
-                    info.permissions().mode() & 0o111 != 0
-                };
-                #[cfg(not(unix))]
-                let executable = true;
-                if !bytes.starts_with(b"#!") || !executable {
+                if !bytes.starts_with(b"#!") || !executable(&info) {
                     let mut item = finding(
                         skill,
                         "O130",
@@ -227,15 +228,7 @@ impl Rule for OrgRules {
                         findings.push(item);
                     }
                 }
-                // Join shell continuations before checking download-and-execute patterns.
-                let code = text
-                    .lines()
-                    .filter(|line| !line.trim_start().starts_with('#'))
-                    .collect::<Vec<_>>()
-                    .join("\n")
-                    .replace("\\\r\n", " ")
-                    .replace("\\\n", " ");
-                if DANGEROUS.is_match(&code) {
+                if dangerous(&text) {
                     let mut item = finding(
                         skill,
                         "O132",
@@ -287,7 +280,34 @@ static SECRET: LazyLock<Regex> = LazyLock::new(|| {
 static OPENAI_KEY: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"\bsk-(?:proj-)?[A-Za-z0-9_-]{20,}\b").unwrap());
 
-fn likely_secret(line: &str) -> bool {
+/// Whether a file's mode has any execute bit (always true off Unix).
+pub(super) fn executable(info: &std::fs::Metadata) -> bool {
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        info.permissions().mode() & 0o111 != 0
+    }
+    #[cfg(not(unix))]
+    {
+        let _ = info;
+        true
+    }
+}
+
+/// Privilege escalation or download-and-execute, with comments dropped and
+/// shell continuations joined first.
+pub(super) fn dangerous(text: &str) -> bool {
+    let code = text
+        .lines()
+        .filter(|line| !line.trim_start().starts_with('#'))
+        .collect::<Vec<_>>()
+        .join("\n")
+        .replace("\\\r\n", " ")
+        .replace("\\\n", " ");
+    DANGEROUS.is_match(&code)
+}
+
+pub(super) fn likely_secret(line: &str) -> bool {
     SECRET.is_match(line)
         || OPENAI_KEY.find_iter(line).any(|found| {
             let tail = found
@@ -302,7 +322,7 @@ fn likely_secret(line: &str) -> bool {
 
 /// Terminal reads only: `read` fed by a redirect, a pipe, or a loop header
 /// (`while read -r line; do … done < file`) is ordinary data processing.
-fn interactive(line: &str) -> bool {
+pub(super) fn interactive(line: &str) -> bool {
     if INPUT_CALL.is_match(line) || READ_PROMPT.is_match(line) {
         return true;
     }
@@ -320,11 +340,16 @@ fn interactive(line: &str) -> bool {
     !line.contains('<') && !before.contains('|') && !loop_header
 }
 
-fn walk(
+/// Collect every regular file under `dir`, reporting each symlink with the
+/// caller's rule (O122 for skills, K110 for hooks). Shared with the hook rules.
+pub(super) fn walk(
     fs: &dyn Fs,
     dir: &Path,
     files: &mut Vec<PathBuf>,
     findings: &mut Vec<Finding>,
+    symlink_rule: &str,
+    symlink_message: &str,
+    symlink_hint: &str,
 ) -> Result<(), Error> {
     let mut entries = fs.read_dir(dir).map_err(|error| io_error(dir, error))?;
     entries.sort();
@@ -334,13 +359,21 @@ fn walk(
             .map_err(|error| io_error(&path, error))?;
         if info.is_symlink() {
             findings.push(Finding::error(
-                "O122",
+                symlink_rule,
                 path,
-                "Symlinks are not allowed inside a skill",
-                "Replace the link with a regular file inside the skill.",
+                symlink_message,
+                symlink_hint,
             ));
         } else if info.is_dir() {
-            walk(fs, &path, files, findings)?;
+            walk(
+                fs,
+                &path,
+                files,
+                findings,
+                symlink_rule,
+                symlink_message,
+                symlink_hint,
+            )?;
         } else if info.is_file() {
             files.push(path);
         }

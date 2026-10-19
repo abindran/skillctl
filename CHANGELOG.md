@@ -13,6 +13,19 @@ heading when cutting a release.
 
 ### Added
 
+- Hook artifacts (strategy work item W02a). A folder with `HOOK.md` (frontmatter
+  `name`, `description`, `metadata.version`, `events`, `entry`) and its entry
+  script is a hook, stored, versioned, hashed and installed exactly like a
+  skill in the same flat store namespace. `new --kind hook` scaffolds one from
+  the new `templates/hook/` (`HOOK.md` and an executable Python `hook.py`,
+  created by `init`); `seal`, `edit`, `install` and `validate` detect the kind
+  from the folder; `skills` shows `(hook)` and a `kind` field; `meta.json`
+  records `kind` (absent means `skill`, so existing stores need no migration).
+  Hook rules K101–K110 replace the S/O/H groups for hooks; K101–K105 and K107
+  cannot be allow-listed. `add`, `attach --skills` and `global add` refuse
+  hooks until hook registration exists.
+- `new` copies every regular file beside the template document into the draft
+  (previously only `SKILL.md` was read), so templates can ship scripts.
 - `doctor` reports an observability baseline (strategy work item W01): whether
   Claude Code's OpenTelemetry export is enabled and complete
   (`CLAUDE_CODE_ENABLE_TELEMETRY`, the metrics and logs exporters, the OTLP

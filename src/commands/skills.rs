@@ -1,9 +1,10 @@
 use crate::{
+    artifact::Kind,
     context::Context,
     error::Error,
     names::{ProjectName, SkillName},
     registry::Pin,
-    store,
+    store::{self, meta::Metadata},
 };
 use semver::Version;
 use serde::Serialize;
@@ -11,6 +12,8 @@ use serde::Serialize;
 #[derive(Debug, Serialize)]
 pub struct SkillListing {
     pub name: SkillName,
+    /// From the newest version's `meta.json`; a skill when it cannot be read.
+    pub kind: Kind,
     pub versions: Vec<VersionUsage>,
 }
 #[derive(Debug, Serialize)]
@@ -27,7 +30,19 @@ pub fn run(context: &mut Context<'_>) -> Result<(), Error> {
         let mut rows = Vec::new();
         for name in store::list_skills(context.fs.as_ref(), &context.home)? {
             let mut versions = Vec::new();
-            for version in store::list_versions(context.fs.as_ref(), &context.home, &name)? {
+            let listed = store::list_versions(context.fs.as_ref(), &context.home, &name)?;
+            let kind = listed
+                .last()
+                .and_then(|version| {
+                    Metadata::load(
+                        context.fs.as_ref(),
+                        &context.home.version_dir(&name, version).join("meta.json"),
+                    )
+                    .ok()
+                })
+                .map(|meta| meta.kind)
+                .unwrap_or_default();
+            for version in listed {
                 let pin = Pin::Version(version.clone());
                 let projects = registry
                     .projects
@@ -42,7 +57,11 @@ pub fn run(context: &mut Context<'_>) -> Result<(), Error> {
                     global,
                 });
             }
-            rows.push(SkillListing { name, versions });
+            rows.push(SkillListing {
+                name,
+                kind,
+                versions,
+            });
         }
         Ok(rows)
     })?;
@@ -59,6 +78,9 @@ pub fn text(rows: &[SkillListing]) -> String {
     rows.iter()
         .map(|skill| {
             let mut text = skill.name.to_string();
+            if skill.kind != Kind::Skill {
+                text.push_str(&format!(" ({})", skill.kind));
+            }
             if skill.versions.is_empty() {
                 text.push_str(" (no versions)");
             }

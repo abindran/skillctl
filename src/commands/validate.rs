@@ -32,7 +32,11 @@ pub fn run(
                 &registry.settings.validate.allow,
                 strict,
             )?;
-            if with_reference {
+            // skills-ref knows only the Agent Skills spec; hooks are skipped.
+            if with_reference
+                && crate::artifact::Kind::detect(context.fs.as_ref(), &dir)?
+                    != Some(crate::artifact::Kind::Hook)
+            {
                 findings.extend(reference(&dir)?);
             }
             reports.push(SkillReport { dir, findings });

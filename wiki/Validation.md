@@ -86,6 +86,25 @@ Known-field lists live in `validate/fields.rs`, so updating them for a new harne
 | H204 | `context: fork` is combined with instructions to ask the user, which cannot work in a Claude Code subagent |
 | H205 | Unknown frontmatter fields not in any harness's known list |
 
+## Hook rules
+
+A folder whose root document is `HOOK.md` is validated with these rules instead of the S/O/H groups (`validate::hook::HookRules`). The runner's gate reports K101 where it would report S001/S002 for a skill. K101–K105 and K107 are structural: a hook failing them cannot be registered, so no allow-list suppresses them.
+
+| ID | Severity | Rule |
+|---|---|---|
+| K101 | error | `HOOK.md` exists at the folder root, is UTF-8 and parses as YAML mapping frontmatter |
+| K102 | error | `name` is present, matches `^[a-z0-9]+(-[a-z0-9]+)*$` and equals the folder name |
+| K103 | error | `description` is present, non-empty, at most 1,024 characters |
+| K104 | error | `metadata` maps strings to strings and `metadata.version` parses as semver |
+| K105 | error | `events` is a non-empty YAML list of strings |
+| K106 | warning | Every event name is in the known Claude Code list (`hook::KNOWN_EVENTS`); unknown names warn because the list grows with releases |
+| K107 | error | `entry` is present, relative, has no `..`, and names a regular file inside the folder that starts with `#!` and has the executable bit |
+| K108 | mixed | The entry script (and any other file starting with `#!`) requests no interactive input (warning) and contains no `sudo` or `curl … \| sh` (error); the heuristics are shared with O131/O132 |
+| K109 | error | No likely secrets in any file (shared with O133; values are never echoed) |
+| K110 | error | No symlinks inside the hook folder (`HOOK.md` itself included) |
+
+`events` and `entry` are read from the frontmatter's `extra` map rather than typed fields, so skill validation is unchanged: a skill carrying an `events:` key still gets H205.
+
 ## Suppression and strict mode
 
 - Per skill: `metadata.skillctl-allow: "O102,H201"` in the frontmatter.
@@ -105,4 +124,4 @@ Known-field lists live in `validate/fields.rs`, so updating them for a new harne
 
 ## Reference validator
 
-`--with-reference` runs `skills-ref validate <directory>` when that executable is on `PATH`, directly and without a shell. A missing tool is not an error. A failed external verdict is merged as error `R001` alongside the native findings; the raw external output is not copied into reports because its format is not stable and it may disclose secrets. This guards against the native rules drifting from the published specification.
+`--with-reference` runs `skills-ref validate <directory>` on skill folders (hooks are skipped) when that executable is on `PATH`, directly and without a shell. A missing tool is not an error. A failed external verdict is merged as error `R001` alongside the native findings; the raw external output is not copied into reports because its format is not stable and it may disclose secrets. This guards against the native rules drifting from the published specification.

@@ -80,8 +80,8 @@ fn populated_text_and_json_are_deterministic_and_show_usage_and_missing_instance
     assert_eq!(
         json,
         serde_json::json!([
-            {"name":"demo", "versions":[{"version":"1.0.0","projects":["web"],"global":false},{"version":"2.0.0","projects":[],"global":false}]},
-            {"name":"global-demo", "versions":[{"version":"1.0.0","projects":[],"global":true}]}
+            {"name":"demo", "kind":"skill", "versions":[{"version":"1.0.0","projects":["web"],"global":false},{"version":"2.0.0","projects":[],"global":false}]},
+            {"name":"global-demo", "kind":"skill", "versions":[{"version":"1.0.0","projects":[],"global":true}]}
         ])
     );
     let output = run(&home, &["projects"]);

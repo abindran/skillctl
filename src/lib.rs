@@ -1,3 +1,4 @@
+pub mod artifact;
 pub mod cli;
 pub mod commands;
 pub mod context;
@@ -54,7 +55,8 @@ pub fn run(command: Command, context: &mut Context<'_>) -> Result<(), Error> {
         Command::New {
             skill,
             from_template,
-        } => commands::new::run(context, &skill, from_template.as_deref()),
+            kind,
+        } => commands::new::run(context, &skill, from_template.as_deref(), kind),
         Command::Edit { skill, force } => commands::edit::run(context, &skill, force),
         Command::Seal { skill, bump } => commands::seal::run(context, &skill, bump),
         Command::Install {

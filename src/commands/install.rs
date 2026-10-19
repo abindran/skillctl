@@ -1,4 +1,4 @@
-//! Install skills from a Git URL or a local folder into the read-only store.
+//! Install skills and hooks from a Git URL or a local folder into the read-only store.
 //!
 //! The clone happens before the registry lock is taken (it needs no registry
 //! state and may be slow). Every selected skill is validated before any of them
@@ -48,7 +48,7 @@ pub fn run(
     let found = sources::discover(context.fs.as_ref(), &root, subdir)?;
     if found.is_empty() {
         return Err(super::attach::usage(format!(
-            "No SKILL.md found under {}",
+            "No SKILL.md or HOOK.md found under {}",
             root.display()
         )));
     }
@@ -56,14 +56,18 @@ pub fn run(
         let items = found
             .iter()
             .map(|item| {
-                item.subdir
-                    .clone()
-                    .unwrap_or_else(|| item.dir.display().to_string())
+                format!(
+                    "{} ({})",
+                    item.subdir
+                        .clone()
+                        .unwrap_or_else(|| item.dir.display().to_string()),
+                    item.kind
+                )
             })
             .collect::<Vec<_>>();
         context.prompt.set_answer_flag("--all");
         let picks = context.prompt.multi_select(
-            "Select skills to install",
+            "Select artifacts to install",
             &items,
             &vec![true; items.len()],
         )?;
@@ -91,23 +95,23 @@ pub fn run(
             let name = item.name()?;
             // A declared version wins; --version only fills a missing one, and
             // the filled-in document is what gets validated, hashed and stored.
-            let declared = Skill::load(fs, &item.dir)
+            let declared = Skill::load_kind(fs, &item.dir, item.kind)
                 .ok()
                 .and_then(|skill| skill.version().ok().flatten());
             let document = match (&declared, &requested) {
                 (None, Some(requested)) => {
-                    let path = item.dir.join("SKILL.md");
+                    let path = item.dir.join(item.kind.document());
                     fs.read(&path)
                         .ok()
                         .and_then(|bytes| String::from_utf8(bytes).ok())
-                        .and_then(|text| rewrite(&text, None, Some(requested), false).ok())
+                        .and_then(|text| rewrite(&text, None, Some(requested), None).ok())
                         .map(String::into_bytes)
                 }
                 _ => None,
             };
             let overlay = DocumentFs {
                 fs,
-                path: item.dir.join("SKILL.md"),
+                path: item.dir.join(item.kind.document()),
                 document,
             };
             let findings = validate::run_all(&overlay, &item.dir, allow, false)?;
@@ -130,7 +134,10 @@ pub fn run(
                 (None, None) => {
                     return Err(Error::Validation {
                         summary: format!("{name} has no metadata.version"),
-                        hint: "Pass --version <semver> to record one in the stored copy, or add metadata.version to SKILL.md.".into(),
+                        hint: format!(
+                            "Pass --version <semver> to record one in the stored copy, or add metadata.version to {}.",
+                            item.kind.document()
+                        ),
                     });
                 }
             };
@@ -147,7 +154,7 @@ pub fn run(
         for (item, name, version, document) in plans {
             let overlay = DocumentFs {
                 fs,
-                path: item.dir.join("SKILL.md"),
+                path: item.dir.join(item.kind.document()),
                 document,
             };
             let hash = content_hash(&overlay, &item.dir)?;
@@ -186,6 +193,7 @@ pub fn run(
             let metadata = Metadata {
                 name: name.clone(),
                 version: version.clone(),
+                kind: item.kind,
                 source: provenance,
                 content_hash: hash,
                 installed_at: SystemTime::now().into(),

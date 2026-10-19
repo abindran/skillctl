@@ -2,7 +2,10 @@ use clap::{Parser, Subcommand, ValueEnum};
 use clap_complete::Shell;
 use std::path::PathBuf;
 
-use crate::names::{ProjectName, SkillName};
+use crate::{
+    artifact::Kind,
+    names::{ProjectName, SkillName},
+};
 
 /// `--version` output: version, build commit and the registry schema this
 /// binary reads and writes. `-V` prints the short form.
@@ -139,14 +142,18 @@ pub enum Command {
         project: Option<ProjectName>,
     },
 
-    /// Create a new skill.
+    /// Create a new skill or hook draft.
     New {
-        /// Name of the skill to create.
+        /// Name of the skill or hook to create.
         skill: SkillName,
 
-        /// Create from a template.
+        /// Create from a template (default: "default" for skills, "hook" for hooks).
         #[arg(long)]
         from_template: Option<String>,
+
+        /// Artifact kind to scaffold.
+        #[arg(long, value_enum, default_value_t = Kind::Skill)]
+        kind: Kind,
     },
 
     /// Copy a stored version into a writable draft with a patch bump.

@@ -10,8 +10,14 @@ use crate::error::Error;
 use crate::registry::{Registry, lock::RegistryLock};
 use crate::services::fs::Fs;
 
-/// `new` can substitute the skill name for `{{name}}` when scaffolding a draft.
+/// `new` substitutes the artifact name for `{{name}}` when scaffolding a draft.
 pub const DEFAULT_TEMPLATE: &str = "---\nname: {{name}}\ndescription: Describe what this skill does and use when the task calls for its specialized workflow or guidance.\nmetadata:\n  version: \"0.1.0\"\n---\n\n# {{name}}\n\n## Instructions\n\nDescribe the steps to follow when using this skill.\n";
+
+/// The hook scaffold: a `HOOK.md` declaring one event and an entry script.
+pub const DEFAULT_HOOK_TEMPLATE: &str = "---\nname: {{name}}\ndescription: Describe which lifecycle events this hook handles and what it records or enforces when they fire.\nmetadata:\n  version: \"0.1.0\"\nevents: [SessionEnd]\nentry: hook.py\n---\n\n# {{name}}\n\nRuns on the events listed in the frontmatter. The harness passes the event as\nJSON on stdin; exit 0 to continue, or 2 to block where the event allows it.\n";
+
+/// The hook entry script scaffold. It must never fail the harness, so malformed\n/// input is swallowed and every path exits 0.
+pub const DEFAULT_HOOK_SCRIPT: &str = "#!/usr/bin/env python3\n\"\"\"{{name}}: a skillctl hook. Reads one lifecycle event from stdin and exits 0.\"\"\"\nimport json\nimport sys\n\n\ndef main() -> int:\n    try:\n        event = json.load(sys.stdin)\n    except ValueError:\n        return 0  # never fail the harness over malformed input\n    _ = event.get(\"hook_event_name\")\n    return 0\n\n\nif __name__ == \"__main__\":\n    sys.exit(main())\n";
 
 #[derive(Debug, Serialize)]
 pub struct InitReport {
@@ -88,6 +94,7 @@ pub fn initialize(context: &Context<'_>) -> Result<InitReport, Error> {
             context.home.store(),
             context.home.drafts(),
             context.home.templates().join("default"),
+            context.home.templates().join("hook"),
         ] {
             ensure_dir(fs, &dir, &mut report.created)?;
         }
@@ -96,11 +103,19 @@ pub fn initialize(context: &Context<'_>) -> Result<InitReport, Error> {
             Registry::default().save(fs, &registry)?;
             report.created.push(registry);
         }
-        let template = context.home.templates().join("default/SKILL.md");
-        if !exists(fs, &template)? {
-            fs.write_atomic(&template, DEFAULT_TEMPLATE.as_bytes())
-                .map_err(|error| io_error(&template, error))?;
-            report.created.push(template);
+        for (relative, contents, mode) in [
+            ("default/SKILL.md", DEFAULT_TEMPLATE, 0o644),
+            ("hook/HOOK.md", DEFAULT_HOOK_TEMPLATE, 0o644),
+            ("hook/hook.py", DEFAULT_HOOK_SCRIPT, 0o755),
+        ] {
+            let template = context.home.templates().join(relative);
+            if !exists(fs, &template)? {
+                fs.write_atomic(&template, contents.as_bytes())
+                    .map_err(|error| io_error(&template, error))?;
+                fs.set_mode(&template, mode)
+                    .map_err(|error| io_error(&template, error))?;
+                report.created.push(template);
+            }
         }
         Ok(())
     };

@@ -2,11 +2,12 @@
 
 pub mod fields;
 pub mod harness;
+pub mod hook;
 pub mod org;
 pub mod report;
 pub mod spec;
 
-use crate::{error::Error, services::fs::Fs, skill::Skill};
+use crate::{artifact::Kind, error::Error, services::fs::Fs, skill::Skill};
 use serde::Serialize;
 use std::{
     io,
@@ -67,39 +68,55 @@ pub fn run(fs: &dyn Fs, dir: &Path) -> Result<Vec<Finding>, Error> {
     run_with_rules(fs, dir, &[&spec::SpecRules])
 }
 
-/// Run all native groups, suppress allowed O/H IDs, then promote remaining warnings.
-/// `run` remains the spec-only API for callers that need structural validation.
+/// Rules that make an artifact unloadable or unregistrable are never suppressed
+/// by an allow-list: the spec rules for skills, and the structural hook rules.
+fn suppressible(rule: &str) -> bool {
+    !(rule.starts_with('S') || hook::STRUCTURAL.contains(&rule))
+}
+
+/// Run all native groups for the folder's kind, suppress allowed IDs, then
+/// promote remaining warnings. `run` remains the spec-only API for callers that
+/// need structural validation of a skill.
 pub fn run_all(
     fs: &dyn Fs,
     dir: &Path,
     allow: &[String],
     strict: bool,
 ) -> Result<Vec<Finding>, Error> {
-    // Never read a linked document outside the skill boundary.
-    let document = dir.join("SKILL.md");
+    // A folder with neither document is reported as a skill missing SKILL.md.
+    let kind = Kind::detect(fs, dir)?.unwrap_or_default();
+    // Never read a linked document outside the artifact boundary.
+    let document = dir.join(kind.document());
     if fs
         .symlink_metadata(&document)
         .is_ok_and(|info| info.is_symlink())
     {
+        let (rule, what) = match kind {
+            Kind::Skill => ("O122", "skill"),
+            Kind::Hook => ("K110", "hook"),
+        };
         return Ok(vec![Finding::error(
-            "O122",
+            rule,
             document,
-            "Symlinks are not allowed inside a skill",
-            "Replace SKILL.md with a regular file inside the skill.",
+            format!("Symlinks are not allowed inside a {what}"),
+            &format!(
+                "Replace {} with a regular file inside the {what}.",
+                kind.document()
+            ),
         )]);
     }
-    let mut findings = run_with_rules(
-        fs,
-        dir,
-        &[&spec::SpecRules, &org::OrgRules, &harness::HarnessRules],
-    )?;
+    let rules: &[&dyn Rule] = match kind {
+        Kind::Skill => &[&spec::SpecRules, &org::OrgRules, &harness::HarnessRules],
+        Kind::Hook => &[&hook::HookRules],
+    };
+    let mut findings = run_with_rules_kind(fs, dir, kind, rules)?;
     let local = if findings
         .iter()
-        .any(|finding| matches!(finding.rule.as_str(), "S001" | "S002"))
+        .any(|finding| matches!(finding.rule.as_str(), "S001" | "S002" | "K101"))
     {
         String::new()
     } else {
-        Skill::load(fs, dir)?
+        Skill::load_kind(fs, dir, kind)?
             .frontmatter
             .metadata
             .value()
@@ -108,7 +125,7 @@ pub fn run_all(
             .unwrap_or_default()
     };
     findings.retain(|finding| {
-        finding.rule.starts_with('S')
+        !suppressible(&finding.rule)
             || !(allow.iter().any(|id| id == &finding.rule)
                 || local.split(',').any(|id| id.trim() == finding.rule))
     });
@@ -121,23 +138,39 @@ pub fn run_all(
 }
 
 pub fn run_with_rules(fs: &dyn Fs, dir: &Path, rules: &[&dyn Rule]) -> Result<Vec<Finding>, Error> {
-    let path = dir.join("SKILL.md");
+    run_with_rules_kind(fs, dir, Kind::Skill, rules)
+}
+
+/// Gate on the root document (S001/S002 for skills, K101 for hooks), then run
+/// every rule on the parsed document.
+pub fn run_with_rules_kind(
+    fs: &dyn Fs,
+    dir: &Path,
+    kind: Kind,
+    rules: &[&dyn Rule],
+) -> Result<Vec<Finding>, Error> {
+    let path = dir.join(kind.document());
+    let document = kind.document();
+    let (missing_rule, parse_rule, what) = match kind {
+        Kind::Skill => ("S001", "S002", "skill"),
+        Kind::Hook => ("K101", "K101", "hook"),
+    };
     match fs.symlink_metadata(&path) {
         Err(source) if source.kind() == io::ErrorKind::NotFound => {
             return Ok(vec![Finding::error(
-                "S001",
+                missing_rule,
                 path,
-                "SKILL.md is missing from the skill root",
-                "Create SKILL.md at the skill folder root.",
+                format!("{document} is missing from the {what} root"),
+                &format!("Create {document} at the {what} folder root."),
             )]);
         }
         Err(source) => return Err(io_error(&path, source)),
         Ok(info) if !info.is_file() && !info.is_symlink() => {
             return Ok(vec![Finding::error(
-                "S001",
+                missing_rule,
                 path,
-                "SKILL.md must be a file",
-                "Replace SKILL.md with a readable Markdown file.",
+                format!("{document} must be a file"),
+                &format!("Replace {document} with a readable Markdown file."),
             )]);
         }
         Ok(_) => {}
@@ -145,15 +178,15 @@ pub fn run_with_rules(fs: &dyn Fs, dir: &Path, rules: &[&dyn Rule]) -> Result<Ve
     let bytes = fs.read(&path).map_err(|source| io_error(&path, source))?;
     let parsed = std::str::from_utf8(&bytes)
         .map_err(|error| error.to_string())
-        .and_then(|document| Skill::parse(dir, document).map_err(|error| error.to_string()));
+        .and_then(|text| Skill::parse_kind(dir, text, kind).map_err(|error| error.to_string()));
     let skill = match parsed {
         Ok(skill) => skill,
         Err(message) => {
             return Ok(vec![Finding::error(
-                "S002",
+                parse_rule,
                 path,
                 message,
-                "Start SKILL.md with YAML mapping frontmatter between exact --- lines.",
+                &format!("Start {document} with YAML mapping frontmatter between exact --- lines."),
             )]);
         }
     };
@@ -168,6 +201,6 @@ fn io_error(path: &Path, source: io::Error) -> Error {
     Error::Io {
         operation: format!("Validate {}", path.display()),
         source,
-        hint: "Check the skill folder and its read permissions.".into(),
+        hint: "Check the folder and its read permissions.".into(),
     }
 }

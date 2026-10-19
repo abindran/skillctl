@@ -5,8 +5,9 @@ use super::{
     stage::stage_version,
 };
 use crate::{
+    artifact::Kind,
     cli::Bump,
-    commands::init::DEFAULT_TEMPLATE,
+    commands::init::{DEFAULT_HOOK_SCRIPT, DEFAULT_HOOK_TEMPLATE, DEFAULT_TEMPLATE},
     error::Error,
     names::SkillName,
     paths::Paths,
@@ -22,15 +23,27 @@ use std::{
     time::SystemTime,
 };
 
+/// The template a kind scaffolds from when none is named.
+fn default_template(kind: Kind) -> &'static str {
+    match kind {
+        Kind::Skill => "default",
+        Kind::Hook => "hook",
+    }
+}
+
 /// Scaffold a valid draft. Existing drafts are never overwritten, even if empty.
+/// A skill draft gets `SKILL.md` plus empty `scripts/` and `references/`; a hook
+/// draft gets `HOOK.md` plus every other regular file in the template folder
+/// (the entry script), with `{{name}}` substituted and the exec bit preserved.
 pub fn new(
     fs: &dyn Fs,
     paths: &Paths,
     name: &SkillName,
     template: Option<&str>,
+    kind: Kind,
     dry_run: bool,
 ) -> Result<PathBuf, Error> {
-    let template = template.unwrap_or("default");
+    let template = template.unwrap_or(default_template(kind));
     // Template names are single safe components, not arbitrary filesystem paths.
     SkillName::new(template).map_err(|_| {
         invalid("Invalid template name; use lowercase letters, digits and single hyphens")
@@ -39,27 +52,54 @@ pub fn new(
     for dir in [paths.templates(), template_dir.clone()] {
         real_dir(fs, &dir, dry_run)?;
     }
-    let path = template_dir.join("SKILL.md");
-    let document = match fs.symlink_metadata(&path) {
-        Ok(info) if info.is_file() => String::from_utf8(op(fs.read(&path), &path)?)
-            .map_err(|_| invalid("Template is not valid UTF-8"))?,
-        Err(error)
-            if error.kind() == io::ErrorKind::NotFound && dry_run && template == "default" =>
-        {
-            DEFAULT_TEMPLATE.into()
+    let builtin = dry_run && template == default_template(kind);
+    let path = template_dir.join(kind.document());
+    let (document, mut extras) = match fs.symlink_metadata(&path) {
+        Ok(info) if info.is_file() => {
+            let document = String::from_utf8(op(fs.read(&path), &path)?)
+                .map_err(|_| invalid("Template is not valid UTF-8"))?;
+            (
+                document,
+                template_files(fs, &template_dir, kind.document())?,
+            )
         }
+        Err(error) if error.kind() == io::ErrorKind::NotFound && builtin => match kind {
+            Kind::Skill => (DEFAULT_TEMPLATE.into(), Vec::new()),
+            Kind::Hook => (
+                DEFAULT_HOOK_TEMPLATE.into(),
+                vec![(
+                    "hook.py".to_owned(),
+                    DEFAULT_HOOK_SCRIPT.as_bytes().to_vec(),
+                    true,
+                )],
+            ),
+        },
         Err(error) => return Err(io_error(&path, error)),
         Ok(_) => {
-            return Err(invalid(
-                "Template SKILL.md must be a regular file, not a symlink",
-            ));
+            return Err(invalid(format!(
+                "Template {} must be a regular file, not a symlink",
+                kind.document()
+            )));
         }
     };
     let document = document.replace("{{name}}", name.as_str());
-    let document = rewrite(&document, Some(name), Some(&Version::new(0, 1, 0)), true)?;
+    let document = rewrite(
+        &document,
+        Some(name),
+        Some(&Version::new(0, 1, 0)),
+        Some(kind),
+    )?;
+    for (_, bytes, _) in &mut extras {
+        if let Ok(text) = std::str::from_utf8(bytes) {
+            *bytes = text.replace("{{name}}", name.as_str()).into_bytes();
+        }
+    }
     let destination = paths.draft_dir(name);
-    let parsed = Skill::parse(&destination, &document)?;
-    let findings = validate::Rule::check(&validate::spec::SpecRules, &parsed);
+    let parsed = Skill::parse_kind(&destination, &document, kind)?;
+    let findings = match kind {
+        Kind::Skill => validate::Rule::check(&validate::spec::SpecRules, &parsed),
+        Kind::Hook => validate::Rule::check(&validate::hook::HookRules, &parsed),
+    };
     require_valid(&findings)?;
     real_dir(fs, &paths.drafts(), dry_run)?;
     missing(fs, &destination)?;
@@ -67,15 +107,26 @@ pub fn new(
     let result = (|| {
         op(fs.create_dir(&destination), &destination)?;
         created.push((destination.clone(), true));
-        for child in ["scripts", "references"] {
-            let path = destination.join(child);
-            op(fs.create_dir(&path), &path)?;
-            created.push((path, true));
+        if kind == Kind::Skill {
+            for child in ["scripts", "references"] {
+                let path = destination.join(child);
+                op(fs.create_dir(&path), &path)?;
+                created.push((path, true));
+            }
         }
-        let path = destination.join("SKILL.md");
+        let path = destination.join(kind.document());
         created.push((path.clone(), false));
         op(fs.write_atomic(&path, document.as_bytes()), &path)?;
         op(fs.set_mode(&path, 0o644), &path)?;
+        for (file, bytes, executable) in &extras {
+            let path = destination.join(file);
+            created.push((path.clone(), false));
+            op(fs.write_atomic(&path, bytes), &path)?;
+            op(
+                fs.set_mode(&path, if *executable { 0o755 } else { 0o644 }),
+                &path,
+            )?;
+        }
         Ok(destination.clone())
     })();
     if result.is_err() {
@@ -93,6 +144,37 @@ pub fn new(
         }
     }
     result
+}
+
+/// Regular files beside the template document, as (name, bytes, executable).
+/// Subfolders and symlinks in a template are ignored.
+fn template_files(
+    fs: &dyn Fs,
+    template_dir: &Path,
+    document: &str,
+) -> Result<Vec<(String, Vec<u8>, bool)>, Error> {
+    let mut files = Vec::new();
+    for entry in op(fs.read_dir(template_dir), template_dir)? {
+        let Some(file) = entry.file_name().and_then(|name| name.to_str()) else {
+            continue;
+        };
+        if file == document {
+            continue;
+        }
+        let info = op(fs.symlink_metadata(&entry), &entry)?;
+        if !info.is_file() || info.file_type().is_symlink() {
+            continue;
+        }
+        #[cfg(unix)]
+        let executable = {
+            use std::os::unix::fs::PermissionsExt;
+            info.permissions().mode() & 0o111 != 0
+        };
+        #[cfg(not(unix))]
+        let executable = false;
+        files.push((file.to_owned(), op(fs.read(&entry), &entry)?, executable));
+    }
+    Ok(files)
 }
 
 /// Seal using a read overlay for a requested bump: failed publication never edits
@@ -119,18 +201,22 @@ pub fn seal_with_allow(
     real_dir(fs, &draft, false)?;
     let findings = validate::run_all(fs, &draft, allow, false)?;
     require_valid(&findings)?;
-    let skill = Skill::load(fs, &draft)?;
+    let kind = Kind::of(fs, &draft)?;
+    let skill = Skill::load_kind(fs, &draft, kind)?;
     let mut version = skill.version()?.ok_or_else(|| Error::Validation {
         summary: "metadata.version is required to seal a draft".into(),
-        hint: "Set metadata.version to a semver string in the draft's SKILL.md.".into(),
+        hint: format!(
+            "Set metadata.version to a semver string in the draft's {}.",
+            kind.document()
+        ),
     })?;
-    let path = draft.join("SKILL.md");
+    let path = draft.join(kind.document());
     let document = if let Some(bump) = bump {
         version = bumped(version, bump)?;
         let bytes = op(fs.read(&path), &path)?;
-        let text =
-            std::str::from_utf8(&bytes).map_err(|_| invalid("SKILL.md is not valid UTF-8"))?;
-        Some(rewrite(text, None, Some(&version), false)?.into_bytes())
+        let text = std::str::from_utf8(&bytes)
+            .map_err(|_| invalid(format!("{} is not valid UTF-8", kind.document())))?;
+        Some(rewrite(text, None, Some(&version), None)?.into_bytes())
     } else {
         None
     };
@@ -138,6 +224,7 @@ pub fn seal_with_allow(
     let metadata = Metadata {
         name: name.clone(),
         version,
+        kind,
         source: Source::Local,
         content_hash: content_hash(&overlay, &draft)?,
         installed_at: SystemTime::now().into(),
@@ -196,13 +283,14 @@ pub fn edit(
         Err(error) => return Err(io_error(&draft, error)),
     }
     let next = bumped(version, Bump::Patch)?;
-    let document_path = source.join("SKILL.md");
+    let kind = Kind::of(fs, &source)?;
+    let document_path = source.join(kind.document());
     let text = String::from_utf8(op(fs.read(&document_path), &document_path)?)
-        .map_err(|_| invalid("SKILL.md is not valid UTF-8"))?;
-    let document = rewrite(&text, None, Some(&next), false)?;
+        .map_err(|_| invalid(format!("{} is not valid UTF-8", kind.document())))?;
+    let document = rewrite(&text, None, Some(&next), None)?;
     let result = (|| {
         copy_tree(fs, &source, &draft)?;
-        let path = draft.join("SKILL.md");
+        let path = draft.join(kind.document());
         op(fs.write_atomic(&path, document.as_bytes()), &path)?;
         op(fs.set_mode(&path, 0o644), &path)?;
         Ok(draft.clone())
@@ -254,7 +342,7 @@ fn require_valid(findings: &[validate::Finding]) -> Result<(), Error> {
     {
         return Err(Error::Validation {
             summary: validate::report::text(findings),
-            hint: "Fix the reported SKILL.md fields before sealing or scaffolding.".into(),
+            hint: "Fix the reported findings before sealing or scaffolding.".into(),
         });
     }
     Ok(())
@@ -283,11 +371,13 @@ pub(crate) fn bumped(mut version: Version, bump: Bump) -> Result<Version, Error>
     Ok(version)
 }
 
+/// Rewrite frontmatter fields in place. `scaffold` names the kind being
+/// scaffolded, which also fills in an empty description.
 pub(crate) fn rewrite(
     document: &str,
     name: Option<&SkillName>,
     version: Option<&Version>,
-    scaffold: bool,
+    scaffold: Option<Kind>,
 ) -> Result<String, Error> {
     let (yaml, body) = frontmatter::split(document)?;
     let mut value: Value =
@@ -298,18 +388,24 @@ pub(crate) fn rewrite(
     if let Some(name) = name {
         map.insert(Value::from("name"), Value::from(name.as_str()));
     }
-    if scaffold
-        && map
+    if let Some(kind) = scaffold {
+        if map
             .get(Value::from("description"))
             .and_then(Value::as_str)
             .is_none_or(|value| value.trim().is_empty())
-    {
-        map.insert(
-            Value::from("description"),
-            Value::from(
-                "Describe what this skill does and use when its specialized guidance is needed.",
-            ),
-        );
+        {
+            map.insert(
+                Value::from("description"),
+                Value::from(match kind {
+                    Kind::Skill => {
+                        "Describe what this skill does and use when its specialized guidance is needed."
+                    }
+                    Kind::Hook => {
+                        "Describe which lifecycle events this hook handles and what it does when they fire."
+                    }
+                }),
+            );
+        }
     }
     if let Some(version) = version {
         let metadata = map
@@ -382,8 +478,8 @@ fn invalid(message: impl Into<String>) -> Error {
 }
 
 /// Read overlay: one document is served from memory, everything else passes
-/// through. Lets sealing and installing hash and copy a rewritten `SKILL.md`
-/// without editing the source.
+/// through. Lets sealing and installing hash and copy a rewritten root
+/// document without editing the source.
 pub(crate) struct DocumentFs<'a> {
     pub(crate) fs: &'a dyn Fs,
     pub(crate) path: PathBuf,

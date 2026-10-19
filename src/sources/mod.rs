@@ -1,5 +1,6 @@
-//! Where installable skills come from: a Git URL cloned into a temporary
-//! checkout, or a local folder. Discovery is read-only and never follows symlinks.
+//! Where installable artifacts come from: a Git URL cloned into a temporary
+//! checkout, or a local folder. Discovery finds skill folders (`SKILL.md`) and
+//! hook folders (`HOOK.md`); it is read-only and never follows symlinks.
 
 pub mod git;
 
@@ -8,7 +9,7 @@ use std::{
     path::{Path, PathBuf},
 };
 
-use crate::{error::Error, names::SkillName, services::fs::Fs};
+use crate::{artifact::Kind, error::Error, names::SkillName, services::fs::Fs};
 
 /// An install source as the user typed it.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -30,7 +31,7 @@ impl Source {
             }
             Ok(_) => Err(Error::Usage {
                 message: format!("{value} is not a folder or a Git URL"),
-                hint: "Pass a folder containing SKILL.md (or skills), or a Git clone URL.".into(),
+                hint: "Pass a folder containing SKILL.md or HOOK.md (or several such folders), or a Git clone URL.".into(),
             }),
             Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(Self::Git {
                 url: value.to_owned(),
@@ -44,11 +45,13 @@ impl Source {
     }
 }
 
-/// A skill folder found in a checkout or local source.
+/// A skill or hook folder found in a checkout or local source.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Discovered {
-    /// Absolute folder containing `SKILL.md`.
+    /// Absolute folder containing the root document.
     pub dir: PathBuf,
+    /// Which document was found.
+    pub kind: Kind,
     /// Path relative to the source root, `None` when the root itself is the skill.
     pub subdir: Option<String>,
 }
@@ -64,15 +67,16 @@ impl Discovered {
             .map_err(|_| {
                 invalid(
                     &self.dir,
-                    "folder name must be a valid skill name (lowercase letters, digits, single hyphens)",
+                    "folder name must be a valid artifact name (lowercase letters, digits, single hyphens)",
                 )
             })
     }
 }
 
-/// Find skill folders: every folder containing `SKILL.md`, or only `subdir` when
-/// given. A folder holding `SKILL.md` is not searched further; `.git` and other
-/// dot-folders are skipped; symlinks are never followed. Results are sorted.
+/// Find artifact folders: every folder containing `SKILL.md` or `HOOK.md`, or
+/// only `subdir` when given. A folder holding a root document is not searched
+/// further; `.git` and other dot-folders are skipped; symlinks are never
+/// followed. Results are sorted.
 pub fn discover(fs: &dyn Fs, root: &Path, subdir: Option<&Path>) -> Result<Vec<Discovered>, Error> {
     let start = match subdir {
         Some(subdir) => {
@@ -110,10 +114,7 @@ fn walk(fs: &dyn Fs, root: &Path, dir: &Path, found: &mut Vec<Discovered>) -> Re
         source,
         hint: "Check the source folder permissions.".into(),
     })?;
-    let has_skill = entries
-        .iter()
-        .any(|entry| entry.file_name().is_some_and(|name| name == "SKILL.md"));
-    if has_skill {
+    if let Some(kind) = Kind::detect(fs, dir)? {
         let subdir = dir
             .strip_prefix(root)
             .ok()
@@ -121,6 +122,7 @@ fn walk(fs: &dyn Fs, root: &Path, dir: &Path, found: &mut Vec<Discovered>) -> Re
             .map(|relative| relative.to_string_lossy().replace('\\', "/"));
         found.push(Discovered {
             dir: dir.to_path_buf(),
+            kind,
             subdir,
         });
         return Ok(());
@@ -147,8 +149,7 @@ fn walk(fs: &dyn Fs, root: &Path, dir: &Path, found: &mut Vec<Discovered>) -> Re
 fn invalid(path: &Path, reason: &str) -> Error {
     Error::Validation {
         summary: format!("Cannot install from {}: {reason}", path.display()),
-        hint:
-            "Point skillctl install at a folder whose name is the skill name and contains SKILL.md."
-                .into(),
+        hint: "Point skillctl install at a folder whose name is the artifact name and contains SKILL.md or HOOK.md."
+            .into(),
     }
 }

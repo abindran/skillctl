@@ -5,7 +5,7 @@ use crate::paths::Paths;
 use crate::services::fs::{DryRunFs, Fs, FsAction};
 use crate::services::prompt::ScriptedPrompter;
 
-use super::init::{DEFAULT_TEMPLATE, initialize};
+use super::init::{DEFAULT_HOOK_SCRIPT, DEFAULT_TEMPLATE, initialize};
 
 #[test]
 fn injected_dry_run_records_the_layout_without_disk_writes_or_prompts() {
@@ -26,16 +26,28 @@ fn injected_dry_run_records_the_layout_without_disk_writes_or_prompts() {
         },
     );
     let report = initialize(&context).unwrap();
-    assert_eq!(report.created.len(), 7);
+    // home, store, drafts, templates, templates/default, templates/hook,
+    // registry.yml, and three template files.
+    assert_eq!(report.created.len(), 10);
     assert!(report.dry_run);
     assert!(!home.exists());
     let actions = fs.actions();
-    assert_eq!(actions.len(), 7);
+    // Each template file is a write followed by a mode change.
+    assert_eq!(actions.len(), 13);
     assert!(matches!(&actions[0], FsAction::CreateDir { path } if path == &home));
-    assert!(matches!(&actions[5], FsAction::WriteAtomic { path, bytes }
-        if path == &home.join("registry.yml") && crate::registry::Registry::from_yaml(bytes).unwrap() == crate::registry::Registry::default()));
+    assert!(
+        matches!(&actions[5], FsAction::CreateDir { path } if path == &home.join("templates/hook"))
+    );
     assert!(matches!(&actions[6], FsAction::WriteAtomic { path, bytes }
+        if path == &home.join("registry.yml") && crate::registry::Registry::from_yaml(bytes).unwrap() == crate::registry::Registry::default()));
+    assert!(matches!(&actions[7], FsAction::WriteAtomic { path, bytes }
         if path == &home.join("templates/default/SKILL.md") && bytes == DEFAULT_TEMPLATE.as_bytes()));
+    assert!(matches!(&actions[11], FsAction::WriteAtomic { path, bytes }
+        if path == &home.join("templates/hook/hook.py") && bytes == DEFAULT_HOOK_SCRIPT.as_bytes()));
+    assert!(
+        matches!(&actions[12], FsAction::SetMode { path, mode: 0o755 }
+        if path == &home.join("templates/hook/hook.py"))
+    );
     drop(context);
     assert!(stdout.is_empty());
     assert!(stderr.is_empty());

@@ -32,7 +32,8 @@ The technical architecture lives in the [project wiki](https://github.com/abindr
 | **Do not keep duplicate copies per harness or per clone.** | Each skill version exists exactly once in `~/.skills/store/`. Projects and harness folders only hold symlinks to it. |
 | **Project-specific skills that follow the project to every clone.** | A project is a registry entry with pinned skill versions. Attach any number of folders to it; `add` and `remove` reconcile all of them, and `relink` restores links after `git clean -fdx` or a fresh checkout. |
 | **Keep project repositories clean.** | Links are listed individually in `.git/info/exclude`, so `git status` stays empty and project-owned skills in the same folder remain visible to Git. |
-| **Validate skills against open standards.** | `validate` implements the Agent Skills spec rules (S001–S008), organisation quality rules (O101–O133) and harness-compatibility warnings (H201–H205). JUnit output plugs into CI merge-request widgets. |
+| **Validate skills against open standards.** | `validate` implements the Agent Skills spec rules (S001–S008), organisation quality rules (O101–O133) and harness-compatibility warnings (H201–H205); hooks get their own rules (K101–K110). JUnit output plugs into CI merge-request widgets. |
+| **Store hooks next to skills.** | A hook is a `HOOK.md` declaring lifecycle events plus the script a harness runs. Hooks are authored, validated, versioned and installed exactly like skills, in the same store. Registering them with a harness is the next step on the roadmap. |
 | **Skills that bundle scripts, references and assets.** | The validator checks that every bundled file is referenced, that scripts have a shebang and executable bit, and that no script downloads to a shell, asks for interactive input, or embeds secrets. Harnesses run the scripts; skillctl only lints them. |
 | **Skills that are safe from accidental edits by an AI agent.** | Sealed store versions are `0444`/`0555`. Editing happens in a writable draft under `~/.skills/drafts/`, which can be linked into a project with `add <skill> --draft` for trying out before sealing. |
 | **Personal skills available in every folder.** | `global add` pins a skill in the registry's `global` section and links it into `~/.claude/skills/`. Project and global names cannot clash, so a personal skill never silently shadows a project one. |
@@ -48,7 +49,7 @@ The technical architecture lives in the [project wiki](https://github.com/abindr
 ~/work/crm-web/.git/info/exclude   ← managed block hides both links
 ```
 
-1. `init` creates `~/.skills/` with a `registry.yml`, an empty store, a drafts folder and a `SKILL.md` template.
+1. `init` creates `~/.skills/` with a `registry.yml`, an empty store, a drafts folder, a `SKILL.md` template and a hook template.
 2. `new` scaffolds a draft; `seal` validates it, copies it into the store under its `metadata.version`, makes it read-only and writes `meta.json` with a SHA-256 content hash.
 3. `attach` registers the current folder as an instance of a project, records which skills the project pins, and runs the reconcile algorithm, which creates, updates or removes only symlinks that point into the store or drafts. Real folders and foreign links are never touched and are reported as conflicts.
 4. `status`, `projects` and `skills` are read-only views over the registry and the store.
@@ -283,23 +284,23 @@ Every command that asks a question also accepts flags that answer it, so all of 
 
 | Command | Run from | What it changes |
 |---|---|---|
-| `skillctl new <skill> [--from-template <name>]` | anywhere | Scaffolds `~/.skills/drafts/<skill>/` from `templates/<name>/SKILL.md` (default template by default) with the name filled in, `metadata.version: 0.1.0`, and empty `scripts/` and `references/` folders. Never replaces an existing draft. |
-| `skillctl seal <skill> [--bump major\|minor\|patch]` | anywhere | Runs the full validator with the registry allow-list; errors leave the draft intact. Stages a read-only copy under `store/<skill>/<version>/<skill>/`, writes `meta.json` with `source.kind: local`, then deletes the draft. Fails if the version already exists. |
-| `skillctl edit <skill>[@<version>] [--force]` | anywhere | Copies a stored version (default: highest stable) into a writable draft with its patch version bumped, restoring write permission on the copy. Refuses to replace an existing draft unless `--force` is given. Link the draft into a project with `add <skill> --draft`, then `seal` it as the next version. |
+| `skillctl new <name> [--kind skill\|hook] [--from-template <name>]` | anywhere | Scaffolds `~/.skills/drafts/<name>/` with the name filled in and `metadata.version: 0.1.0`. A skill (the default) comes from `templates/default/SKILL.md` with empty `scripts/` and `references/` folders. A hook (`--kind hook`) comes from `templates/hook/`: `HOOK.md` plus every other file in the template folder (the `hook.py` entry script, executable), with `{{name}}` substituted. Never replaces an existing draft. |
+| `skillctl seal <name> [--bump major\|minor\|patch]` | anywhere | Runs the full validator with the registry allow-list; errors leave the draft intact. Stages a read-only copy under `store/<name>/<version>/<name>/`, writes `meta.json` with `kind` (`skill` or `hook`) and `source.kind: local`, then deletes the draft. Fails if the version already exists. |
+| `skillctl edit <name>[@<version>] [--force]` | anywhere | Copies a stored version (default: highest stable) into a writable draft with its patch version bumped, restoring write permission on the copy. Refuses to replace an existing draft unless `--force` is given. Link a skill draft into a project with `add <skill> --draft`, then `seal` it as the next version. |
 
 ### Store
 
 | Command | Run from | What it changes |
 |---|---|---|
-| `skillctl skills` | anywhere | Lists every skill and version in the store with the projects pinning it and whether it is global. |
-| `skillctl install <source> [--ref <tag>] [--path <subdir>] [--all] [--version <semver>]` | anywhere | Installs from a Git URL (`git@…`, `https://…`, `ssh://…`, `file://…`, shallow-cloned with `--depth 1` using your own SSH keys and credential helpers) or from an existing local folder. Discovers every folder containing `SKILL.md` (or only `--path`), asks which to install when there are several (`--all` answers), validates each with the registry allow-list, and stages the selected ones with `meta.json` recording the URL, ref, commit and subfolder. The same version with the same content reports "already installed" and exits 0; the same version with different content is refused. `--version` fills in a missing `metadata.version` in the stored copy. |
+| `skillctl skills` | anywhere | Lists every artifact and version in the store with the projects pinning it and whether it is global. Hooks are marked `(hook)` in the text and carry `"kind": "hook"` in `--json`. |
+| `skillctl install <source> [--ref <tag>] [--path <subdir>] [--all] [--version <semver>]` | anywhere | Installs from a Git URL (`git@…`, `https://…`, `ssh://…`, `file://…`, shallow-cloned with `--depth 1` using your own SSH keys and credential helpers) or from an existing local folder. Discovers every folder containing `SKILL.md` or `HOOK.md` (or only `--path`), asks which to install when there are several (`--all` answers), validates each with the registry allow-list, and stages the selected ones with `meta.json` recording the kind, URL, ref, commit and subfolder. The same version with the same content reports "already installed" and exits 0; the same version with different content is refused. `--version` fills in a missing `metadata.version` in the stored copy. |
 | `skillctl gc [--keep <n>]` | anywhere | Lists store versions that no project or global pin uses and that are not among a skill's newest `n` (default 1), asks for confirmation (`--yes` answers), restores write permission and deletes them. Empty skill folders are removed too. |
 
 ### Quality and maintenance
 
 | Command | Run from | What it changes |
 |---|---|---|
-| `skillctl validate [<skill>[@<version>\|@draft] \| <path>] [--format text\|json\|junit] [--strict] [--with-reference]` | anywhere | Validates one store version, a draft, any folder, or with no argument every draft and every store version. Nothing is written. |
+| `skillctl validate [<name>[@<version>\|@draft] \| <path>] [--format text\|json\|junit] [--strict] [--with-reference]` | anywhere | Validates one store version, a draft, any folder, or with no argument every draft and every store version. A folder with `SKILL.md` gets the skill rules, one with `HOOK.md` the hook rules. Nothing is written. |
 | `skillctl doctor [--fix]` | anywhere | Reports, each with the command that fixes it: a missing or too-old `git`; instance folders that no longer exist or were replaced; pinned versions missing from the store; missing, wrong, dangling or conflicting links in every instance and user-level folder; store versions whose content no longer matches `meta.json` or that gained write permission; personal copies in `~/.claude/skills`, `~/.agents/skills` or `~/.cursor/skills` that shadow a project skill; symlinked or repository-resident global targets; repositories with `core.symlinks=false`. `--fix` removes vanished instances from the registry, relinks everything and restores read-only modes. Exits 1 while problems remain. A separate **Telemetry** section, which never affects the exit status, says whether Claude Code's OpenTelemetry export is on and complete (`CLAUDE_CODE_ENABLE_TELEMETRY=1`, `OTEL_METRICS_EXPORTER`, `OTEL_LOGS_EXPORTER`, `OTEL_EXPORTER_OTLP_PROTOCOL`, `OTEL_EXPORTER_OTLP_ENDPOINT`, and `OTEL_LOG_TOOL_DETAILS=1` so `agent.name` is not redacted), whether `ccusage` is on `PATH`, and that Cursor's usage comes from its dashboard and hook logs; `--json` carries it under `telemetry`. |
 | `skillctl config get\|set <key> [<value>]` | anywhere | Reads or changes `link_targets`, `global_link_targets`, `git_exclude`, `global_in_instances` and `validate.allow` (lists are comma-separated). After changing link targets it offers to run `relink --all` (`--yes` answers), which also removes managed links from targets that were dropped. |
 | `skillctl completions <shell>` | anywhere | Prints a completion script for bash, zsh, fish, elvish or PowerShell. Touches nothing else. |
@@ -326,13 +327,14 @@ Errors print one `Error:` line and one `Hint:` line naming the command to run ne
 
 ## Validation
 
-`skillctl validate` runs three rule groups. Each rule has a stable ID, a default severity and a fix hint.
+`skillctl validate` runs three rule groups on skills and one on hooks. Each rule has a stable ID, a default severity and a fix hint.
 
 | Group | IDs | Severity | Covers |
 |---|---|---|---|
 | Agent Skills spec | S001–S008 | error | `SKILL.md` present; YAML frontmatter is a mapping; `name` matches `^[a-z0-9]+(-[a-z0-9]+)*$` and the folder name; `description` is 1–1024 characters; `compatibility`, `metadata`, `license`, `allowed-tools` have the right types. |
 | Organisation rules | O101–O133 | mixed | `metadata.version` is semver; description length and "use when" clause; no `<`/`>`; body and reference-file size budgets; every referenced path exists and every bundled file is referenced; no symlinks or `..` escapes; scripts have a shebang and executable bit, no interactive input, no `curl … \| sh` or `sudo`, no likely secrets. |
 | Harness compatibility | H201–H205 | warning | Claude-only frontmatter fields, `allowed-tools`, Claude substitutions in the body, `context: fork` combined with asking the user, unknown fields. |
+| Hook artifacts | K101–K110 | mixed | `HOOK.md` present and parsable; `name` matches the folder; `description` 1–1024 characters; `metadata.version` is semver; `events` is a non-empty list (unknown event names warn); `entry` is a regular file inside the folder with a shebang and the executable bit; no interactive input, `sudo` or `curl … \| sh` in scripts; no likely secrets; no symlinks. K101–K105 and K107 cannot be allow-listed. |
 
 Examples:
 
@@ -351,7 +353,26 @@ skillctl validate ./skills/org-code-review --format junit > validation.xml
 - `--strict` promotes remaining warnings to errors. Exit code 3 on any error, 0 otherwise.
 - `--format` overrides the global `--json` flag. `--quiet` hides the text report but keeps machine-readable reports intact.
 - Failure reports are always exactly one JSON array or one XML document, so they can be redirected straight into a CI artifact. For GitLab, point `artifacts:reports:junit` at the redirected file.
-- `--with-reference` additionally runs the reference `skills-ref validate` tool if it is on `PATH` and merges a failed verdict as error `R001`. Missing tools are ignored.
+- `--with-reference` additionally runs the reference `skills-ref validate` tool if it is on `PATH` and merges a failed verdict as error `R001`. Missing tools are ignored; hooks are skipped because the reference tool knows only the Agent Skills spec.
+
+### Hooks
+
+A hook folder holds `HOOK.md` and the script the harness runs:
+
+```yaml
+---
+name: skillctl-logger
+description: Appends one JSONL line per lifecycle event so compactions and subagent runs can be counted per session.
+metadata:
+  version: "1.0.0"
+events: [SessionEnd, SubagentStop, PreCompact, UserPromptSubmit]
+entry: hook.py
+---
+```
+
+`events` lists the Claude Code lifecycle events the hook handles (`SessionStart`, `SessionEnd`, `UserPromptSubmit`, `PreToolUse`, `PostToolUse`, `Stop`, `SubagentStop`, `PreCompact` and the rest; Cursor runs a subset through its third-party imports). `entry` is the script, relative to the folder; any interpreter is fine as long as it has a shebang and the executable bit. The harness passes the event as JSON on stdin.
+
+Hooks share the store's flat namespace with skills, so a skill and a hook cannot have the same name. Because a hook is registered with a harness rather than linked into a `skills/` folder, `add`, `attach --skills` and `global add` refuse hooks until hook registration ships.
 
 Suppress organisation or harness rules per skill with a frontmatter field, or for every validation run through the registry. Spec rules cannot be suppressed.
 
@@ -417,15 +438,20 @@ skillctl completions zsh > "$(brew --prefix)/share/zsh/site-functions/_skillctl"
 ├── store/
 │   └── org-code-review/
 │       └── 1.4.0/
-│           ├── meta.json        source, content hash, installed_at, skillctl_version
+│           ├── meta.json        kind, source, content hash, installed_at, skillctl_version
 │           └── org-code-review/ the skill itself, read-only (0444 files, 0555 dirs and executables)
+│   └── skillctl-logger/
+│       └── 1.0.0/
+│           ├── meta.json        "kind": "hook"
+│           └── skillctl-logger/ HOOK.md and hook.py, read-only
 ├── drafts/
 │   └── org-code-review/         writable copy created by `new`
 └── templates/
-    └── default/SKILL.md         scaffold used by `new`
+    ├── default/SKILL.md         scaffold used by `new`
+    └── hook/                    scaffold used by `new --kind hook`: HOOK.md and hook.py
 ```
 
-The skill folder sits one level below the version folder so that its own folder name equals the skill `name`, which the spec and Cursor require. `meta.json` sits beside it so harnesses never see it.
+The artifact folder sits one level below the version folder so that its own folder name equals its `name`, which the spec and Cursor require. `meta.json` sits beside it so harnesses never see it. Skills and hooks share one namespace.
 
 ## Development
 
@@ -484,9 +510,11 @@ scripts/release/build-universal.sh && scripts/release/package.sh 0.1.0 && script
 | Registry model, locking, atomic writes with backup, `init` | Implemented |
 | Store: queries, `meta.json`, content hash, staging, read-only sealing | Implemented |
 | Authoring: `new`, `seal`, `add --draft` | Implemented |
+| Hook artifacts: `HOOK.md` + script in the store, `new --kind hook`, K101–K110 validation, `kind` in `meta.json` | Implemented (W02a) |
+| Hook registration into `~/.claude/settings.json` and the `skillctl-logger` hook | Planned (W02b) |
 | Linking: instance resolution, reconcile, Git exclude block | Implemented |
 | `attach`, `detach`, `status`, `add`, `remove`, `relink`, `global add/remove/list`, `projects`, `skills` | Implemented |
-| Validation: S, O and H rules; text, JSON and JUnit; allow-lists; `--strict`; `--with-reference` | Implemented |
+| Validation: S, O, H and K rules; text, JSON and JUnit; allow-lists; `--strict`; `--with-reference` | Implemented |
 | `install` from Git and local folders, `edit`, `doctor --fix`, `gc`, `config`, `completions` | Implemented |
 | Release pipeline: universal build, optional signing and notarization, clean-runner verification, GitHub release, crates.io publish and verification | Implemented (GitHub Actions) |
 | Manual harness compatibility matrix (Claude Code, Cursor, ZohoCode) | Not run; default link targets are provisional |

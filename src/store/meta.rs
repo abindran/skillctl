@@ -9,7 +9,7 @@ use chrono::{DateTime, Utc};
 use semver::Version;
 use serde::{Deserialize, Serialize};
 
-use crate::{error::Error, names::SkillName, services::fs::Fs};
+use crate::{artifact::Kind, error::Error, names::SkillName, services::fs::Fs};
 
 /// Provenance of a stored version. Git references and subdirectories are optional
 /// for installs using the default branch or a skill at the repository root.
@@ -34,6 +34,9 @@ pub enum Source {
 pub struct Metadata {
     pub name: SkillName,
     pub version: Version,
+    /// Absent in versions stored before hooks existed, which are all skills.
+    #[serde(default)]
+    pub kind: Kind,
     pub source: Source,
     pub content_hash: String,
     pub installed_at: DateTime<Utc>,

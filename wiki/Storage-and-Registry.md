@@ -12,6 +12,7 @@ flowchart TD
     H --> S["store/"]
     H --> D["drafts/<skill>/ — writable copies for authoring"]
     H --> T["templates/default/SKILL.md — scaffold for new"]
+    H --> TH["templates/hook/ — HOOK.md and hook.py, scaffold for new --kind hook"]
     S --> N["store/org-code-review/"]
     N --> ST[".staging-<random>/ — in-progress version, never visible to callers"]
     N --> V["1.4.0/"]
@@ -21,6 +22,8 @@ flowchart TD
 ```
 
 The skill folder sits **one level below** its version folder so that its own folder name is exactly the skill `name`; the spec and Cursor require that `name` match the folder name even when a link is resolved to its real path. `meta.json` sits beside the skill rather than inside it, so harnesses never see it and the validator never flags it as an unreferenced file.
+
+Hooks use the same layout in the same `store/` namespace (`store/<hook>/<version>/<hook>/HOOK.md`), so a skill and a hook cannot share a name. The kind is detected from the root document (`artifact::Kind::detect`) and recorded in `meta.json`; store queries stay directory-based and kind-agnostic.
 
 ## Registry data model
 
@@ -99,6 +102,7 @@ Queries perform no writes, including in dry runs. Callers hold the registry lock
 {
   "name": "org-code-review",
   "version": "1.4.0",
+  "kind": "skill",
   "source": { "kind": "git", "url": "git@gitlab.example.com:platform/org-skills.git", "ref": "v1.4.0", "commit": "9f2c1e7", "subdir": "skills/org-code-review" },
   "content_hash": "sha256:4b1f…",
   "installed_at": "2026-10-18T09:05:00Z",
@@ -106,7 +110,7 @@ Queries perform no writes, including in dry runs. Callers hold the registry lock
 }
 ```
 
-`source.kind` is `git`, `local` (installed from a path or sealed from a draft) or `new`. Git sources carry `url` and `commit`, with optional `ref` and repository-relative `subdir`. `Metadata` is read and atomically written through the `Fs` service; missing or malformed metadata is an error, not a default. Because `meta.json` lives beside the skill folder, writing it never changes the content hash.
+`kind` is `skill` or `hook`; it is optional on read (versions stored before hooks existed have no field and are skills) and always written. `source.kind` is `git`, `local` (installed from a path or sealed from a draft) or `new`. Git sources carry `url` and `commit`, with optional `ref` and repository-relative `subdir`. `Metadata` is read and atomically written through the `Fs` service; missing or malformed metadata is an error, not a default. Because `meta.json` lives beside the skill folder, writing it never changes the content hash.
 
 ## Canonical content hash
 
@@ -140,7 +144,7 @@ flowchart TD
 
 ## Drafts
 
-`~/.skills/drafts/<skill>/` is an ordinary writable folder. `new` scaffolds it from `templates/<name>/SKILL.md`, replacing `{{name}}` and setting `metadata.version: 0.1.0`, and creates empty `scripts/` and `references/`. `edit` copies a stored version into a draft (folders `0755`, files `0644` or `0755`) and bumps the patch version in the copy's frontmatter; an existing draft is replaced only with `--force`. `seal` runs the full validator, stages the draft into the store with `source.kind: local` (applying `--bump` to the stored copy's frontmatter), and removes the draft only after the version is published. A draft can be pinned with `add <skill> --draft`, in which case links point at the draft folder and `status` shows the pin as `draft`.
+`~/.skills/drafts/<name>/` is an ordinary writable folder. `new` scaffolds it from `templates/<template>/`: the root document (`SKILL.md`, or `HOOK.md` with `--kind hook`, default templates `default` and `hook`) with `{{name}}` replaced and `metadata.version: 0.1.0` set, plus every other regular file in the template folder with `{{name}}` substituted and the exec bit preserved (the hook template ships `hook.py`). Skill drafts also get empty `scripts/` and `references/`. The scaffold is checked with the spec rules (skills) or the frontmatter hook rules (hooks) before anything is written. `edit` copies a stored version into a draft (folders `0755`, files `0644` or `0755`) and bumps the patch version in the copy's frontmatter; an existing draft is replaced only with `--force`. `seal` runs the full validator for the draft's kind, stages the draft into the store with its `kind` and `source.kind: local` (applying `--bump` to the stored copy's frontmatter), and removes the draft only after the version is published. A draft can be pinned with `add <skill> --draft`, in which case links point at the draft folder and `status` shows the pin as `draft`.
 
 ## Install flow
 
@@ -148,14 +152,14 @@ flowchart TD
 flowchart LR
     S["Git URL or local folder"] --> C["Checkout: git clone --depth 1 [--branch ref] into a temp folder"]
     S -. "existing folder" .-> D
-    C --> D["discover: folders holding SKILL.md, or only --path"]
+    C --> D["discover: folders holding SKILL.md or HOOK.md (with their Kind), or only --path"]
     D --> P["multi-select unless --all"]
     P --> V["validate each with the registry allow-list (through a read overlay when --version fills a missing metadata.version)"]
     V --> H["content_hash of the overlay"]
     H --> X{"version exists?"}
     X -- "same hash" --> A["already installed, exit 0"]
     X -- "different hash" --> E["error: bump the version"]
-    X -- no --> ST["stage_version with meta.json (git: url, ref, commit, subdir)"]
+    X -- no --> ST["stage_version with meta.json (kind; git: url, ref, commit, subdir)"]
 ```
 
 The clone happens before the exclusive registry lock is taken; everything selected is validated before anything is staged, so a multi-skill install never stops halfway.

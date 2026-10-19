@@ -93,7 +93,7 @@ impl Frontmatter {
 pub(super) fn invalid(message: impl Into<String>) -> Error {
     Error::Validation {
         summary: message.into(),
-        hint: "Fix SKILL.md: use YAML mapping frontmatter between exact --- lines; metadata.version must be a semver string.".into(),
+        hint: "Fix the root document (SKILL.md or HOOK.md): use YAML mapping frontmatter between exact --- lines; metadata.version must be a semver string.".into(),
     }
 }
 
@@ -105,7 +105,7 @@ pub fn split(document: &str) -> Result<(&str, &str), Error> {
     let mut lines = document.split_inclusive('\n');
     let opening = lines.next().ok_or_else(|| invalid("Missing frontmatter"))?;
     if line_text(opening) != "---" {
-        return Err(invalid("SKILL.md must start with an exact --- line"));
+        return Err(invalid("The document must start with an exact --- line"));
     }
     let start = opening.len();
     let mut offset = start;
