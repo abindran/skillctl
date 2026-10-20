@@ -1309,9 +1309,10 @@ fn enable(context: &mut Context<'_>, port: u16, no_service: bool) -> Result<(), 
     } else {
         Some(install_service(context.home.home(), port)?)
     };
-    // launchd starts the process asynchronously; give it a moment before probing.
+    // launchd starts the process asynchronously (it can take a few seconds when
+    // it replaces a running copy); wait up to 5 s before probing.
     let mut collector = probe(port);
-    for _ in 0..20 {
+    for _ in 0..50 {
         if service.is_none() || collector == Some(true) {
             break;
         }
