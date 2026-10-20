@@ -37,11 +37,8 @@ struct ProjectsView: View {
             }
         }
         .navigationTitle("Projects")
-        .toolbar {
-            ToolbarItem {
-                Button { showAttach = true } label: { Label("Attach folder…", systemImage: "plus") }
-                    .help("Attach a folder to a new or existing project")
-            }
+        .onChange(of: state.toolbarRequest) { _, request in
+            if let request, request.screen == .projects, request.action == .attach { showAttach = true }
         }
         .sheet(isPresented: $showAttach) {
             AttachSheet()

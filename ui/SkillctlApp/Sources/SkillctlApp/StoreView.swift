@@ -12,7 +12,6 @@ struct StoreView: View {
     @State private var selection: Set<StoreRow.ID> = []
     @State private var showBulkDelete = false
     @State private var expanded: Set<String> = []
-    @State private var showInspector = false
     @State private var showInstall = false
     @State private var showCleanup = false
 
@@ -137,30 +136,27 @@ struct StoreView: View {
                     }
                     .width(90)
                 }
-                .onChange(of: selection) { if !selection.isEmpty { showInspector = true } }
+                .onChange(of: selection) { if !selection.isEmpty { state.storeInspector = true } }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 Divider()
                 summaryBar
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .inspector(isPresented: $showInspector) {
+        .inspector(isPresented: Binding(get: { state.storeInspector }, set: { state.storeInspector = $0 })) {
             inspector
                 .inspectorColumnWidth(min: 300, ideal: 380, max: 520)
         }
         .navigationTitle("Store")
-        .toolbar {
-            ToolbarItemGroup {
-                Button { showInstall = true } label: { Label("Install…", systemImage: "square.and.arrow.down") }
-                    .help("Install artifacts from a folder or a Git URL")
-                Button { showCleanup = true } label: { Label("Clean up…", systemImage: "trash") }
-                    .help("Preview and delete unpinned versions beyond the newest ones")
-                Button { showBulkDelete = true } label: { Label("Delete selected…", systemImage: "trash.slash") }
-                    .disabled(selectedVersions.isEmpty)
-                    .help("Delete the selected versions (unpinned ones; pinned ones are skipped). Tip: Unused only, then ⌘A.")
-                Toggle(isOn: $showInspector) { Label("Inspector", systemImage: "sidebar.right") }
-                    .help("Show the selected artifact's details")
+        .onChange(of: state.toolbarRequest) { _, request in
+            guard let request, request.screen == .store else { return }
+            switch request.action {
+            case .install: showInstall = true
+            case .cleanUp: showCleanup = true
+            case .deleteSelected: if !selectedVersions.isEmpty { showBulkDelete = true }
+            default: break
             }
         }
+        .onChange(of: selectedVersions.count, initial: true) { _, count in state.storeSelectionCount = count }
         .sheet(isPresented: $showInstall) { InstallSheet() }
         .sheet(isPresented: $showCleanup) { CleanupSheet() }
         .sheet(isPresented: $showBulkDelete) {

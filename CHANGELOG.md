@@ -299,6 +299,10 @@ heading when cutting a release.
 
 ### Fixed
 
+- The app's toolbar no longer repeats buttons after switching screens. Each
+  screen declared its own toolbar inside the split view, and those items were
+  not always removed; the window now has one toolbar that shows the current
+  screen's buttons and asks that screen to open its sheets.
 - Dropping a link target now also removes the folders skillctl created for
   it once they are empty, and forgets them, instead of leaving empty
   `.agents/skills` folders behind.

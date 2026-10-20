@@ -38,15 +38,6 @@ struct DoctorView: View {
             .pageLayout()
         }
         .navigationTitle("Doctor")
-        .toolbar {
-            ToolbarItemGroup {
-                Button { Task { await state.runDoctor(fix: false) } } label: { Label("Run", systemImage: "play") }
-                    .disabled(running)
-                Button { Task { await state.runDoctor(fix: true) } } label: { Label("Fix", systemImage: "wrench.and.screwdriver") }
-                    .disabled(state.doctor?.remaining ?? 0 == 0 || running)
-                    .help("doctor --fix: drop vanished instances, relink, restore read-only modes")
-            }
-        }
         .task { if state.doctor == nil { await state.runDoctor(fix: false) } }
     }
 

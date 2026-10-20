@@ -1,6 +1,16 @@
 import Foundation
 import SwiftUI
 
+enum ToolbarAction: Equatable {
+    case newDraft, install, cleanUp, deleteSelected, attach
+}
+
+struct ToolbarRequest: Equatable {
+    let action: ToolbarAction
+    let screen: Screen
+    let id = UUID()
+}
+
 /// Everything the windows show, loaded from the CLI and refreshed after each
 /// action. One instance per app, injected through the environment.
 @MainActor
@@ -34,6 +44,18 @@ final class AppState {
     var telemetry: TelemetryStatus?
     var telemetryReport: TelemetryReport?
     var summaryDays = 7
+
+    // Window toolbar: one toolbar for the whole window (per-screen toolbars
+    // inside the split view were left behind when switching screens), which
+    // asks the current screen to act; the screen owns its sheets.
+    var toolbarRequest: ToolbarRequest?
+    /// The Store's selected version count and inspector, read by the toolbar.
+    var storeSelectionCount = 0
+    var storeInspector = false
+
+    func request(_ action: ToolbarAction, on screen: Screen) {
+        toolbarRequest = ToolbarRequest(action: action, screen: screen)
+    }
 
     // Activity.
     var busy: Set<String> = []

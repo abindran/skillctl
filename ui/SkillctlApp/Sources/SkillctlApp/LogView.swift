@@ -49,22 +49,6 @@ struct LogView: View {
             }
         }
         .navigationTitle("Log")
-        .toolbar {
-            ToolbarItem {
-                Picker("Window", selection: $state.summaryDays) {
-                    Text("7 days").tag(7)
-                    Text("14 days").tag(14)
-                    Text("30 days").tag(30)
-                }
-                .onChange(of: state.summaryDays) {
-                    Task {
-                        await state.loadSummary()
-                        await state.loadTelemetry()
-                        await state.loadUsage()
-                    }
-                }
-            }
-        }
         .task {
             if state.telemetry == nil { await state.loadTelemetry() }
             if state.usage == nil { await state.loadUsage() }

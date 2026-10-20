@@ -115,6 +115,7 @@ struct ContentView: View {
                 }
                 .help("Show the commands the app ran and their output (⌘`)")
             }
+            ToolbarItemGroup { screenTools }
         }
         .groupBoxStyle(CardGroupBoxStyle())
         .alert("skillctl reported a problem", isPresented: Binding(
@@ -173,6 +174,65 @@ struct ContentView: View {
         Label(item.title, systemImage: item.symbol)
             .badge(badge(for: item))
             .tag(item)
+    }
+
+    /// The current screen's toolbar buttons. They live here, in the window's
+    /// one toolbar, because toolbars declared by the screens inside the split
+    /// view were not always removed when the screen changed, so buttons
+    /// repeated. Buttons that open a screen's sheet send it a request.
+    @ViewBuilder
+    private var screenTools: some View {
+        @Bindable var state = state
+        let current = screen ?? .dashboard
+        switch current {
+        case .kind(let id):
+            let kind = ArtifactKind.named(id)
+            let unused = state.artifacts.filter { $0.kind == id && $0.unused }.count
+            Button { state.request(.newDraft, on: current) } label: { Label("New draft…", systemImage: "plus") }
+                .help("skillctl new --kind \(id) <name>")
+            Button { state.request(.install, on: current) } label: { Label("Install…", systemImage: "square.and.arrow.down") }
+                .help("Install from a folder or a Git URL")
+            Button { state.request(.cleanUp, on: current) } label: { Label("Clean up unused…", systemImage: "trash") }
+                .disabled(unused == 0)
+                .help(unused == 0
+                      ? "No unused \(kind.title.lowercased())"
+                      : "Delete the \(unused) unused \(kind.title.lowercased()) version(s); pinned ones are skipped")
+        case .store:
+            Button { state.request(.install, on: current) } label: { Label("Install…", systemImage: "square.and.arrow.down") }
+                .help("Install artifacts from a folder or a Git URL")
+            Button { state.request(.cleanUp, on: current) } label: { Label("Clean up…", systemImage: "trash") }
+                .help("Preview and delete unpinned versions beyond the newest ones")
+            Button { state.request(.deleteSelected, on: current) } label: { Label("Delete selected…", systemImage: "trash.slash") }
+                .disabled(state.storeSelectionCount == 0)
+                .help("Delete the selected versions (unpinned ones; pinned ones are skipped). Tip: Unused only, then ⌘A.")
+            Toggle(isOn: $state.storeInspector) { Label("Inspector", systemImage: "sidebar.right") }
+                .help("Show the selected artifact's details")
+        case .projects:
+            Button { state.request(.attach, on: current) } label: { Label("Attach folder…", systemImage: "plus") }
+                .help("Attach a folder to a new or existing project")
+        case .doctor:
+            let running = state.busy.contains("doctor") || state.busy.contains("doctor-fix")
+            Button { Task { await state.runDoctor(fix: false) } } label: { Label("Run", systemImage: "play") }
+                .disabled(running)
+            Button { Task { await state.runDoctor(fix: true) } } label: { Label("Fix", systemImage: "wrench.and.screwdriver") }
+                .disabled(state.doctor?.remaining ?? 0 == 0 || running)
+                .help("doctor --fix: drop vanished instances, relink, restore read-only modes")
+        case .log:
+            Picker("Window", selection: $state.summaryDays) {
+                Text("7 days").tag(7)
+                Text("14 days").tag(14)
+                Text("30 days").tag(30)
+            }
+            .onChange(of: state.summaryDays) {
+                Task {
+                    await state.loadSummary()
+                    await state.loadTelemetry()
+                    await state.loadUsage()
+                }
+            }
+        case .dashboard, .quality:
+            EmptyView()
+        }
     }
 
     @ViewBuilder

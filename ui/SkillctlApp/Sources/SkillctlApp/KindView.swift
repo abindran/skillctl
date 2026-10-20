@@ -67,17 +67,13 @@ struct KindView: View {
             }
         }
         .navigationTitle(kind.title)
-        .toolbar {
-            ToolbarItemGroup {
-                Button { newName = ""; showNew = true } label: { Label("New draft…", systemImage: "plus") }
-                    .help("skillctl new --kind \(kind.id) <name>")
-                Button { showInstall = true } label: { Label("Install…", systemImage: "square.and.arrow.down") }
-                    .help("Install from a folder or a Git URL")
-                Button { showCleanup = true } label: { Label("Clean up unused…", systemImage: "trash") }
-                    .disabled(unusedVersions.isEmpty)
-                    .help(unusedVersions.isEmpty
-                          ? "No unused \(kind.title.lowercased())"
-                          : "Delete the \(unusedVersions.count) unused \(kind.title.lowercased()) version(s); pinned ones are skipped")
+        .onChange(of: state.toolbarRequest) { _, request in
+            guard let request, request.screen == .kind(kind.id) else { return }
+            switch request.action {
+            case .newDraft: newName = ""; showNew = true
+            case .install: showInstall = true
+            case .cleanUp: showCleanup = true
+            default: break
             }
         }
         .sheet(isPresented: $showCleanup) {
