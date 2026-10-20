@@ -28,7 +28,9 @@ final class AppState {
     var drafts: [Draft] = []
     var hooks: [HookEntry] = []
     var doctor: DoctorReport?
+    var lastDoctorRun: Date?
     var summary: LogSummary?
+    var usage: UsageReport?
     var summaryDays = 7
 
     // Activity.
@@ -139,6 +141,11 @@ final class AppState {
         summary = await load("summary", LogSummary.self, ["log", "summary", "--days", String(summaryDays)]) ?? summary
     }
 
+    /// ccusage's cost and tokens for the summary window; slow, so loaded on demand.
+    func loadUsage() async {
+        usage = await load("usage", UsageReport.self, ["log", "usage", "--days", String(summaryDays)]) ?? usage
+    }
+
     func runDoctor(fix: Bool) async {
         // doctor exits 1 while problems remain, so decode regardless of status.
         guard let cli else { return reportMissingBinary() }
@@ -151,6 +158,7 @@ final class AppState {
         console.append(run)
         if let report = try? JSONDecoder().decode(DoctorReport.self, from: Data(run.stdout.utf8)) {
             doctor = report
+            lastDoctorRun = Date()
         } else {
             lastError = CLI.failure(of: run).localizedDescription
         }
@@ -268,6 +276,23 @@ final class AppState {
     /// artifact (`name`); the CLI refuses pinned ones and names the pins.
     func uninstall(_ target: String) async {
         await perform(["uninstall", target]) { await self.loadArtifacts(); await self.loadDrafts(); await self.loadHooks() }
+    }
+
+    /// Delete several store versions; stops at the first refusal and reports it.
+    func uninstallMany(_ targets: [String]) async {
+        guard let cli else { return reportMissingBinary() }
+        busy.insert("uninstall-many")
+        defer { busy.remove("uninstall-many") }
+        var failures: [String] = []
+        for target in targets {
+            let run = await cli.run(["--yes", "uninstall", target])
+            console.append(run)
+            if !run.succeeded { failures.append(CLI.failure(of: run).localizedDescription) }
+        }
+        await loadArtifacts()
+        await loadDrafts()
+        await loadHooks()
+        if !failures.isEmpty { lastError = failures.joined(separator: "\n") }
     }
 
     func collectGarbage(keep: Int) async {

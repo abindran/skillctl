@@ -34,6 +34,8 @@ pub struct Event {
     pub trigger: Option<String>,
     /// The harness version when the payload carries it (Cursor's `cursor_version`).
     pub harness_version: Option<String>,
+    /// The skills the forced-eval hook shortlisted, on `SkillShortlist`.
+    pub candidates: Option<Vec<String>>,
 }
 
 impl Event {

@@ -120,6 +120,13 @@ final class EndToEndTests: XCTestCase {
         XCTAssertNil(state.lastError, state.lastError ?? "")
         XCTAssertNil(state.artifact(named: "review", version: "0.2.1"), "the version is gone")
         XCTAssertNotNil(state.artifact(named: "review", version: "0.2.0"), "the other one stays")
+        await state.newDraft(kind: "command", name: "checkpoint")
+        await state.seal("checkpoint", bump: nil)
+        await state.edit("checkpoint@0.1.0")
+        await state.seal("checkpoint", bump: nil)
+        await state.uninstallMany(["checkpoint@0.1.0", "checkpoint@0.1.1"])
+        XCTAssertNil(state.lastError, state.lastError ?? "")
+        XCTAssertTrue(state.artifacts.allSatisfy { $0.name != "checkpoint" }, "bulk delete removed both versions")
 
         // Agents get a Cursor override through derive.
         await state.newDraft(kind: "agent", name: "explore")
@@ -188,6 +195,17 @@ final class EndToEndTests: XCTestCase {
         XCTAssertTrue(summary.alerts.isEmpty, "\(summary.alerts)")
         await state.loadArtifacts()
         XCTAssertEqual(state.artifact(named: "review", version: "0.2.0")?.uses, 1)
+
+        // Usage decodes whether or not ccusage is installed on this machine.
+        await state.loadUsage()
+        let usage = try XCTUnwrap(state.usage)
+        if usage.available {
+            XCTAssertFalse(usage.from.isEmpty)
+        } else {
+            XCTAssertTrue(usage.note.contains("ccusage"), usage.note)
+        }
+        XCTAssertTrue((7...8).contains(summary.current.daily.count), "a window ending now touches 7 or 8 calendar days: \(summary.current.daily.count)")
+        XCTAssertEqual(summary.current.hook_shortlists, 0)
 
         // Doctor: clean, with its advisory sections decoded.
         await state.runDoctor(fix: false)

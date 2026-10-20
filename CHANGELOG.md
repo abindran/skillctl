@@ -13,6 +13,15 @@ heading when cutting a release.
 
 ### Added
 
+- `log usage [--days <n>]`: Claude Code cost and tokens per day from
+  `ccusage daily --json`, joined with the log's prompts for cost per prompt,
+  output tokens per prompt and cache hit ratio; clear report when ccusage
+  is absent.
+- `log summary` adds a per-day series (`daily`) and the forced-eval hook's
+  follow-through: `hook_shortlists`, `hook_followed`, `hook_follow_ratio`.
+- `skill-forced-eval` 1.0.2 writes each injected shortlist to the event log
+  (`SkillShortlist` with `candidates`), which is what the follow-through is
+  computed from.
 - `show <name>[@<version>|@draft]`: prints the root document of a stored
   version or a draft; `--json` adds kind, folder and the file list. The
   macOS app renders it under the selected version.
@@ -27,7 +36,10 @@ heading when cutting a release.
   scripts, hooks) laid out as a searchable list of artifacts and a detail
   pane (description, draft, versions, hook registration) with the authoring
   actions new, validate, seal, edit, pin, register and agent derive, a
-  needs-attention section on the dashboard, the selected version's root
+  needs-attention section on the dashboard, a Log screen with activity by
+  day, activation through the hook and ccusage cost and tokens, a Doctor
+  status card with copyable fixes, bulk deletion of selected (for example
+  unused) versions on the Store screen, the selected version's root
   document shown under the versions table, delete actions for a version or
   a whole artifact (through `uninstall`), findings shown as a summary plus
   cards grouped by severity, a Store screen with one

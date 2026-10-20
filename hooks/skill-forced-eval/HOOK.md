@@ -2,7 +2,7 @@
 name: skill-forced-eval
 description: Before each prompt in Claude Code, shortlists the skills the agent can see whose name, trigger phrasings or file paths match the prompt, and injects a mandatory YES/NO check so the agent decides explicitly whether to invoke each candidate. Silent in Cursor, in folders without skills, and for prompts that match nothing.
 metadata:
-  version: "1.0.1"
+  version: "1.0.2"
 events: [UserPromptSubmit]
 timeout: 10
 entry: hook.py
@@ -52,6 +52,12 @@ at `.cursor/rules/skill-check.mdc`.
    ```
 
    Nothing is printed otherwise, so prompts that match no skill cost nothing.
+
+Each injected check is also appended to the skillctl event log
+(`$SKILLCTL_HOME/log/events.jsonl`) as a `SkillShortlist` line with the
+candidate names, so `skillctl log summary` can report how often a shortlist
+was followed by an activation of one of its candidates: the activation
+through the hook, measured rather than assumed.
 
 The script never blocks the prompt: every path exits 0 and malformed input
 is ignored. Set `SKILLCTL_FORCED_EVAL_DEBUG=1` to have it log its shortlist

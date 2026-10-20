@@ -143,7 +143,7 @@ struct ContentView: View {
         await state.runDoctor(fix: false)
         for item in [Screen.dashboard] + Screen.library + [.projects] + Screen.health {
             screen = item
-            try? await Task.sleep(for: .seconds(item == .quality ? 3 : 1.2))
+            try? await Task.sleep(for: .seconds(item == .quality ? 3 : item == .log ? 12 : 1.2))
             guard let window = NSApp.windows.first(where: { $0.isVisible && $0.contentView != nil && $0.frame.width > 600 }) else { continue }
             window.orderFrontRegardless()
             // An app may capture its own windows without the screen-recording

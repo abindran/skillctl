@@ -9,6 +9,7 @@ and in folders without skills. Every path exits 0.
 """
 import json
 import os
+from datetime import datetime, timezone
 import re
 import sys
 
@@ -29,6 +30,28 @@ QUOTED = re.compile(r'"([^"\n]{3,})"|“([^”\n]{3,})”')
 PATHISH = re.compile(r"[\w./*-]*(?:/[\w.*-]+|\.[a-z]{1,5})\b")
 GENERIC_PARTS = {"src", "app", "apps", "lib", "test", "tests", "main", "index", "docs", "readme"}
 FRONTMATTER = re.compile(r"\A---\r?\n(.*?)\r?\n---", re.S)
+
+
+def record_shortlist(event, names):
+    """Append a SkillShortlist line to the skillctl event log, so `skillctl log
+    summary` can report how often a shortlist was followed by an activation of
+    one of its candidates. Never fails: an unwritable log is ignored."""
+    home = os.environ.get("SKILLCTL_HOME") or os.path.join(os.path.expanduser("~"), ".skills")
+    path = os.path.join(home, "log", "events.jsonl")
+    record = {
+        "ts": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+        "tool": "claude-code",
+        "event": "SkillShortlist",
+        "session": event.get("session_id"),
+        "cwd": event.get("cwd"),
+        "candidates": names,
+    }
+    try:
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        with open(path, "a", encoding="utf-8") as handle:
+            handle.write(json.dumps(record, separators=(",", ":")) + "\n")
+    except OSError:
+        pass
 
 
 def debug(message):
@@ -173,6 +196,7 @@ def main():
         return 0
     for score, name, why in candidates:
         debug(f"{name} ({score}): {why}")
+    record_shortlist(event, [name for _, name, _ in candidates])
     names = ", ".join(name for _, name, _ in candidates)
     sys.stdout.write(
         f"MANDATORY SKILL CHECK. Candidates: {names}\n"

@@ -22,7 +22,7 @@ pub const DROP_RATIO: f64 = 0.3;
 /// Relative rise in compactions per session that counts as a rise.
 pub const RISE_RATIO: f64 = 0.5;
 /// What the log cannot answer, printed under every summary.
-pub const NOT_IN_LOG: &str = "Cache-hit rate and cost are not in the event log: read them from `ccusage daily --json` or the OpenTelemetry backend (see `skillctl doctor`).";
+pub const NOT_IN_LOG: &str = "Cache-hit rate and cost are not in the event log: `skillctl log usage` reads them from ccusage (Claude Code only); the OpenTelemetry backend has them per skill and agent (see `skillctl doctor`).";
 
 #[derive(Debug, Clone, Default, Serialize, PartialEq)]
 pub struct Window {
@@ -43,6 +43,25 @@ pub struct Window {
     pub mcp_calls: BTreeMap<String, usize>,
     pub test_commands_raw: usize,
     pub test_commands_wrapped: usize,
+    /// Prompts for which the forced-eval hook injected a shortlist.
+    pub hook_shortlists: usize,
+    /// Shortlists followed, in the same session, by an activation of one of
+    /// their candidates: activation through the hook.
+    pub hook_followed: usize,
+    pub hook_follow_ratio: Option<f64>,
+    /// One entry per day of the window, oldest first, zeros included.
+    pub daily: Vec<DayCounts>,
+}
+
+#[derive(Debug, Clone, Default, Serialize, PartialEq)]
+pub struct DayCounts {
+    pub day: String,
+    pub sessions: usize,
+    pub prompts: usize,
+    pub activations: usize,
+    pub subagent_runs: usize,
+    pub compactions: usize,
+    pub shortlists: usize,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -78,22 +97,77 @@ fn window(events: &[Event], from: DateTime<Utc>, to: DateTime<Utc>) -> Window {
         ..Default::default()
     };
     let mut sessions = BTreeSet::new();
+    let mut daily: BTreeMap<String, (DayCounts, BTreeSet<String>)> = BTreeMap::new();
+    // One entry per calendar day the window touches, so charts have zeros.
+    let mut day = from.date_naive();
+    let last = (to - Duration::seconds(1)).date_naive();
+    while day <= last {
+        let key = day.to_string();
+        daily.insert(
+            key.clone(),
+            (
+                DayCounts {
+                    day: key,
+                    ..Default::default()
+                },
+                BTreeSet::new(),
+            ),
+        );
+        day += Duration::days(1);
+    }
+    let mut shortlists: Vec<(String, String, Vec<String>)> = Vec::new();
+    let mut seen_activations: Vec<(String, String, String)> = Vec::new();
     for event in events
         .iter()
         .filter(|event| event.time().is_some_and(|time| time >= from && time < to))
     {
         window.events += 1;
         *window.by_tool.entry(event.tool.clone()).or_default() += 1;
+        let day_key = event.ts.get(..10).unwrap_or("").to_owned();
+        let (counts, day_sessions) = daily.entry(day_key.clone()).or_insert_with(|| {
+            (
+                DayCounts {
+                    day: day_key,
+                    ..Default::default()
+                },
+                BTreeSet::new(),
+            )
+        });
         if let Some(session) = &event.session {
             sessions.insert(session.clone());
+            day_sessions.insert(session.clone());
         }
         match event.event.as_str() {
-            "UserPromptSubmit" => window.prompts += 1,
+            "UserPromptSubmit" => {
+                window.prompts += 1;
+                counts.prompts += 1;
+            }
+            "SkillShortlist" => {
+                window.hook_shortlists += 1;
+                counts.shortlists += 1;
+                shortlists.push((
+                    event.session.clone().unwrap_or_default(),
+                    event.ts.clone(),
+                    event
+                        .candidates
+                        .clone()
+                        .unwrap_or_default()
+                        .iter()
+                        .map(|c| c.to_lowercase())
+                        .collect(),
+                ));
+            }
             "PostToolUse" => {
                 window.tool_calls += 1;
                 if let Some(skill) = &event.skill {
                     window.activations += 1;
+                    counts.activations += 1;
                     *window.skills.entry(skill.to_lowercase()).or_default() += 1;
+                    seen_activations.push((
+                        event.session.clone().unwrap_or_default(),
+                        event.ts.clone(),
+                        skill.to_lowercase(),
+                    ));
                 }
                 if let Some(server) = &event.server {
                     *window.mcp_calls.entry(server.clone()).or_default() += 1;
@@ -107,14 +181,38 @@ fn window(events: &[Event], from: DateTime<Utc>, to: DateTime<Utc>) -> Window {
             "SubagentStop" => {
                 if let Some(agent) = &event.agent {
                     window.subagent_runs += 1;
+                    counts.subagent_runs += 1;
                     *window.agents.entry(agent.to_lowercase()).or_default() += 1;
                 }
             }
-            "PreCompact" => window.compactions += 1,
+            "PreCompact" => {
+                window.compactions += 1;
+                counts.compactions += 1;
+            }
             _ => {}
         }
     }
     window.sessions = sessions.len();
+    window.hook_followed = shortlists
+        .iter()
+        .filter(|(session, ts, candidates)| {
+            seen_activations
+                .iter()
+                .any(|(s, t, skill)| s == session && t >= ts && candidates.contains(skill))
+        })
+        .count();
+    if window.hook_shortlists > 0 {
+        window.hook_follow_ratio = Some(round(
+            window.hook_followed as f64 * 100.0 / window.hook_shortlists as f64,
+        ));
+    }
+    window.daily = daily
+        .into_iter()
+        .map(|(_, (mut counts, day_sessions))| {
+            counts.sessions = day_sessions.len();
+            counts
+        })
+        .collect();
     if window.prompts > 0 {
         window.activations_per_100_prompts = Some(round(
             window.activations as f64 * 100.0 / window.prompts as f64,
@@ -302,6 +400,16 @@ pub fn text(summary: &Summary) -> String {
         prev.test_commands_raw,
         prev.test_commands_wrapped
     ));
+    lines.push(row(
+        "hook shortlists",
+        cur.hook_shortlists,
+        prev.hook_shortlists,
+        format!(
+            "{} followed by an activation ({}%)",
+            cur.hook_followed,
+            per(cur.hook_follow_ratio)
+        ),
+    ));
     if summary.alerts.is_empty() {
         lines.push("Alerts: none".to_owned());
     } else {
@@ -337,6 +445,7 @@ fn parse_until(text: Option<&str>) -> Result<DateTime<Utc>, Error> {
 
 pub fn run(context: &mut Context<'_>, command: LogCommand) -> Result<(), Error> {
     match command {
+        LogCommand::Usage { days } => super::usage::run(context, days),
         LogCommand::Summary {
             days,
             until,
@@ -423,20 +532,75 @@ mod tests {
             &[("session", "c1")],
         ));
         events.push(event("2026-10-21T00:00:00Z", "UserPromptSubmit", &[]));
+        // Two shortlists: one followed by an activation of its candidate, one not.
+        let mut shortlist = event(
+            "2026-10-16T05:00:00Z",
+            "SkillShortlist",
+            &[("session", "c1")],
+        );
+        shortlist.candidates = Some(vec!["Review".into(), "triage".into()]);
+        events.push(shortlist);
+        events.push(event(
+            "2026-10-16T05:01:00Z",
+            "PostToolUse",
+            &[
+                ("session", "c1"),
+                ("tool_name", "Skill"),
+                ("skill", "review"),
+            ],
+        ));
+        let mut ignored = event(
+            "2026-10-16T06:00:00Z",
+            "SkillShortlist",
+            &[("session", "c2")],
+        );
+        ignored.candidates = Some(vec!["triage".into()]);
+        events.push(ignored);
         let summary = summarize(&events, until, 7);
+        assert_eq!(summary.current.hook_shortlists, 2);
+        assert_eq!(summary.current.hook_followed, 1);
+        assert_eq!(summary.current.hook_follow_ratio, Some(50.0));
+        assert_eq!(
+            summary.current.daily.len(),
+            7,
+            "one entry per day of the window"
+        );
+        assert_eq!(summary.current.daily[0].day, "2026-10-13");
+        let day16 = summary
+            .current
+            .daily
+            .iter()
+            .find(|d| d.day == "2026-10-16")
+            .unwrap();
+        assert_eq!(
+            (
+                day16.shortlists,
+                day16.compactions,
+                day16.subagent_runs,
+                day16.sessions
+            ),
+            (2, 1, 1, 2)
+        );
+        assert_eq!(
+            summary.current.daily[2].prompts, 25,
+            "2026-10-15 holds the prompts"
+        );
         assert_eq!(summary.current.prompts, 25);
-        assert_eq!(summary.current.activations, 3);
-        assert_eq!(summary.current.activations_per_100_prompts, Some(12.0));
+        assert_eq!(
+            summary.current.activations, 4,
+            "three prompt activations plus the followed shortlist"
+        );
+        assert_eq!(summary.current.activations_per_100_prompts, Some(16.0));
         assert_eq!(summary.previous.activations_per_100_prompts, Some(40.0));
-        assert_eq!(summary.current.skills["review"], 3);
+        assert_eq!(summary.current.skills["review"], 4);
         assert_eq!(
             summary.current.subagent_runs, 1,
             "auxiliary agents are not runs"
         );
         assert_eq!(summary.current.agents["explore"], 1);
         assert_eq!(summary.current.compactions, 1);
-        assert_eq!(summary.current.sessions, 1);
-        assert_eq!(summary.current.compactions_per_session, Some(1.0));
+        assert_eq!(summary.current.sessions, 2, "c1 and the shortlist-only c2");
+        assert_eq!(summary.current.compactions_per_session, Some(0.5));
         assert_eq!(summary.previous.compactions_per_session, Some(0.0));
         assert_eq!(summary.current.test_commands_raw, 1);
         assert_eq!(summary.previous.events, 35);
@@ -444,11 +608,16 @@ mod tests {
         assert_eq!(checks, ["activation-drop", "raw-test-commands"]);
         let rendered = text(&summary);
         assert!(
-            rendered.contains("3 (prev 10)   12 per 100 prompts (prev 40)"),
+            rendered.contains("4 (prev 10)   16 per 100 prompts (prev 40)"),
             "{rendered}"
         );
         assert!(
-            rendered.contains("[warning] skill activations fell from 40 to 12 per 100 prompts"),
+            rendered.contains("[warning] skill activations fell from 40 to 16 per 100 prompts"),
+            "{rendered}"
+        );
+        assert!(
+            rendered
+                .contains("hook shortlists        2 (prev 0)   1 followed by an activation (50%)"),
             "{rendered}"
         );
 

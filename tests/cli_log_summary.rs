@@ -112,6 +112,13 @@ fn summary_compares_windows_and_alerts() {
     assert_eq!(summary["current"]["test_commands_raw"], 2);
     assert_eq!(summary["current"]["test_commands_wrapped"], 1);
     assert_eq!(summary["current"]["sessions"], 24 + 6);
+    assert_eq!(summary["current"]["daily"].as_array().unwrap().len(), 7);
+    assert_eq!(summary["current"]["daily"][0]["day"], "2026-10-13");
+    assert_eq!(
+        summary["current"]["daily"][1]["prompts"], 4,
+        "2026-10-14 has prompts for i % 6 == 0"
+    );
+    assert_eq!(summary["current"]["hook_shortlists"], 0);
     let checks: Vec<&str> = summary["alerts"]
         .as_array()
         .unwrap()

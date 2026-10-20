@@ -33,6 +33,7 @@ fn run(cwd: &Path, user_home: &Path, prompt: &str, cursor: bool) -> (String, Str
     let mut command = Command::new(hook_dir().join("hook.py"));
     command
         .env("HOME", user_home)
+        .env("SKILLCTL_HOME", user_home.join("skills"))
         .env("SKILLCTL_FORCED_EVAL_DEBUG", "1")
         .env_remove("CURSOR_VERSION")
         .current_dir(cwd)
@@ -80,7 +81,7 @@ fn forced_eval_hook_validates_and_installs() {
     let out = Command::new(env!("CARGO_BIN_EXE_skillctl"))
         .env("SKILLCTL_HOME", &home)
         .env("HOME", temp.path())
-        .args(["validate", "skill-forced-eval@1.0.1"])
+        .args(["validate", "skill-forced-eval@1.0.2"])
         .output()
         .unwrap();
     assert_eq!(
@@ -138,6 +139,12 @@ fn shortlist_matches_phrases_paths_and_keywords_and_stays_silent_otherwise() {
         out,
         "MANDATORY SKILL CHECK. Candidates: db-migrations\nFor each: [name] - YES/NO - [reason]. Call Skill(name) for every YES before any other tool.\n"
     );
+    let log = fs::read_to_string(user_home.join("skills/log/events.jsonl")).unwrap();
+    let line: serde_json::Value = serde_json::from_str(log.lines().last().unwrap()).unwrap();
+    assert_eq!(line["event"], "SkillShortlist");
+    assert_eq!(line["session"], "s");
+    assert_eq!(line["candidates"], serde_json::json!(["db-migrations"]));
+    assert!(line["ts"].as_str().unwrap().ends_with('Z'));
     // A path mention reaches a skill through its paths, not its words.
     let (out, err) = run(
         &project,

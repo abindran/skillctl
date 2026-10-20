@@ -219,10 +219,65 @@ struct LogWindow: Decodable, Hashable {
     let mcp_calls: [String: Int]
     let test_commands_raw: Int
     let test_commands_wrapped: Int
+    /// Prompts for which the forced-eval hook injected a shortlist, and how
+    /// many of those were followed by an activation of a candidate.
+    let hook_shortlists: Int
+    let hook_followed: Int
+    let hook_follow_ratio: Double?
+    /// One entry per day of the window, oldest first.
+    let daily: [DayCounts]
 
     var day: (from: String, to: String) {
         (String(from.prefix(10)), String(to.prefix(10)))
     }
+}
+
+struct DayCounts: Decodable, Hashable, Identifiable {
+    let day: String
+    let sessions: Int
+    let prompts: Int
+    let activations: Int
+    let subagent_runs: Int
+    let compactions: Int
+    let shortlists: Int
+    var id: String { day }
+}
+
+/// `log usage`: ccusage's daily cost and tokens joined with the log's prompts.
+struct UsageReport: Decodable, Hashable {
+    struct ModelCost: Decodable, Hashable, Identifiable {
+        let model: String
+        let cost: Double
+        let output_tokens: Int
+        var id: String { model }
+    }
+    struct Day: Decodable, Hashable, Identifiable {
+        let date: String
+        let prompts: Int
+        let sessions: Int
+        let input_tokens: Int
+        let output_tokens: Int
+        let cache_creation_tokens: Int
+        let cache_read_tokens: Int
+        let total_tokens: Int
+        let cost: Double
+        let cache_hit_ratio: Double?
+        let cost_per_prompt: Double?
+        let output_tokens_per_prompt: Double?
+        let models: [ModelCost]
+        var id: String { date }
+    }
+    let available: Bool
+    let note: String
+    let from: String
+    let to: String
+    let days: [Day]
+    let total_cost: Double
+    let total_output_tokens: Int
+    let prompts: Int
+    let cache_hit_ratio: Double?
+    let cost_per_prompt: Double?
+    let output_tokens_per_prompt: Double?
 }
 
 struct LogAlert: Decodable, Hashable, Identifiable {

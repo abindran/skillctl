@@ -381,6 +381,15 @@ pub enum LogCommand {
         #[arg(long)]
         strict: bool,
     },
+
+    /// Claude Code tokens and cost per day from `ccusage daily --json`, joined
+    /// with the event log's prompts: cost and output tokens per prompt, cache
+    /// hit ratio. Reports when ccusage is not installed.
+    Usage {
+        /// Days to cover, ending today.
+        #[arg(long, default_value_t = 7)]
+        days: u32,
+    },
 }
 
 /// Configuration operations.

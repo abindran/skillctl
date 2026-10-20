@@ -9,7 +9,8 @@ struct StoreView: View {
     @State private var search = ""
     @State private var kind = "all"
     @State private var unusedOnly = false
-    @State private var selection: StoreRow.ID?
+    @State private var selection: Set<StoreRow.ID> = []
+    @State private var showBulkDelete = false
     @State private var expanded: Set<String> = []
     @State private var showInspector = false
     @State private var showInstall = false
@@ -66,9 +67,25 @@ struct StoreView: View {
     }
 
     private var selectedName: String? {
-        guard let selection else { return nil }
-        if selection.hasPrefix("artifact:") { return String(selection.dropFirst("artifact:".count)) }
-        return state.artifacts.first { $0.id == selection }?.name
+        guard let first = selection.sorted().first else { return nil }
+        if first.hasPrefix("artifact:") { return String(first.dropFirst("artifact:".count)) }
+        return state.artifacts.first { $0.id == first }?.name
+    }
+
+    /// The versions the current selection stands for: a selected artifact row
+    /// means all of its (filtered) versions.
+    private var selectedVersions: [Artifact] {
+        var out: [Artifact] = []
+        for id in selection.sorted() {
+            if id.hasPrefix("artifact:") {
+                let name = String(id.dropFirst("artifact:".count))
+                out += filtered.filter { $0.name == name }
+            } else if let artifact = state.artifacts.first(where: { $0.id == id }) {
+                out.append(artifact)
+            }
+        }
+        var seen = Set<String>()
+        return out.filter { seen.insert($0.id).inserted }
     }
 
     var body: some View {
@@ -115,7 +132,7 @@ struct StoreView: View {
                     }
                     .width(90)
                 }
-                .onChange(of: selection) { if selection != nil { showInspector = true } }
+                .onChange(of: selection) { if !selection.isEmpty { showInspector = true } }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 Divider()
                 summaryBar
@@ -132,12 +149,18 @@ struct StoreView: View {
                     .help("Install artifacts from a folder or a Git URL")
                 Button { showCleanup = true } label: { Label("Clean up…", systemImage: "trash") }
                     .help("Preview and delete unpinned versions beyond the newest ones")
+                Button { showBulkDelete = true } label: { Label("Delete selected…", systemImage: "trash.slash") }
+                    .disabled(selectedVersions.isEmpty)
+                    .help("Delete the selected versions (unpinned ones; pinned ones are skipped). Tip: Unused only, then ⌘A.")
                 Toggle(isOn: $showInspector) { Label("Inspector", systemImage: "sidebar.right") }
                     .help("Show the selected artifact's details")
             }
         }
         .sheet(isPresented: $showInstall) { InstallSheet() }
         .sheet(isPresented: $showCleanup) { CleanupSheet() }
+        .sheet(isPresented: $showBulkDelete) {
+            BulkDeleteSheet(versions: selectedVersions, registered: state.registeredHookNames) { selection = [] }
+        }
     }
 
     private var filterBar: some View {
@@ -291,6 +314,72 @@ struct InstallSheet: View {
                 }
                 .keyboardShortcut(.defaultAction)
                 .disabled(source.trimmingCharacters(in: .whitespaces).isEmpty)
+            }
+        }
+        .padding(20)
+        .frame(width: 560)
+    }
+}
+
+/// Delete the selected versions after showing which ones skillctl will accept.
+struct BulkDeleteSheet: View {
+    @Environment(AppState.self) private var state
+    @Environment(\.dismiss) private var dismiss
+    let versions: [Artifact]
+    let registered: Set<String>
+    let done: () -> Void
+
+    private var deletable: [Artifact] { versions.filter { $0.pinned_by.isEmpty } }
+    private var pinned: [Artifact] { versions.filter { !$0.pinned_by.isEmpty } }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("Delete \(deletable.count) version(s) from the store").font(.headline)
+            if !deletable.isEmpty {
+                GroupBox("Will be deleted") {
+                    ScrollView {
+                        VStack(alignment: .leading, spacing: 2) {
+                            ForEach(deletable) { artifact in
+                                HStack {
+                                    Text(artifact.reference).font(.system(.body, design: .monospaced))
+                                    SeverityBadge(text: artifact.kind)
+                                    if artifact.unused { SeverityBadge(text: "unused") }
+                                }
+                            }
+                        }
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                    }
+                    .frame(minHeight: 80, maxHeight: 240)
+                }
+            }
+            if !pinned.isEmpty {
+                GroupBox("Skipped: pinned or registered") {
+                    VStack(alignment: .leading, spacing: 2) {
+                        ForEach(pinned) { artifact in
+                            Text("\(artifact.reference) — pinned by \(artifact.pinned_by.joined(separator: ", "))")
+                                .font(.caption)
+                        }
+                        Text("Unpin them on the Projects screen, or remove the hook registration, and delete again.")
+                            .font(.caption).foregroundStyle(.secondary)
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                }
+            }
+            Text("Each version is removed with skillctl uninstall <name>@<version>; reinstall brings it back. Drafts are untouched.")
+                .font(.caption).foregroundStyle(.secondary)
+            HStack {
+                Spacer()
+                Button("Cancel") { dismiss() }
+                Button("Delete \(deletable.count)", role: .destructive) {
+                    let targets = deletable.map(\.reference)
+                    Task {
+                        await state.uninstallMany(targets)
+                        done()
+                    }
+                    dismiss()
+                }
+                .disabled(deletable.isEmpty)
+                .keyboardShortcut(.defaultAction)
             }
         }
         .padding(20)
