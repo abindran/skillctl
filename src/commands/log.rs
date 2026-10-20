@@ -66,6 +66,11 @@ fn round(value: f64) -> f64 {
     (value * 10.0).round() / 10.0
 }
 
+/// Compactions per session are small fractions, so they keep two decimals.
+fn round2(value: f64) -> f64 {
+    (value * 100.0).round() / 100.0
+}
+
 fn window(events: &[Event], from: DateTime<Utc>, to: DateTime<Utc>) -> Window {
     let mut window = Window {
         from: from.format("%Y-%m-%dT%H:%M:%SZ").to_string(),
@@ -117,7 +122,7 @@ fn window(events: &[Event], from: DateTime<Utc>, to: DateTime<Utc>) -> Window {
     }
     if window.sessions > 0 {
         window.compactions_per_session =
-            Some(round(window.compactions as f64 / window.sessions as f64));
+            Some(round2(window.compactions as f64 / window.sessions as f64));
     }
     window
 }
@@ -431,6 +436,8 @@ mod tests {
         assert_eq!(summary.current.agents["explore"], 1);
         assert_eq!(summary.current.compactions, 1);
         assert_eq!(summary.current.sessions, 1);
+        assert_eq!(summary.current.compactions_per_session, Some(1.0));
+        assert_eq!(summary.previous.compactions_per_session, Some(0.0));
         assert_eq!(summary.current.test_commands_raw, 1);
         assert_eq!(summary.previous.events, 35);
         let checks: Vec<&str> = summary.alerts.iter().map(|a| a.check).collect();
