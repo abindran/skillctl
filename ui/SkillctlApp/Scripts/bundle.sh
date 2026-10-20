@@ -14,6 +14,9 @@ swift build -c "$config" 2>&1 | grep -v "^\[" || true
 bin="$(swift build -c "$config" --show-bin-path)/SkillctlApp"
 test -x "$bin"
 app="$here/dist/Skillctl.app"
+# `open` only activates an app that is already running, so quit the old copy
+# first; otherwise a rebuild followed by `open` keeps showing the stale binary.
+pkill -x Skillctl 2>/dev/null || true
 rm -rf "$app"
 mkdir -p "$app/Contents/MacOS" "$app/Contents/Resources"
 cp "$bin" "$app/Contents/MacOS/Skillctl"
