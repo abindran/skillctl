@@ -423,7 +423,7 @@ maxTurns: 15
 metadata:
   version: "1.0.0"
 ---
-You investigate; you never edit. Write full findings to .claude/scratch/<task-id>.md.
+You investigate; you never edit. You cannot write files, so everything the lead needs goes into the JSON below.
 Return ONLY this JSON: {"status":"ok|partial|failed","answer":"<=120 words", …}
 ```
 
@@ -804,17 +804,17 @@ projects: {}
 | Link target | Read by | Default |
 |---|---|---|
 | `.agents/skills/` | Cursor, ZohoCode | on |
-| `.claude/skills/` | Claude Code, Cursor | on |
+| `.claude/skills/` | Claude Code, and Cursor for compatibility | on |
 | `.zcode/skills/` | ZohoCode | off |
 | `.cursor/skills/` | Cursor | off |
 
-If a harness lists a skill twice because two targets resolve to the same store folder, drop one target and let `config set` relink:
+Cursor reads `.agents/skills`, `.cursor/skills`, `.claude/skills` and `.codex/skills`, and lists a skill once for every one of them it finds it in. With the default targets every skill's name and description is in Cursor's listing twice (only the listing; the body still loads once). `status --budget` says so with the token cost. If you use Claude Code and Cursor, `.claude/skills` alone serves both. If a harness lists a skill twice for this or any other reason, drop one target and let `config set` relink:
 
 ```bash
 skillctl --yes config set link_targets .claude/skills,.zcode/skills
 ```
 
-Dropped targets are remembered until the next conflict-free `relink --all`, so their managed links get cleaned up.
+Dropped targets are remembered until the next conflict-free `relink --all`, so their managed links get cleaned up, together with the folders skillctl created for them once those are empty (a folder a remaining target lives in is kept).
 
 Shell completions:
 

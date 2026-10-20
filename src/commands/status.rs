@@ -131,11 +131,29 @@ pub fn run(context: &mut Context<'_>, budget: bool) -> Result<(), Error> {
                 ""
             }
         ));
+        // Cursor reads several of the link targets, and lists a skill once per folder.
+        let cursor: Vec<String> = registry
+            .settings
+            .link_targets
+            .iter()
+            .map(|target| target.as_path().display().to_string())
+            .filter(|target| super::advisory::CURSOR_SKILL_DIRS.contains(&target.as_str()))
+            .collect();
+        if cursor.len() > 1 && !index.skills.is_empty() {
+            text.push_str(&format!(
+                "\n  Cursor reads {} ({} folders), so it lists each skill {} times: ~{} tokens of names and descriptions. Keep one of them, for example: skillctl --yes config set link_targets .claude/skills",
+                cursor.join(" and "),
+                cursor.len(),
+                cursor.len(),
+                index.tokens * cursor.len()
+            ));
+        }
         value["budget"] = serde_json::to_value(&index).map_err(|error| Error::Io {
             operation: "Serialize budget".into(),
             source: std::io::Error::other(error),
             hint: "Report this as a skillctl bug.".into(),
         })?;
+        value["budget"]["cursor_copies"] = serde_json::json!(cursor.len());
     }
     context
         .output

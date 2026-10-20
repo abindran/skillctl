@@ -1,10 +1,32 @@
 {
   "type": "object",
-  "required": ["status", "verdict", "findings", "artifact"],
+  "required": [
+    "status",
+    "verdict",
+    "findings"
+  ],
   "properties": {
-    "status": {"type": "string", "enum": ["ok", "partial", "failed"]},
-    "verdict": {"type": "string", "enum": ["approve", "revise", "block"]},
-    "findings": {"type": "array"},
-    "artifact": {"type": "string"}
+    "status": {
+      "type": "string",
+      "enum": [
+        "ok",
+        "partial",
+        "failed"
+      ]
+    },
+    "verdict": {
+      "type": "string",
+      "enum": [
+        "approve",
+        "revise",
+        "block"
+      ]
+    },
+    "findings": {
+      "type": "array"
+    },
+    "artifact": {
+      "type": "string"
+    }
   }
 }

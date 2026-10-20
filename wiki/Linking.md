@@ -114,6 +114,7 @@ Details that matter:
 - **Atomic replace** creates the new link under an exclusively named temporary name (`.skillctl-<pid>-<counter>.tmp`) in the same folder and renames it over the old link, so a harness never observes the skill missing. A failed rename preserves the old link and cleans the temporary one. Existing temporary paths are never overwritten.
 - **Dangling managed links** count as "managed link != want" and are replaced.
 - **`previous_link_targets`** is kept in the registry until the next successful, conflict-free `relink --all`, so a target dropped from the settings still gets its managed links cleaned.
+- **Retired folders.** Before `previous_link_targets` is cleared, `pins::prune_retired_dirs` walks each instance's `created_dirs` that are a retired target or an ancestor of one (and not an ancestor of a current target), deepest first, and removes each with `remove_dir`, which only succeeds on an empty folder; removed ones are dropped from `created_dirs`. A folder that still holds anything (a user's own skills, another kind's links) stays.
 - **Conflicts never abort the run.** They are collected into the report, printed, and mapped to exit code 4 by the command. Other skills and other targets still converge.
 - Callers own locking and persistence: they save intended pins **before** calling `reconcile` and save `created_dirs` **after**, including after partial failure.
 

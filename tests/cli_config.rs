@@ -117,6 +117,22 @@ fn config_get_and_set_cover_every_key_and_relink_cleans_dropped_targets() {
     assert!(!root.join(".agents/skills/demo").exists());
     assert!(root.join(".claude/skills/demo").is_symlink());
     assert!(registry(&home).settings.previous_link_targets.is_empty());
+    // The folders skillctl created for the dropped targets go too, once empty,
+    // and are forgotten; the folder a current target lives in stays.
+    assert!(!root.join(".agents").exists());
+    assert!(!root.join(".zcode").exists());
+    assert!(root.join(".claude/skills").is_dir());
+    let created: Vec<String> = registry(&home).projects.values().next().unwrap().instances[0]
+        .created_dirs
+        .iter()
+        .map(|dir| dir.as_path().display().to_string())
+        .collect();
+    assert!(
+        created
+            .iter()
+            .all(|dir| !dir.starts_with(".agents") && !dir.starts_with(".zcode")),
+        "{created:?}"
+    );
 
     ok(&home, &root, &["config", "set", "git_exclude", "false"]);
     assert_eq!(

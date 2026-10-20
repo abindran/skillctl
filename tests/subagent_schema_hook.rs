@@ -150,7 +150,6 @@ fn invalid_output_is_sent_back_three_times_then_reported() {
         "$.answer must be string",
         "$.open_questions is required",
         "$.confidence is required",
-        "$.artifact is required",
     ] {
         assert!(err.contains(needle), "{needle}: {err}");
     }
@@ -187,6 +186,7 @@ fn the_schema_is_found_by_frontmatter_name_and_in_global_agents() {
     let tmp = temp.path().join("tmp");
     let store = temp.path().join("store/explore/1.0.0/explore");
     fs::create_dir_all(project.join(".claude/agents")).unwrap();
+    fs::create_dir_all(&tmp).unwrap();
     fs::create_dir_all(&store).unwrap();
     for file in ["AGENT.md", "schema.json"] {
         fs::copy(

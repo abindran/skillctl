@@ -138,6 +138,7 @@ pub(super) fn reconcile_everything(
     let names = registry.projects.keys().cloned().collect::<Vec<_>>();
     reports.extend(reconcile_projects(context, registry, &names)?);
     if !reports.iter().any(ReconcileReport::has_conflicts) {
+        prune_retired_dirs(context, registry);
         registry.settings.previous_link_targets.clear();
         if !context.flags.dry_run {
             registry.save(context.fs.as_ref(), &context.home.registry())?;
@@ -145,6 +146,48 @@ pub(super) fn reconcile_everything(
     }
     Ok(reports)
 }
+/// After a dropped link target's links are gone, remove the folders skillctl
+/// created for it (the target and its ancestors, deepest first) when they are
+/// empty, and forget them. A folder that a current target lives in, or that
+/// holds anything else, is kept.
+fn prune_retired_dirs(context: &Context<'_>, registry: &mut Registry) {
+    let retired = registry.settings.previous_link_targets.clone();
+    if retired.is_empty() || context.flags.dry_run {
+        return;
+    }
+    let current = registry.settings.link_targets.clone();
+    for project in registry.projects.values_mut() {
+        for instance in &mut project.instances {
+            let mut candidates: Vec<crate::paths::RelPath> = instance
+                .created_dirs
+                .iter()
+                .filter(|dir| {
+                    let dir = dir.as_path();
+                    retired
+                        .iter()
+                        .any(|target| target.as_path().starts_with(dir))
+                        && !current
+                            .iter()
+                            .any(|target| target.as_path().starts_with(dir))
+                })
+                .cloned()
+                .collect();
+            candidates.sort_by_key(|dir| std::cmp::Reverse(dir.as_path().components().count()));
+            for dir in candidates {
+                let path = instance.path.join(dir.as_path());
+                let is_dir = context
+                    .fs
+                    .symlink_metadata(&path)
+                    .is_ok_and(|info| info.is_dir());
+                // remove_dir only succeeds on an empty folder.
+                if !is_dir || context.fs.remove_dir(&path).is_ok() {
+                    instance.created_dirs.retain(|kept| kept != &dir);
+                }
+            }
+        }
+    }
+}
+
 pub fn relink(
     context: &mut Context<'_>,
     all: bool,

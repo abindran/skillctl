@@ -209,7 +209,7 @@ fn bundled_agents_validate_and_install() {
         ["explore", "log-digester", "repo-explorer", "reviewer"]
     );
     for name in names {
-        let out = run(&e, &["--json", "validate", &format!("{name}@1.0.0")]);
+        let out = run(&e, &["--json", "validate", &format!("{name}@1.0.1")]);
         // Only the Claude alias warning remains until a cursor.md is derived.
         assert_eq!(rules(&out), ["H222"], "{name}");
     }

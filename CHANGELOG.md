@@ -29,6 +29,9 @@ heading when cutting a release.
   schemas) from its chips, with line numbers, and Preview, Open and Reveal
   links sit beside every file the app names: findings, doctor problems and
   the Quality scope cards.
+- `status --budget` notes when Cursor reads more than one link target (it
+  lists a skill once per folder it finds it in) with the token cost, and
+  `--json` carries `budget.cursor_copies`.
 - `skillctl rules [--for <kind>]` prints the catalog of every validate and
   lint rule: ID, kind, group, default severity, a one-line summary and
   whether `validate.allow` can silence it. A test keeps it complete. The
@@ -296,6 +299,15 @@ heading when cutting a release.
 
 ### Fixed
 
+- Dropping a link target now also removes the folders skillctl created for
+  it once they are empty, and forgets them, instead of leaving empty
+  `.agents/skills` folders behind.
+- The bundled agents told read-only subagents to write their findings to
+  `.claude/scratch/<task-id>.md`, which `explore` and `repo-explorer` (Read,
+  Grep and Glob only) can never do, and required an `artifact` path for it.
+  1.0.1 of all four puts the findings in the JSON instead; `reviewer` and
+  `log-digester` write the scratch file only when they may and report
+  `artifact` as optional.
 - I305 no longer flags `$(…)` or `${…}` inside inline code: a rule that
   documents `"${...}"` placeholders does not expand anything. The
   onezoho-automation YAML conventions rule was a false positive.

@@ -145,10 +145,23 @@ fn add_reports_description_warnings_and_the_budget_on_stderr_and_in_json() {
     assert!(text.contains("review@1.0.0:"), "{text}");
     assert!(text.contains("migrate@1.0.0:"), "{text}");
     assert!(text.contains("/ 2000 tokens"), "{text}");
+    // The default targets are both read by Cursor, which lists each skill twice.
+    assert!(
+        text.contains("Cursor reads .agents/skills and .claude/skills (2 folders), so it lists each skill 2 times"),
+        "{text}"
+    );
     let out = ok(&e, &["--json", "status", "--budget"]);
     let report = json(&out);
     assert_eq!(report["budget"]["skills"].as_array().unwrap().len(), 2);
     assert!(report["budget"]["tokens"].as_u64().unwrap() > 0);
+    assert_eq!(report["budget"]["cursor_copies"], 2);
+    // One Cursor-visible target: no note.
+    ok(
+        &e,
+        &["--yes", "config", "set", "link_targets", ".claude/skills"],
+    );
+    let out = ok(&e, &["status", "--budget"]);
+    assert!(!String::from_utf8_lossy(&out.stdout).contains("Cursor reads"));
 }
 
 #[test]

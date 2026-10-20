@@ -19,6 +19,15 @@ use std::collections::BTreeMap;
 pub const CONTEXT_WINDOW_TOKENS: usize = 200_000;
 /// Claude Code caps the skill listing at this share of the context window.
 pub const INDEX_SHARE_PERCENT: usize = 1;
+/// Project folders Cursor loads skills from: its own two, plus Claude Code's
+/// and Codex's for compatibility. Linking into more than one of them makes
+/// Cursor list every skill once per folder.
+pub const CURSOR_SKILL_DIRS: [&str; 4] = [
+    ".agents/skills",
+    ".cursor/skills",
+    ".claude/skills",
+    ".codex/skills",
+];
 /// Claude Code truncates a description beyond this many characters.
 pub const DESCRIPTION_MAX_CHARS: usize = 1536;
 
