@@ -231,3 +231,47 @@ fn seal_removes_drafts_containing_read_only_folders() {
     assert!(!draft.exists());
     assert!(home.join("store/demo/0.1.0/demo/scripts/run.sh").is_file());
 }
+
+#[test]
+fn drafts_are_listed_with_their_kind_until_sealed() {
+    let temp = tempfile::tempdir().unwrap();
+    let home = temp.path().join("home");
+    let out = ok(&home, &["--json", "drafts"]);
+    assert_eq!(String::from_utf8_lossy(&out.stdout).trim(), "[]");
+    ok(&home, &["new", "review"]);
+    ok(&home, &["new", "--kind", "hook", "logger"]);
+    ok(&home, &["new", "--kind", "agent", "explore"]);
+    std::fs::create_dir_all(home.join("drafts/empty")).unwrap();
+    std::fs::write(home.join("drafts/not a name"), "").unwrap();
+    let out = ok(&home, &["--json", "drafts"]);
+    let rows: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
+    let summary: Vec<(String, Option<String>)> = rows
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|row| {
+            (
+                row["name"].as_str().unwrap().to_owned(),
+                row["kind"].as_str().map(str::to_owned),
+            )
+        })
+        .collect();
+    assert_eq!(
+        summary,
+        [
+            ("empty".to_owned(), None),
+            ("explore".to_owned(), Some("agent".to_owned())),
+            ("logger".to_owned(), Some("hook".to_owned())),
+            ("review".to_owned(), Some("skill".to_owned())),
+        ]
+    );
+    assert!(rows[3]["path"].as_str().unwrap().ends_with("drafts/review"));
+    let out = ok(&home, &["drafts"]);
+    let text = String::from_utf8_lossy(&out.stdout);
+    assert!(text.contains("review (skill) "), "{text}");
+    assert!(text.contains("empty (no root document) "), "{text}");
+    ok(&home, &["seal", "review"]);
+    let out = ok(&home, &["--json", "drafts"]);
+    let rows: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
+    assert_eq!(rows.as_array().unwrap().len(), 3);
+}

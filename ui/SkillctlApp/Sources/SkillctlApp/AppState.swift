@@ -25,6 +25,7 @@ final class AppState {
     // Loaded data.
     var projects: [Project] = []
     var artifacts: [Artifact] = []
+    var drafts: [Draft] = []
     var hooks: [HookEntry] = []
     var doctor: DoctorReport?
     var summary: LogSummary?
@@ -91,7 +92,12 @@ final class AppState {
         async let b: () = loadArtifacts()
         async let c: () = loadHooks()
         async let d: () = loadSummary()
-        _ = await (a, b, c, d)
+        async let e: () = loadDrafts()
+        _ = await (a, b, c, d, e)
+    }
+
+    func loadDrafts() async {
+        drafts = await load("drafts", [Draft].self, ["drafts"]) ?? drafts
     }
 
     func loadProjects() async {
@@ -141,6 +147,31 @@ final class AppState {
 
     func lint(folder: URL) async -> [Finding]? {
         await load("lint", [Finding].self, ["lint", folder.path], allowExit: 3)
+    }
+
+    // MARK: Authoring
+
+    func newDraft(kind: String, name: String) async {
+        await perform(["new", "--kind", kind, name]) { await self.loadDrafts() }
+    }
+
+    /// Copy a stored version into a draft (`edit`), replacing an existing draft.
+    func edit(_ reference: String) async {
+        await perform(["edit", reference, "--force"]) { await self.loadDrafts() }
+    }
+
+    func seal(_ name: String, bump: String?) async {
+        var args = ["seal", name]
+        if let bump { args += ["--bump", bump] }
+        await perform(args) { await self.loadDrafts(); await self.loadArtifacts() }
+    }
+
+    func derive(agent: String, model: String) async {
+        await perform(["agent", "derive", agent, "--model", model]) { await self.loadDrafts() }
+    }
+
+    func validateDraft(_ name: String) async -> [Finding]? {
+        await validate("\(name)@draft")
     }
 
     // MARK: Actions (each refreshes what it changed)

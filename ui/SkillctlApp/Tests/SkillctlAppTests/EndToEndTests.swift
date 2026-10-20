@@ -69,30 +69,59 @@ final class EndToEndTests: XCTestCase {
         XCTAssertNil(state.toolProblem, state.toolProblem ?? "")
         XCTAssertTrue(state.version?.hasPrefix("skillctl ") == true, state.version ?? "no version")
 
-        // Author a skill and a hook the way a user would.
+        // Author a skill and a hook through the app's own actions.
         try await cli.perform(["init"])
-        try await cli.perform(["new", "review"])
-        try await cli.perform(["seal", "review"])
-        try await cli.perform(["new", "--kind", "hook", "logger"])
-        try await cli.perform(["seal", "logger"])
+        await state.loadDrafts()
+        XCTAssertTrue(state.drafts.isEmpty)
+        await state.newDraft(kind: "skill", name: "review")
+        await state.newDraft(kind: "hook", name: "logger")
+        XCTAssertNil(state.lastError, state.lastError ?? "")
+        XCTAssertEqual(state.drafts.map(\.name), ["logger", "review"])
+        XCTAssertEqual(state.drafts.map(\.kind), ["hook", "skill"])
+        XCTAssertTrue(state.drafts[1].path.hasSuffix("/drafts/review"), state.drafts[1].path)
+        let draftFindings = await state.validateDraft("review")
+        XCTAssertNotNil(draftFindings)
+        await state.seal("review", bump: nil)
+        await state.seal("logger", bump: nil)
+        XCTAssertNil(state.lastError, state.lastError ?? "")
+        XCTAssertTrue(state.drafts.isEmpty, "sealing removes the drafts")
+        XCTAssertEqual(state.artifact(named: "review", version: "0.1.0")?.kind, "skill")
+
+        // Edit copies a version back into a draft; sealing with a bump stores the next version.
+        await state.edit("review@0.1.0")
+        XCTAssertEqual(state.drafts.map(\.name), ["review"])
+        await state.seal("review", bump: "minor")
+        XCTAssertNil(state.lastError, state.lastError ?? "")
+        XCTAssertNotNil(state.artifact(named: "review", version: "0.2.0"), "\(state.artifacts.map(\.reference))")
+
+        // Agents get a Cursor override through derive.
+        await state.newDraft(kind: "agent", name: "explore")
+        await state.derive(agent: "explore", model: "gpt-5")
+        XCTAssertNil(state.lastError, state.lastError ?? "")
+        let agentDraft = try XCTUnwrap(state.drafts.first { $0.name == "explore" })
+        XCTAssertEqual(agentDraft.kind, "agent")
+        XCTAssertTrue(FileManager.default.fileExists(atPath: agentDraft.url.appendingPathComponent("cursor.md").path))
+        await state.seal("explore", bump: nil)
+        XCTAssertEqual(state.artifact(named: "explore", version: "1.0.0")?.kind ?? state.artifacts.first { $0.name == "explore" }?.kind, "agent")
 
         // Attach a folder to a new project with the skill pinned.
         await state.attach(folder: repo, newProject: "web", existing: nil, skills: ["review"])
         XCTAssertNil(state.lastError, state.lastError ?? "")
         XCTAssertEqual(state.projects.map(\.name), ["web"])
         let project = try XCTUnwrap(state.projects.first)
-        XCTAssertEqual(project.skills, ["review": "0.1.0"])
+        XCTAssertEqual(project.skills, ["review": "0.2.0"], "attach pins the highest stable version")
         let instance = try XCTUnwrap(project.instances.first)
         XCTAssertEqual(instance.url.resolvingSymlinksInPath(), repo.resolvingSymlinksInPath())
         XCTAssertTrue(
             FileManager.default.fileExists(atPath: repo.appendingPathComponent(".claude/skills/review/SKILL.md").path),
             "the pin is linked into the project")
 
-        // The store review sees both versions with their pins and kinds.
-        let review = try XCTUnwrap(state.artifact(named: "review", version: "0.1.0"))
+        // The store review sees every version with its pins and kind.
+        let review = try XCTUnwrap(state.artifact(named: "review", version: "0.2.0"))
         XCTAssertEqual(review.kind, "skill")
         XCTAssertEqual(review.pinned_by, ["web"])
         XCTAssertFalse(review.unused)
+        XCTAssertTrue(state.artifact(named: "review", version: "0.1.0")?.unused == true, "the superseded version is unpinned")
         let logger = try XCTUnwrap(state.artifact(named: "logger", version: "0.1.0"))
         XCTAssertEqual(logger.kind, "hook")
         XCTAssertTrue(logger.unused, "an unregistered hook is unpinned")
@@ -132,7 +161,7 @@ final class EndToEndTests: XCTestCase {
         XCTAssertEqual(summary.previous.events, 0)
         XCTAssertTrue(summary.alerts.isEmpty, "\(summary.alerts)")
         await state.loadArtifacts()
-        XCTAssertEqual(state.artifact(named: "review", version: "0.1.0")?.uses, 1)
+        XCTAssertEqual(state.artifact(named: "review", version: "0.2.0")?.uses, 1)
 
         // Doctor: clean, with its advisory sections decoded.
         await state.runDoctor(fix: false)
@@ -149,7 +178,7 @@ final class EndToEndTests: XCTestCase {
         let status = try XCTUnwrap(statusValue)
         XCTAssertTrue(status.attached)
         XCTAssertEqual(status.links?.map(\.status), ["ok", "ok"], "\(String(describing: status.links))")
-        let findingsValue = await state.validate("review@0.1.0")
+        let findingsValue = await state.validate("review@0.2.0")
         let findings = try XCTUnwrap(findingsValue)
         XCTAssertTrue(findings.allSatisfy { ["error", "warning"].contains($0.severity) }, "\(findings)")
         let lintValue = await state.lint(folder: repo)
@@ -160,14 +189,14 @@ final class EndToEndTests: XCTestCase {
         await state.addPin("does-not-exist", project: "web")
         XCTAssertNotNil(state.lastError)
         XCTAssertEqual(state.console.last?.succeeded, false)
-        XCTAssertEqual(state.projects.first?.skills, ["review": "0.1.0"])
+        XCTAssertEqual(state.projects.first?.skills, ["review": "0.2.0"])
         state.lastError = nil
 
         // Unpin, unregister, detach: back to empty.
         await state.removePin("review", project: "web")
         XCTAssertNil(state.lastError, state.lastError ?? "")
         XCTAssertEqual(state.projects.first?.skills, [:])
-        XCTAssertTrue(state.artifact(named: "review", version: "0.1.0")?.unused == true)
+        XCTAssertTrue(state.artifact(named: "review", version: "0.2.0")?.unused == true)
         await state.removeHook("logger")
         XCTAssertTrue(state.hooks.isEmpty)
         await state.detach(instance: instance, deleteProject: true)
@@ -193,7 +222,7 @@ final class EndToEndTests: XCTestCase {
         try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: fake.path)
         let old = CLI(binary: fake, home: home.path, environment: [:])
         let missing = await old.missingCommands()
-        XCTAssertEqual(missing, ["artifacts", "hook", "lint", "log", "projects"])
+        XCTAssertEqual(missing, ["artifacts", "drafts", "hook", "lint", "log", "projects"])
 
         let defaults = UserDefaults(suiteName: "dev.abindran.skillctl.tests.\(UUID().uuidString)")!
         defaults.set(fake.path, forKey: "binaryPath")

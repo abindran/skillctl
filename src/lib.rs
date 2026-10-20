@@ -56,6 +56,7 @@ pub fn run(command: Command, context: &mut Context<'_>) -> Result<(), Error> {
         Command::Agent { command } => commands::agent::run(context, command),
         Command::Projects => commands::projects::run(context),
         Command::Skills => commands::skills::run(context),
+        Command::Drafts => commands::drafts::run(context),
         Command::Artifacts { unused } => commands::artifacts::run(context, unused),
         Command::Relink { all, project } => commands::pins::relink(context, all, project.as_ref()),
         Command::New {

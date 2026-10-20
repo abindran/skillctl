@@ -13,7 +13,12 @@ heading when cutting a release.
 
 ### Added
 
+- `drafts`: lists the writable drafts with their detected kind and path,
+  read-only; the macOS app's authoring screens use it.
 - A native macOS app in `ui/SkillctlApp/` (SwiftUI, macOS 14+): dashboard,
+  a library screen per artifact kind (skills, commands, agents, rules,
+  scripts, hooks) with drafts and store versions and the authoring actions
+  new, validate, seal, edit, pin, register and agent derive,
   projects (attach, pin, unpin, relink, detach), store (install, validate,
   garbage collection, unused review), hooks (register, repair, remove),
   doctor (run, fix, advisory sections), log summary with charts, and

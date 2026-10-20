@@ -38,6 +38,58 @@ struct Artifact: Decodable, Hashable, Identifiable {
     var reference: String { id }
 }
 
+/// A writable draft under `~/.skills/drafts/<name>` (`skillctl drafts`).
+struct Draft: Decodable, Hashable, Identifiable {
+    let name: String
+    /// Detected from the root document; nil while the folder has none.
+    let kind: String?
+    let path: String
+
+    var id: String { name }
+    var url: URL { URL(fileURLWithPath: path) }
+}
+
+/// What each artifact kind is and where a pin links it; the CLI's `Kind`.
+struct ArtifactKind: Identifiable, Hashable {
+    let id: String
+    let title: String
+    let document: String
+    let linksTo: String
+    let summary: String
+    let symbol: String
+
+    static let all: [ArtifactKind] = [
+        ArtifactKind(id: "skill", title: "Skills", document: "SKILL.md",
+                     linksTo: ".claude/skills/<name>, .agents/skills/<name> (and ~/.claude/skills for global pins)",
+                     summary: "Agent Skills: a SKILL.md with an activating description plus optional scripts and references. Validated with the S, O and directive-description rules.",
+                     symbol: "sparkles"),
+        ArtifactKind(id: "command", title: "Commands", document: "COMMAND.md",
+                     linksTo: ".claude/commands/<name>.md and .cursor/commands/<name>.md",
+                     summary: "Slash commands: one prompt file both tools load, such as /checkpoint. Rules K301–K305.",
+                     symbol: "terminal"),
+        ArtifactKind(id: "agent", title: "Agents", document: "AGENT.md",
+                     linksTo: ".claude/agents/<name>.md; a cursor.md override links as .cursor/agents/<name>.md",
+                     summary: "Subagents with their own model, tools and prompt; schema.json makes the subagent-schema hook check their output. Rules H220–H227; `derive` writes the Cursor override.",
+                     symbol: "person.2"),
+        ArtifactKind(id: "rule", title: "Rules", document: "RULE.mdc",
+                     linksTo: ".cursor/rules/<name>.mdc",
+                     summary: "Cursor rules with description, globs and alwaysApply. Rules K201–K207.",
+                     symbol: "text.badge.checkmark"),
+        ArtifactKind(id: "script", title: "Scripts", document: "SCRIPT.md",
+                     linksTo: ".claude/scripts/<name>/ (the whole folder)",
+                     summary: "Script bundles such as the quiet test and log wrappers that AGENTS.md points agents at. Rules K501–K507; lint I306 checks they are referenced.",
+                     symbol: "scroll"),
+        ArtifactKind(id: "hook", title: "Hooks", document: "HOOK.md",
+                     linksTo: "~/.claude/hooks/<name> plus entries in ~/.claude/settings.json, which Cursor imports",
+                     summary: "Lifecycle hooks (events, matchers, timeout, a script). Registered once for both tools with `hook add`, never pinned into projects. Rules K101–K111.",
+                     symbol: "link"),
+    ]
+
+    static func named(_ id: String) -> ArtifactKind {
+        all.first { $0.id == id } ?? all[0]
+    }
+}
+
 struct SkillListing: Decodable, Hashable, Identifiable {
     struct Version: Decodable, Hashable {
         let version: String

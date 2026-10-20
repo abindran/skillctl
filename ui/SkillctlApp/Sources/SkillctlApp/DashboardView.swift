@@ -30,7 +30,7 @@ struct DashboardView: View {
                                  detail: "\(state.artifacts.filter(\.unused).count) unused",
                                  tint: state.artifacts.contains(where: \.unused) ? .orange : .accentColor)
                     }
-                    Button { select(.hooks) } label: {
+                    Button { select(.kind("hook")) } label: {
                         StatTile(title: "Hooks registered", value: "\(state.hooks.count)",
                                  detail: state.hooks.allSatisfy(\.healthy) ? "all links and events in place" : "some events missing",
                                  tint: state.hooks.allSatisfy(\.healthy) ? .green : .orange)

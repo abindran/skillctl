@@ -6,6 +6,7 @@ pub mod completions;
 pub mod config;
 pub mod detach;
 pub mod doctor;
+pub mod drafts;
 pub mod edit;
 pub mod gc;
 pub mod global;

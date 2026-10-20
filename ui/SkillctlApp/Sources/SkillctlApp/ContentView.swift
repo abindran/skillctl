@@ -1,40 +1,71 @@
 import SwiftUI
 
-enum Screen: String, CaseIterable, Identifiable {
-    case dashboard = "Dashboard"
-    case projects = "Projects"
-    case store = "Store"
-    case hooks = "Hooks"
-    case doctor = "Doctor"
-    case log = "Log"
-    case quality = "Quality"
+/// The sidebar entries. Library screens are one per artifact kind.
+enum Screen: Hashable, Identifiable {
+    case dashboard
+    case kind(String)
+    case store
+    case projects
+    case doctor
+    case log
+    case quality
 
-    var id: String { rawValue }
+    var id: String {
+        switch self {
+        case .kind(let kind): return "kind:\(kind)"
+        default: return title
+        }
+    }
+
+    var title: String {
+        switch self {
+        case .dashboard: return "Dashboard"
+        case .kind(let kind): return ArtifactKind.named(kind).title
+        case .store: return "Store"
+        case .projects: return "Projects"
+        case .doctor: return "Doctor"
+        case .log: return "Log"
+        case .quality: return "Quality"
+        }
+    }
+
     var symbol: String {
         switch self {
         case .dashboard: return "square.grid.2x2"
-        case .projects: return "folder"
+        case .kind(let kind): return ArtifactKind.named(kind).symbol
         case .store: return "shippingbox"
-        case .hooks: return "link"
+        case .projects: return "folder"
         case .doctor: return "stethoscope"
         case .log: return "chart.bar"
         case .quality: return "checkmark.seal"
         }
     }
+
+    static let library: [Screen] = ArtifactKind.all.map { .kind($0.id) } + [.store]
+    static let health: [Screen] = [.doctor, .log, .quality]
 }
 
 struct ContentView: View {
     @Environment(AppState.self) private var state
-    @State private var section: Screen? = .dashboard
+    @State private var screen: Screen? = .dashboard
 
     var body: some View {
         @Bindable var state = state
         NavigationSplitView {
-            List(Screen.allCases, selection: $section) { item in
-                Label(item.rawValue, systemImage: item.symbol)
-                    .badge(badge(for: item))
+            List(selection: $screen) {
+                row(.dashboard)
+                SwiftUI.Section("Library") {
+                    ForEach(Screen.library) { row($0) }
+                }
+                SwiftUI.Section("Workspace") {
+                    row(.projects)
+                }
+                SwiftUI.Section("Health") {
+                    ForEach(Screen.health) { row($0) }
+                }
             }
-            .navigationSplitViewColumnWidth(min: 180, ideal: 200)
+            .listStyle(.sidebar)
+            .navigationSplitViewColumnWidth(min: 190, ideal: 210)
             .safeAreaInset(edge: .bottom) {
                 VStack(alignment: .leading, spacing: 2) {
                     Text(state.toolProblem != nil ? "\(state.version ?? "skillctl") is outdated" : state.version ?? "skillctl not found")
@@ -86,13 +117,21 @@ struct ContentView: View {
         }
     }
 
+    /// One sidebar row. The explicit tag is what makes selection work: the
+    /// list's selection is a `Screen`, so each row must be tagged with one.
+    private func row(_ item: Screen) -> some View {
+        Label(item.title, systemImage: item.symbol)
+            .badge(badge(for: item))
+            .tag(item)
+    }
+
     @ViewBuilder
     private var detail: some View {
-        switch section ?? .dashboard {
-        case .dashboard: DashboardView(select: { section = $0 })
-        case .projects: ProjectsView()
+        switch screen ?? .dashboard {
+        case .dashboard: DashboardView(select: { screen = $0 })
+        case .kind(let kind): KindView(kind: ArtifactKind.named(kind))
         case .store: StoreView()
-        case .hooks: HooksView()
+        case .projects: ProjectsView()
         case .doctor: DoctorView()
         case .log: LogView()
         case .quality: QualityView()
@@ -101,8 +140,9 @@ struct ContentView: View {
 
     private func badge(for item: Screen) -> Int {
         switch item {
+        case .kind("hook"): return state.hooks.filter { !$0.healthy }.count
+        case .kind(let kind): return state.drafts.filter { $0.kind == kind }.count
         case .store: return state.artifacts.filter(\.unused).count
-        case .hooks: return state.hooks.filter { !$0.healthy }.count
         case .doctor: return state.doctor?.remaining ?? 0
         case .log: return state.summary?.alerts.filter { $0.severity == "warning" }.count ?? 0
         default: return 0

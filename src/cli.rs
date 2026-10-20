@@ -157,6 +157,9 @@ pub enum Command {
     /// List available skills.
     Skills,
 
+    /// List writable drafts with their kind and path.
+    Drafts,
+
     /// List every store version with its kind, pins and recorded use.
     Artifacts {
         /// Only versions nothing pins, or pinned skills and agents with no
