@@ -94,6 +94,15 @@ final class EndToEndTests: XCTestCase {
         XCTAssertNil(state.lastError, state.lastError ?? "")
         XCTAssertNotNil(state.artifact(named: "review", version: "0.2.0"), "\(state.artifacts.map(\.reference))")
 
+        // Garbage collection is previewed before it runs, and keeps the newest version.
+        let preview = await state.previewGarbage(keep: 1)
+        XCTAssertEqual(preview?.map(\.id), ["review@0.1.0"], "\(String(describing: preview))")
+        XCTAssertNotNil(state.artifact(named: "review", version: "0.1.0"), "a preview deletes nothing")
+        await state.collectGarbage(keep: 1)
+        XCTAssertNil(state.lastError, state.lastError ?? "")
+        XCTAssertNil(state.artifact(named: "review", version: "0.1.0"))
+        XCTAssertNotNil(state.artifact(named: "review", version: "0.2.0"))
+
         // Agents get a Cursor override through derive.
         await state.newDraft(kind: "agent", name: "explore")
         await state.derive(agent: "explore", model: "gpt-5")
@@ -121,7 +130,6 @@ final class EndToEndTests: XCTestCase {
         XCTAssertEqual(review.kind, "skill")
         XCTAssertEqual(review.pinned_by, ["web"])
         XCTAssertFalse(review.unused)
-        XCTAssertTrue(state.artifact(named: "review", version: "0.1.0")?.unused == true, "the superseded version is unpinned")
         let logger = try XCTUnwrap(state.artifact(named: "logger", version: "0.1.0"))
         XCTAssertEqual(logger.kind, "hook")
         XCTAssertTrue(logger.unused, "an unregistered hook is unpinned")

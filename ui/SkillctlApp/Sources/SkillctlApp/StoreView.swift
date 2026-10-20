@@ -1,121 +1,262 @@
 import SwiftUI
 
+/// The whole store at once, for inventory and the periodic bloat review:
+/// one expandable row per artifact with its versions underneath, kind chips
+/// with counts, an unused filter, an inspector for the selected artifact and
+/// a cleanup flow that previews what `gc` would delete before it runs.
 struct StoreView: View {
     @Environment(AppState.self) private var state
-    @State private var filter = ""
+    @State private var search = ""
     @State private var kind = "all"
     @State private var unusedOnly = false
-    @State private var selection: Set<Artifact.ID> = []
+    @State private var selection: StoreRow.ID?
+    @State private var expanded: Set<String> = []
+    @State private var showInspector = false
     @State private var showInstall = false
-    @State private var showGC = false
-    @State private var gcKeep = 1
-    @State private var validating: Artifact?
-    @State private var findings: [Finding]?
+    @State private var showCleanup = false
 
-    private var kinds: [String] {
-        ["all"] + Array(Set(state.artifacts.map(\.kind))).sorted()
+    /// A table row: an artifact (with `children`) or one of its versions.
+    struct StoreRow: Identifiable, Hashable {
+        let id: String
+        let name: String
+        let version: String?
+        let kind: String
+        let pinnedBy: [String]
+        let uses: Int?
+        let lastUsed: String?
+        let unused: Bool
+        let reason: String?
+        let children: [StoreRow]?
+
+        var isArtifact: Bool { version == nil }
     }
 
-    private var rows: [Artifact] {
+    private var filtered: [Artifact] {
         state.artifacts.filter { artifact in
             (kind == "all" || artifact.kind == kind)
                 && (!unusedOnly || artifact.unused)
-                && (filter.isEmpty || artifact.name.localizedCaseInsensitiveContains(filter))
+                && (search.isEmpty || artifact.name.localizedCaseInsensitiveContains(search))
         }
+    }
+
+    private var rows: [StoreRow] {
+        let names = Array(Set(filtered.map(\.name))).sorted()
+        return names.map { name in
+            let versions = filtered.filter { $0.name == name }
+            let children = versions.reversed().map { artifact in
+                StoreRow(id: artifact.id, name: artifact.name, version: artifact.version, kind: artifact.kind,
+                         pinnedBy: artifact.pinned_by, uses: artifact.uses, lastUsed: artifact.last_used,
+                         unused: artifact.unused, reason: artifact.reason, children: nil)
+            }
+            let pinned = Array(Set(versions.flatMap(\.pinned_by))).sorted()
+            let uses = versions.compactMap(\.uses)
+            return StoreRow(
+                id: "artifact:\(name)", name: name, version: nil, kind: versions.first?.kind ?? "skill",
+                pinnedBy: pinned, uses: uses.isEmpty ? nil : uses.max(),
+                lastUsed: versions.compactMap(\.last_used).max(),
+                unused: versions.allSatisfy(\.unused), reason: nil, children: children)
+        }
+    }
+
+    private var kindCounts: [(id: String, title: String, count: Int)] {
+        let perKind: [(id: String, title: String, count: Int)] = ArtifactKind.all.map { kind in
+            (id: kind.id, title: kind.title, count: state.artifacts.filter { $0.kind == kind.id }.count)
+        }
+        return [(id: "all", title: "All", count: state.artifacts.count)] + perKind.filter { $0.count > 0 }
+    }
+
+    private var selectedName: String? {
+        guard let selection else { return nil }
+        if selection.hasPrefix("artifact:") { return String(selection.dropFirst("artifact:".count)) }
+        return state.artifacts.first { $0.id == selection }?.name
     }
 
     var body: some View {
         VStack(spacing: 0) {
-            HStack {
-                TextField("Filter by name", text: $filter).frame(maxWidth: 240)
-                Picker("Kind", selection: $kind) {
-                    ForEach(kinds, id: \.self) { Text($0.capitalized).tag($0) }
-                }
-                .frame(maxWidth: 160)
-                Toggle("Unused only", isOn: $unusedOnly)
-                Spacer()
-                Text("\(rows.count) of \(state.artifacts.count)").foregroundStyle(.secondary)
-            }
-            .padding(12)
-            Table(rows, selection: $selection) {
-                TableColumn("Name", value: \.name)
-                TableColumn("Version", value: \.version).width(80)
-                TableColumn("Kind", value: \.kind).width(70)
-                TableColumn("Pinned by") { artifact in
-                    Text(artifact.pinned_by.isEmpty ? "—" : artifact.pinned_by.joined(separator: ", "))
-                        .foregroundStyle(artifact.pinned_by.isEmpty ? .secondary : .primary)
-                }
-                TableColumn("Uses") { artifact in
-                    Text(artifact.uses.map(String.init) ?? "n/a")
-                        .foregroundStyle(artifact.uses == nil ? .secondary : .primary)
-                }
-                .width(50)
-                TableColumn("Last used") { artifact in
-                    Text(artifact.last_used.map { String($0.prefix(10)) } ?? "—").foregroundStyle(.secondary)
-                }
-                .width(90)
-                TableColumn("Review") { artifact in
-                    if artifact.unused {
-                        HStack(spacing: 6) {
-                            SeverityBadge(text: "unused")
-                            Text(artifact.reason ?? "").font(.caption).foregroundStyle(.secondary).lineLimit(1)
+                filterBar
+                Divider()
+                Table(rows, children: \.children, selection: $selection) {
+                    TableColumn("Artifact") { row in
+                        if row.isArtifact {
+                            HStack(spacing: 6) {
+                                Image(systemName: ArtifactKind.named(row.kind).symbol).foregroundStyle(.secondary)
+                                Text(row.name).fontWeight(.medium)
+                                if let count = row.children?.count, count > 1 {
+                                    Text("\(count) versions").font(.caption).foregroundStyle(.secondary)
+                                }
+                            }
+                        } else {
+                            Text("v\(row.version ?? "")").foregroundStyle(.secondary)
                         }
                     }
-                }
-            }
-            .contextMenu(forSelectionType: Artifact.ID.self) { ids in
-                if ids.count == 1, let artifact = state.artifacts.first(where: { $0.id == ids.first }) {
-                    Button("Validate \(artifact.reference)") { validate(artifact) }
-                    if artifact.kind == "hook", !state.registeredHookNames.contains(artifact.name) {
-                        Button("Register hook") { Task { await state.registerHook(artifact.reference) } }
+                    .width(min: 260, ideal: 340)
+                    TableColumn("Kind") { row in
+                        if row.isArtifact { SeverityBadge(text: row.kind) }
                     }
+                    .width(70)
+                    TableColumn("Pinned by") { row in
+                        Text(row.pinnedBy.isEmpty ? "—" : row.pinnedBy.joined(separator: ", "))
+                            .foregroundStyle(row.pinnedBy.isEmpty ? .secondary : .primary)
+                    }
+                    .width(min: 110, ideal: 140)
+                    TableColumn("Uses") { row in
+                        Text(row.uses.map(String.init) ?? "n/a").foregroundStyle(.secondary)
+                    }
+                    .width(50)
+                    TableColumn("Review") { row in
+                        if row.unused {
+                            SeverityBadge(text: row.isArtifact ? "all unused" : "unused")
+                                .help(row.reason ?? "no project, global or hook pin")
+                        }
+                    }
+                    .width(90)
+                    TableColumn("Last used") { row in
+                        Text(row.lastUsed.map { String($0.prefix(10)) } ?? "—").foregroundStyle(.secondary)
+                    }
+                    .width(90)
                 }
-            } primaryAction: { ids in
-                if let artifact = state.artifacts.first(where: { $0.id == ids.first }) { validate(artifact) }
-            }
+                .onChange(of: selection) { if selection != nil { showInspector = true } }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                Divider()
+                summaryBar
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .inspector(isPresented: $showInspector) {
+            inspector
+                .inspectorColumnWidth(min: 300, ideal: 380, max: 520)
         }
         .navigationTitle("Store")
         .toolbar {
             ToolbarItemGroup {
                 Button { showInstall = true } label: { Label("Install…", systemImage: "square.and.arrow.down") }
                     .help("Install artifacts from a folder or a Git URL")
-                Button { showGC = true } label: { Label("Collect garbage…", systemImage: "trash") }
-                    .help("Delete unpinned versions beyond the newest ones")
-                Button {
-                    if let artifact = state.artifacts.first(where: { $0.id == selection.first }) { validate(artifact) }
-                } label: { Label("Validate", systemImage: "checkmark.seal") }
-                .disabled(selection.count != 1)
+                Button { showCleanup = true } label: { Label("Clean up…", systemImage: "trash") }
+                    .help("Preview and delete unpinned versions beyond the newest ones")
+                Toggle(isOn: $showInspector) { Label("Inspector", systemImage: "sidebar.right") }
+                    .help("Show the selected artifact's details")
             }
         }
         .sheet(isPresented: $showInstall) { InstallSheet() }
-        .sheet(item: $validating) { artifact in
-            VStack(alignment: .leading, spacing: 12) {
-                Text("Validation of \(artifact.reference)").font(.headline)
-                if let findings {
-                    FindingsTable(findings: findings, emptyText: "0 error(s), 0 warning(s)")
-                        .frame(minHeight: 240)
-                } else {
-                    ProgressView().frame(maxWidth: .infinity, minHeight: 240)
-                }
-                HStack { Spacer(); Button("Close") { validating = nil } .keyboardShortcut(.defaultAction) }
-            }
-            .padding(20)
-            .frame(width: 720)
-        }
-        .confirmationDialog("Collect garbage?", isPresented: $showGC) {
-            Button("Delete unpinned versions, keeping the newest \(gcKeep)", role: .destructive) {
-                Task { await state.collectGarbage(keep: gcKeep) }
-            }
-            Button("Cancel", role: .cancel) {}
-        } message: {
-            Text("Removes store versions that no project, global or hook pin uses and that are not among each artifact's newest \(gcKeep) version(s). This cannot be undone; reinstall to get a version back.")
-        }
+        .sheet(isPresented: $showCleanup) { CleanupSheet() }
     }
 
-    private func validate(_ artifact: Artifact) {
-        findings = nil
-        validating = artifact
-        Task { findings = await state.validate(artifact.reference) ?? [] }
+    private var filterBar: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 8) {
+                ForEach(kindCounts, id: \.id) { item in
+                    Button {
+                        kind = item.id
+                    } label: {
+                        Text("\(item.title) \(item.count)")
+                            .font(.callout)
+                            .padding(.horizontal, 10).padding(.vertical, 4)
+                            .background(kind == item.id ? Color.accentColor.opacity(0.2) : Color.secondary.opacity(0.12), in: Capsule())
+                            .foregroundStyle(kind == item.id ? Color.accentColor : Color.primary)
+                    }
+                    .buttonStyle(.plain)
+                }
+                Spacer()
+            }
+            HStack {
+                TextField("Search by name", text: $search)
+                    .textFieldStyle(.roundedBorder)
+                    .frame(maxWidth: 280)
+                Toggle("Unused only", isOn: $unusedOnly)
+                Spacer()
+            }
+        }
+        .padding(12)
+    }
+
+    private var summaryBar: some View {
+        let unused = state.artifacts.filter(\.unused).count
+        let names = Set(state.artifacts.map(\.name)).count
+        return HStack {
+            Text("\(state.artifacts.count) version(s) of \(names) artifact(s)")
+            if unused > 0 {
+                Text("·")
+                Text("\(unused) unused").foregroundStyle(.orange)
+            }
+            Spacer()
+            Text("Unused = no project, global or hook pin, or a pinned skill or agent with no recorded use after a week of logging.")
+                .foregroundStyle(.tertiary).lineLimit(1).truncationMode(.tail)
+        }
+        .font(.caption)
+        .foregroundStyle(.secondary)
+        .padding(8)
+    }
+
+    @ViewBuilder
+    private var inspector: some View {
+        if let name = selectedName, let kindId = state.artifacts.first(where: { $0.name == name })?.kind {
+            ArtifactDetail(
+                kind: ArtifactKind.named(kindId),
+                entry: KindView.Entry(
+                    name: name,
+                    draft: state.drafts.first { $0.name == name },
+                    versions: state.artifacts.filter { $0.name == name }))
+            .id(name)
+        } else {
+            ContentUnavailableView("Select an artifact", systemImage: "shippingbox",
+                                   description: Text("Its description, versions and actions appear here. Expand a row to see every version."))
+        }
+    }
+}
+
+/// Preview what `gc` would delete, then delete it.
+struct CleanupSheet: View {
+    @Environment(AppState.self) private var state
+    @Environment(\.dismiss) private var dismiss
+    @State private var keep = 1
+    @State private var victims: [GcReport.Victim]?
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("Clean up the store").font(.headline)
+            Stepper("Keep the newest \(keep) version(s) of every artifact", value: $keep, in: 1...10)
+                .onChange(of: keep) { Task { await preview() } }
+            Text("Deletes store versions that no project, global or hook pin uses and that are not among each artifact's newest \(keep). Pinned versions are never touched; reinstall brings a deleted version back.")
+                .font(.caption).foregroundStyle(.secondary)
+            GroupBox("Would delete") {
+                if let victims {
+                    if victims.isEmpty {
+                        Label("Nothing: every unpinned version is among the newest \(keep).", systemImage: "checkmark.circle")
+                            .foregroundStyle(.green)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                    } else {
+                        ScrollView {
+                            VStack(alignment: .leading, spacing: 2) {
+                                ForEach(victims) { victim in
+                                    Text("\(victim.skill)@\(victim.version)").font(.system(.body, design: .monospaced))
+                                }
+                            }
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                        }
+                        .frame(minHeight: 120, maxHeight: 260)
+                    }
+                } else {
+                    ProgressView().frame(maxWidth: .infinity, minHeight: 120)
+                }
+            }
+            HStack {
+                Spacer()
+                Button("Cancel") { dismiss() }
+                Button("Delete \(victims?.count ?? 0) version(s)", role: .destructive) {
+                    Task { await state.collectGarbage(keep: keep) }
+                    dismiss()
+                }
+                .disabled((victims?.count ?? 0) == 0)
+                .keyboardShortcut(.defaultAction)
+            }
+        }
+        .padding(20)
+        .frame(width: 560)
+        .task { await preview() }
+    }
+
+    private func preview() async {
+        victims = nil
+        victims = await state.previewGarbage(keep: keep) ?? []
     }
 }
 

@@ -21,7 +21,9 @@ heading when cutting a release.
   scripts, hooks) laid out as a searchable list of artifacts and a detail
   pane (description, draft, versions, hook registration) with the authoring
   actions new, validate, seal, edit, pin, register and agent derive, a
-  needs-attention section on the dashboard, and a snapshot mode
+  needs-attention section on the dashboard, a Store screen with one
+  expandable row per artifact, kind chips, an inspector and a cleanup flow
+  that previews `gc --dry-run` before deleting, and a snapshot mode
   (`SKILLCTL_APP_SNAPSHOT=<folder>`) that renders every screen to PNG,
   projects (attach, pin, unpin, relink, detach), store (install, validate,
   garbage collection, unused review), hooks (register, repair, remove),

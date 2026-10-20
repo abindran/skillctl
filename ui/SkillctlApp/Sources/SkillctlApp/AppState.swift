@@ -245,6 +245,20 @@ final class AppState {
         await perform(args) { await self.loadArtifacts() }
     }
 
+    /// What `gc --keep n` would delete, without deleting anything.
+    func previewGarbage(keep: Int) async -> [GcReport.Victim]? {
+        guard let cli else { reportMissingBinary(); return nil }
+        busy.insert("gc-preview")
+        defer { busy.remove("gc-preview") }
+        let run = await cli.run(["--dry-run", "--yes", "gc", "--keep", String(keep)])
+        console.append(run)
+        guard run.succeeded else {
+            lastError = CLI.failure(of: run).localizedDescription
+            return nil
+        }
+        return (try? JSONDecoder().decode(GcReport.self, from: Data(run.stdout.utf8)))?.deleted
+    }
+
     func collectGarbage(keep: Int) async {
         await perform(["gc", "--keep", String(keep)]) { await self.loadArtifacts() }
     }

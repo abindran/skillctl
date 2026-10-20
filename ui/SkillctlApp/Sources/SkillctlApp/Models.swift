@@ -40,6 +40,17 @@ struct Artifact: Decodable, Hashable, Identifiable {
     var reference: String { id }
 }
 
+/// What `gc` would delete (`--dry-run`) or did delete.
+struct GcReport: Decodable, Hashable {
+    struct Victim: Decodable, Hashable, Identifiable {
+        let skill: String
+        let version: String
+        let path: String
+        var id: String { "\(skill)@\(version)" }
+    }
+    let deleted: [Victim]
+}
+
 /// A writable draft under `~/.skills/drafts/<name>` (`skillctl drafts`).
 struct Draft: Decodable, Hashable, Identifiable {
     let name: String
