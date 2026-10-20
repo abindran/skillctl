@@ -31,6 +31,8 @@ final class AppState {
     var lastDoctorRun: Date?
     var summary: LogSummary?
     var usage: UsageReport?
+    var telemetry: TelemetryStatus?
+    var telemetryReport: TelemetryReport?
     var summaryDays = 7
 
     // Activity.
@@ -144,6 +146,20 @@ final class AppState {
     /// ccusage's cost and tokens for the summary window; slow, so loaded on demand.
     func loadUsage() async {
         usage = await load("usage", UsageReport.self, ["log", "usage", "--days", String(summaryDays)]) ?? usage
+    }
+
+    /// The local collector's state and what it recorded over the summary window.
+    func loadTelemetry() async {
+        telemetry = await load("telemetry", TelemetryStatus.self, ["telemetry", "status"]) ?? telemetry
+        telemetryReport = await load(
+            "telemetry-report", TelemetryReport.self, ["telemetry", "report", "--days", String(summaryDays)]) ?? telemetryReport
+    }
+
+    /// `telemetry enable` points Claude Code at the collector and runs this
+    /// app's bundled CLI as a login service; `disable` undoes both.
+    func setTelemetry(enabled: Bool) async {
+        await perform(["telemetry", enabled ? "enable" : "disable"]) { await self.loadTelemetry() }
+        if doctor != nil { await runDoctor(fix: false) }
     }
 
     func runDoctor(fix: Bool) async {

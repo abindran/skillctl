@@ -27,6 +27,7 @@ struct LogView: View {
                     metrics(summary)
                     alerts(summary)
                     usageSection
+                    TelemetrySection()
                     HStack(alignment: .top, spacing: Metrics.gap) {
                         chart("Skill activations", Count.from(summary.current.skills), empty: "No skill activations in this window.")
                         chart("Subagent runs", Count.from(summary.current.agents), empty: "No subagent runs in this window.")
@@ -58,12 +59,16 @@ struct LogView: View {
                 .onChange(of: state.summaryDays) {
                     Task {
                         await state.loadSummary()
+                        await state.loadTelemetry()
                         await state.loadUsage()
                     }
                 }
             }
         }
-        .task { if state.usage == nil { await state.loadUsage() } }
+        .task {
+            if state.telemetry == nil { await state.loadTelemetry() }
+            if state.usage == nil { await state.loadUsage() }
+        }
     }
 
     // MARK: Activity by day

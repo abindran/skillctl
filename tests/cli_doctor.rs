@@ -218,13 +218,17 @@ fn doctor_reports_telemetry_without_changing_the_exit_status() {
     assert!(text.ends_with("No problems found.\n"), "{text}");
 
     // Everything configured and ccusage installed: only the Cursor note remains.
+    // A remote endpoint is not probed; a local one is (tests/cli_telemetry.rs).
     fs::write(bin.join("ccusage"), "#!/bin/sh\n").unwrap();
     let (code, report) = doctor(&[
         ("CLAUDE_CODE_ENABLE_TELEMETRY", "1"),
         ("OTEL_METRICS_EXPORTER", "otlp"),
         ("OTEL_LOGS_EXPORTER", "otlp"),
         ("OTEL_EXPORTER_OTLP_PROTOCOL", "grpc"),
-        ("OTEL_EXPORTER_OTLP_ENDPOINT", "http://localhost:4317"),
+        (
+            "OTEL_EXPORTER_OTLP_ENDPOINT",
+            "https://otel.example.com:4317",
+        ),
         ("OTEL_LOG_TOOL_DETAILS", "1"),
     ]);
     assert_eq!(code, Some(0));

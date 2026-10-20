@@ -2,6 +2,7 @@ pub mod advisory;
 pub mod agent;
 pub mod artifacts;
 pub mod attach;
+pub mod collector;
 pub mod completions;
 pub mod config;
 pub mod detach;

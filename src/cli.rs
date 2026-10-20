@@ -151,6 +151,14 @@ pub enum Command {
         command: LogCommand,
     },
 
+    /// A local OpenTelemetry collector for Claude Code: tokens and cost per
+    /// model, skill and agent, recorded under the skillctl home.
+    Telemetry {
+        /// The telemetry operation to execute.
+        #[command(subcommand)]
+        command: TelemetryCommand,
+    },
+
     /// List projects.
     Projects,
 
@@ -389,6 +397,56 @@ pub enum LogCommand {
     /// hit ratio. Reports when ccusage is not installed.
     Usage {
         /// Days to cover, ending today.
+        #[arg(long, default_value_t = 7)]
+        days: u32,
+    },
+}
+
+/// Local collector operations.
+#[derive(Debug, Subcommand)]
+pub enum TelemetryCommand {
+    /// Run the collector in the foreground: OTLP over HTTP/JSON on 127.0.0.1,
+    /// one JSON line per event under $SKILLCTL_HOME/telemetry, with identity
+    /// and content attributes (email, ids, prompts, tool inputs) dropped.
+    Serve {
+        /// Port to listen on (0 picks a free one).
+        #[arg(long, default_value_t = crate::commands::collector::DEFAULT_PORT)]
+        port: u16,
+    },
+
+    /// Point Claude Code at the collector (the env block of
+    /// ~/.claude/settings.json, merged and backed up) and, on macOS, run the
+    /// collector as a login service (a LaunchAgent).
+    Enable {
+        /// Port the collector listens on.
+        #[arg(long, default_value_t = crate::commands::collector::DEFAULT_PORT)]
+        port: u16,
+
+        /// Only write the settings; run skillctl telemetry serve yourself.
+        #[arg(long)]
+        no_service: bool,
+    },
+
+    /// Remove the variables enable wrote (others are kept) and stop and remove
+    /// the service. Recorded data stays.
+    Disable {
+        /// Port enable was run with.
+        #[arg(long, default_value_t = crate::commands::collector::DEFAULT_PORT)]
+        port: u16,
+    },
+
+    /// Whether Claude Code exports to the collector, the service, the
+    /// collector itself and today's records.
+    Status {
+        /// Port the collector listens on.
+        #[arg(long, default_value_t = crate::commands::collector::DEFAULT_PORT)]
+        port: u16,
+    },
+
+    /// Cost and tokens by model, skill, agent and source, tool runs and
+    /// slash commands, from the recorded events.
+    Report {
+        /// Days to cover, ending today (UTC).
         #[arg(long, default_value_t = 7)]
         days: u32,
     },

@@ -270,6 +270,72 @@ struct DayCounts: Decodable, Hashable, Identifiable {
 }
 
 /// `log usage`: ccusage's daily cost and tokens joined with the log's prompts.
+/// `telemetry status`: whether Claude Code exports to the local collector.
+struct TelemetryStatus: Decodable, Hashable {
+    struct Settings: Decodable, Hashable {
+        let path: String
+        let configured: Bool
+        let missing: [String]
+        let endpoint: String?
+    }
+    struct Service: Decodable, Hashable {
+        let supported: Bool
+        let path: String?
+        let installed: Bool
+        let program: String?
+        let program_exists: Bool
+        let loaded: Bool
+    }
+    let endpoint: String
+    let port: Int
+    let settings: Settings
+    let service: Service
+    /// `running`, `port-taken` or `stopped`.
+    let collector: String
+    let data_dir: String
+    let records_today: Int
+    let last_record: String?
+
+    var running: Bool { collector == "running" }
+    var healthy: Bool { running && settings.configured }
+}
+
+/// `telemetry report`: cost and tokens from the collector's records.
+struct TelemetryReport: Decodable, Hashable {
+    struct Bucket: Decodable, Hashable, Identifiable {
+        let key: String
+        let requests: Int
+        let cost: Double
+        let input_tokens: Int
+        let output_tokens: Int
+        let cache_read_tokens: Int
+        let cache_creation_tokens: Int
+        var id: String { key }
+    }
+    struct Tally: Decodable, Hashable, Identifiable {
+        let key: String
+        let count: Int
+        let failures: Int
+        var id: String { key }
+    }
+    let from: String
+    let to: String
+    /// `logs`, `metrics` or `none`.
+    let source: String
+    let records: Int
+    let last_record: String?
+    let total: Bucket
+    let by_model: [Bucket]
+    let by_skill: [Bucket]
+    let by_agent: [Bucket]
+    let by_source: [Bucket]
+    let daily: [Bucket]
+    let tools: [Tally]
+    let commands: [Tally]
+    let api_errors: Int
+    let active_seconds: [String: Double]
+}
+
 struct UsageReport: Decodable, Hashable {
     struct ModelCost: Decodable, Hashable, Identifiable {
         let model: String

@@ -103,10 +103,10 @@ struct SeverityBadge: View {
 
     private var color: Color {
         switch text {
-        case "error", "missing", "wrong", "dangling", "conflict": return .red
-        case "warning": return .orange
+        case "error", "missing", "wrong", "dangling", "conflict", "stopped": return .red
+        case "warning", "port-taken": return .orange
         case "info": return .blue
-        case "ok", "fixed": return .green
+        case "ok", "fixed", "running": return .green
         case "global": return .purple
         case "project": return .teal
         default: return .secondary

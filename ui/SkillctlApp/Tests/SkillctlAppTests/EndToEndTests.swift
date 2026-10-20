@@ -265,6 +265,44 @@ final class EndToEndTests: XCTestCase {
         XCTAssertTrue(state.console.allSatisfy { $0.args.first == "--json" }, "\(state.console.map(\.args))")
     }
 
+    /// The Log screen's collector card decodes `telemetry status` and
+    /// `telemetry report`; turning it off removes only skillctl's variables.
+    /// (Turning it on would load a real LaunchAgent, so it is tested in Rust
+    /// with --no-service instead.)
+    func testTelemetryStatusReportAndTurningOff() async throws {
+        let formatter = ISO8601DateFormatter()
+        let now = formatter.string(from: Date())
+        let day = String(now.prefix(10))
+        let records = home.appendingPathComponent("telemetry")
+        try FileManager.default.createDirectory(at: records, withIntermediateDirectories: true)
+        try """
+            {"ts":"\(now)","signal":"log","name":"api_request","attrs":{"model":"claude-sonnet-5","cost_usd":0.75,"output_tokens":900,"skill.name":"review","query_source":"main"}}
+            {"ts":"\(now)","signal":"log","name":"tool_result","attrs":{"tool_name":"Bash","success":"false"}}
+
+            """.write(to: records.appendingPathComponent("\(day).jsonl"), atomically: true, encoding: .utf8)
+        let settings = userHome.appendingPathComponent(".claude/settings.json")
+        try FileManager.default.createDirectory(at: settings.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try #"{"env": {"CLAUDE_CODE_ENABLE_TELEMETRY": "1", "OTEL_LOGS_EXPORTER": "otlp", "KEEP": "me"}}"#
+            .write(to: settings, atomically: true, encoding: .utf8)
+
+        await state.loadTelemetry()
+        XCTAssertNil(state.lastError, state.lastError ?? "")
+        let status = try XCTUnwrap(state.telemetry)
+        XCTAssertFalse(status.settings.configured)
+        XCTAssertTrue(status.settings.missing.contains("OTEL_EXPORTER_OTLP_ENDPOINT"))
+        XCTAssertEqual(status.records_today, 2)
+        let report = try XCTUnwrap(state.telemetryReport)
+        XCTAssertEqual(report.source, "logs")
+        XCTAssertEqual(report.total.cost, 0.75)
+        XCTAssertEqual(report.by_skill.first?.key, "review")
+        XCTAssertEqual(report.tools.first?.failures, 1)
+
+        await state.setTelemetry(enabled: false)
+        XCTAssertNil(state.lastError, state.lastError ?? "")
+        let written = try JSONSerialization.jsonObject(with: Data(contentsOf: settings)) as? [String: Any]
+        XCTAssertEqual(written?["env"] as? [String: String], ["KEEP": "me"])
+    }
+
     func testAnOutdatedBinaryIsReportedInsteadOfUsed() async throws {
         let fake = temp.appendingPathComponent("old-skillctl")
         try """
@@ -278,7 +316,7 @@ final class EndToEndTests: XCTestCase {
         try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: fake.path)
         let old = CLI(binary: fake, home: home.path, environment: [:])
         let missing = await old.missingCommands()
-        XCTAssertEqual(missing, ["artifacts", "drafts", "hook", "lint", "log", "projects", "show", "uninstall"])
+        XCTAssertEqual(missing, ["artifacts", "drafts", "hook", "lint", "log", "projects", "show", "telemetry", "uninstall"])
 
         let defaults = UserDefaults(suiteName: "dev.abindran.skillctl.tests.\(UUID().uuidString)")!
         defaults.set(fake.path, forKey: "binaryPath")

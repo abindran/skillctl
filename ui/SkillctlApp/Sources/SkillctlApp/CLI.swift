@@ -105,7 +105,7 @@ struct CLI {
 
     /// Subcommands the app depends on. An installed skillctl without one of
     /// them is older than the app and is reported instead of used.
-    static let requiredCommands = ["artifacts", "doctor", "drafts", "hook", "lint", "log", "projects", "show", "uninstall", "validate"]
+    static let requiredCommands = ["artifacts", "doctor", "drafts", "hook", "lint", "log", "projects", "show", "telemetry", "uninstall", "validate"]
 
     /// The required subcommands this binary's `--help` does not list; empty
     /// when the binary supports everything the app uses.

@@ -61,6 +61,20 @@ pub struct CursorEvidence {
     pub last_event: Option<String>,
 }
 
+/// What answers at the local OTLP endpoint Claude Code exports to, probed by
+/// doctor. Remote or unset endpoints are not probed.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub enum CollectorEvidence {
+    #[default]
+    NotProbed,
+    /// Nothing listens, so every export is dropped.
+    Nothing,
+    /// skillctl's own collector (`skillctl telemetry serve`).
+    Ours { last_record: Option<String> },
+    /// Another program, presumably the user's own collector.
+    Other,
+}
+
 /// Model and effort defaults read from `~/.claude/settings.json`: the main
 /// `model`, and `CLAUDE_CODE_SUBAGENT_MODEL` from its `env` block (the
 /// process environment also counts).
@@ -104,15 +118,23 @@ pub fn inspect_with_cursor(
     on_path: impl Fn(&str) -> bool,
     cursor: &CursorEvidence,
 ) -> Telemetry {
-    inspect_full(var, on_path, cursor, &ModelDefaults::default())
+    inspect_full(
+        var,
+        on_path,
+        cursor,
+        &ModelDefaults::default(),
+        &CollectorEvidence::default(),
+    )
 }
 
-/// `inspect_with_cursor`, plus the model and effort defaults (W25).
+/// `inspect_with_cursor`, plus the model and effort defaults (W25) and what
+/// answers at a local endpoint.
 pub fn inspect_full(
     var: impl Fn(&str) -> Option<String>,
     on_path: impl Fn(&str) -> bool,
     cursor: &CursorEvidence,
     models: &ModelDefaults,
+    collector: &CollectorEvidence,
 ) -> Telemetry {
     let set = |name: &str| {
         var(name)
@@ -145,7 +167,7 @@ pub fn inspect_full(
             "telemetry-off",
             "warning",
             "Claude Code OpenTelemetry export is off (CLAUDE_CODE_ENABLE_TELEMETRY is not 1), so tokens and cost per skill and agent are not recorded".to_owned(),
-            SUGGESTED_EXPORTS,
+            &format!("skillctl telemetry enable (writes the variables into the env block of ~/.claude/settings.json and runs the bundled collector as a login service; the Skillctl app's Log screen does the same). For your own backend instead: {SUGGESTED_EXPORTS}"),
         ));
     } else {
         match (&claude_code.metrics_exporter, &claude_code.logs_exporter) {
@@ -218,6 +240,37 @@ pub fn inspect_full(
                 "OTEL_LOG_TOOL_DETAILS is not 1, so agent.name is exported as \"custom\" and per-agent cost cannot be told apart".to_owned(),
                 "export OTEL_LOG_TOOL_DETAILS=1",
             ));
+        }
+        let endpoint = claude_code
+            .otlp_endpoint
+            .as_deref()
+            .unwrap_or("the endpoint");
+        match collector {
+            CollectorEvidence::NotProbed => {}
+            CollectorEvidence::Nothing => findings.push(finding(
+                "telemetry-collector-down",
+                "warning",
+                format!("Nothing listens at {endpoint}, so every export from Claude Code is dropped"),
+                "skillctl telemetry enable starts the bundled collector as a login service (or run skillctl telemetry serve); skillctl telemetry status shows what is missing",
+            )),
+            CollectorEvidence::Ours { last_record } => findings.push(finding(
+                "telemetry-collector",
+                "info",
+                format!(
+                    "skillctl's collector at {endpoint} is running; {}",
+                    last_record.as_deref().map_or_else(
+                        || "nothing recorded today yet (only sessions started after telemetry was enabled export)".to_owned(),
+                        |last| format!("last record {last}")
+                    )
+                ),
+                "skillctl telemetry report shows cost by model, skill and agent",
+            )),
+            CollectorEvidence::Other => findings.push(finding(
+                "telemetry-collector",
+                "info",
+                format!("A collector other than skillctl's answers at {endpoint}"),
+                "Nothing to do if it is your own; skillctl telemetry report only reads what skillctl's collector records",
+            )),
         }
     }
 
@@ -489,14 +542,26 @@ mod tests {
         assert_eq!(overridden.subagent_model.as_deref(), Some("opus"));
         let none = ModelDefaults::from_settings(&serde_json::json!({}), |_| None);
         assert_eq!(none, ModelDefaults::default());
-        let telemetry = inspect_full(|_| None, |_| true, &CursorEvidence::default(), &none);
+        let telemetry = inspect_full(
+            |_| None,
+            |_| true,
+            &CursorEvidence::default(),
+            &none,
+            &CollectorEvidence::default(),
+        );
         let item = telemetry
             .findings
             .iter()
             .find(|f| f.check == "model-defaults")
             .unwrap();
         assert!(item.message.contains("subagents inherit it"));
-        let telemetry = inspect_full(|_| None, |_| true, &CursorEvidence::default(), &defaults);
+        let telemetry = inspect_full(
+            |_| None,
+            |_| true,
+            &CursorEvidence::default(),
+            &defaults,
+            &CollectorEvidence::default(),
+        );
         let item = telemetry
             .findings
             .iter()
@@ -517,5 +582,56 @@ mod tests {
         assert!(!telemetry.claude_code.enabled);
         assert_eq!(telemetry.claude_code.metrics_exporter, None);
         assert_eq!(checks(&telemetry)[0], "telemetry-off");
+    }
+
+    #[test]
+    fn a_local_endpoint_with_nothing_listening_is_a_warning() {
+        let vars: BTreeMap<&str, &str> = [
+            ("CLAUDE_CODE_ENABLE_TELEMETRY", "1"),
+            ("OTEL_METRICS_EXPORTER", "otlp"),
+            ("OTEL_LOGS_EXPORTER", "otlp"),
+            ("OTEL_EXPORTER_OTLP_PROTOCOL", "http/json"),
+            ("OTEL_EXPORTER_OTLP_ENDPOINT", "http://127.0.0.1:4318"),
+            ("OTEL_LOG_TOOL_DETAILS", "1"),
+        ]
+        .into_iter()
+        .collect();
+        let run = |collector: CollectorEvidence| {
+            inspect_full(
+                |name| vars.get(name).map(|value| (*value).to_owned()),
+                |_| true,
+                &CursorEvidence::default(),
+                &ModelDefaults::default(),
+                &collector,
+            )
+        };
+        let down = run(CollectorEvidence::Nothing);
+        let item = down
+            .findings
+            .iter()
+            .find(|f| f.check == "telemetry-collector-down")
+            .unwrap();
+        assert_eq!(item.severity, "warning");
+        assert!(item.message.contains("http://127.0.0.1:4318"));
+        let up = run(CollectorEvidence::Ours {
+            last_record: Some("2026-10-20T08:00:00.000Z".into()),
+        });
+        let item = up
+            .findings
+            .iter()
+            .find(|f| f.check == "telemetry-collector")
+            .unwrap();
+        assert_eq!(item.severity, "info");
+        assert!(
+            item.message
+                .contains("last record 2026-10-20T08:00:00.000Z")
+        );
+        assert!(up.findings.iter().all(|f| f.severity != "warning"));
+        assert!(
+            run(CollectorEvidence::NotProbed)
+                .findings
+                .iter()
+                .all(|f| !f.check.starts_with("telemetry-collector"))
+        );
     }
 }

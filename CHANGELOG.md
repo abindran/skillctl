@@ -13,6 +13,23 @@ heading when cutting a release.
 
 ### Added
 
+- `skillctl telemetry serve|enable|disable|status|report`: a local
+  OpenTelemetry collector for Claude Code. `serve` receives OTLP over
+  HTTP/JSON on 127.0.0.1 (default port 4318) and writes one JSON line per
+  event under `~/.skills/telemetry/<date>.jsonl`, dropping email, account
+  and organisation ids, prompts, responses, tool inputs and error text
+  first. `enable` writes the six export variables into the `env` block of
+  `~/.claude/settings.json` (merged, backed up) and on macOS runs the
+  collector as a login service (LaunchAgent
+  `dev.abindran.skillctl.collector`); `disable` removes only the values it
+  wrote. `report [--days <n>]` breaks cost and tokens down by model,
+  skill, agent and source from the API request events, with tool runs and
+  failures, slash commands and active time.
+- The app's Log screen has a Cost by skill and agent card: a switch that
+  runs `telemetry enable` with the bundled CLI (so the login service runs
+  the copy inside the app), the setup checklist, and cost by skill, agent
+  and model once data arrives.
+
 - `global add` accepts commands and agents: they link into
   `~/.claude/commands`, `~/.cursor/commands`, `~/.claude/agents` and (with
   a `cursor.md` override) `~/.cursor/agents`, so every project sees them.
@@ -258,6 +275,15 @@ heading when cutting a release.
   Cursor's numbers come from its usage dashboard and hook logs. The findings
   are advisory: they appear in the text report and under `telemetry` in
   `--json`, and never change the exit status.
+
+### Changed
+
+- `doctor` reads Claude Code's export variables from the `env` block of
+  `~/.claude/settings.json` as well as the environment, probes a local
+  endpoint and warns `telemetry-collector-down` when nothing listens there
+  (every export would be dropped), or notes `telemetry-collector` with the
+  last record when skillctl's collector answers. The `telemetry-off` fix now
+  suggests `skillctl telemetry enable`.
 
 ## [0.1.0] - 2026-10-18
 

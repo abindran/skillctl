@@ -82,11 +82,43 @@ pub fn run(context: &mut Context<'_>, fix: bool) -> Result<(), Error> {
         }
         evidence
     };
-    let models = {
+    let settings = {
         let settings_path = crate::harness::claude_settings().expand()?;
-        let settings = crate::harness::claude::load(fs_for_settings(), &settings_path)
-            .unwrap_or(serde_json::json!({}));
-        super::telemetry::ModelDefaults::from_settings(&settings, |name| std::env::var(name).ok())
+        crate::harness::claude::load(fs_for_settings(), &settings_path)
+            .unwrap_or(serde_json::json!({}))
+    };
+    let models =
+        super::telemetry::ModelDefaults::from_settings(&settings, |name| std::env::var(name).ok());
+    // Claude Code reads its export variables from the process environment and
+    // from the env block of ~/.claude/settings.json, where telemetry enable puts them.
+    let setting = |name: &str| {
+        std::env::var(name).ok().or_else(|| {
+            settings
+                .get("env")
+                .and_then(|env| env.get(name))
+                .and_then(serde_json::Value::as_str)
+                .map(str::to_owned)
+        })
+    };
+    let collector = match setting("OTEL_EXPORTER_OTLP_ENDPOINT")
+        .as_deref()
+        .and_then(super::collector::local_port)
+    {
+        None => super::telemetry::CollectorEvidence::NotProbed,
+        Some(port) => match super::collector::probe(port) {
+            None => super::telemetry::CollectorEvidence::Nothing,
+            Some(false) => super::telemetry::CollectorEvidence::Other,
+            Some(true) => {
+                let today = chrono::DateTime::<chrono::Utc>::from(std::time::SystemTime::now())
+                    .date_naive();
+                super::telemetry::CollectorEvidence::Ours {
+                    last_record: super::collector::read_records(context.home.home(), Some(today))
+                        .into_iter()
+                        .map(|record| record.ts)
+                        .max(),
+                }
+            }
+        },
     };
     // Harness versions: remembered across runs so an upgrade is reported once.
     // Claude Code is asked directly; Cursor's version comes from its hook
@@ -117,7 +149,7 @@ pub fn run(context: &mut Context<'_>, fix: bool) -> Result<(), Error> {
         report
     };
     let telemetry = super::telemetry::inspect_full(
-        |name| std::env::var(name).ok(),
+        setting,
         |binary| {
             std::env::var_os("PATH").is_some_and(|path| {
                 std::env::split_paths(&path)
@@ -126,6 +158,7 @@ pub fn run(context: &mut Context<'_>, fix: bool) -> Result<(), Error> {
         },
         &cursor,
         &models,
+        &collector,
     );
     // MCP servers visible from this folder, scored against the event log.
     let user_home = crate::paths::HomePath::new("~/.claude.json")?

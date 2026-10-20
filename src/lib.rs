@@ -54,6 +54,7 @@ pub fn run(command: Command, context: &mut Context<'_>) -> Result<(), Error> {
         Command::Hook { command } => commands::hook::run(context, command),
         Command::Log { command } => commands::log::run(context, command),
         Command::Agent { command } => commands::agent::run(context, command),
+        Command::Telemetry { command } => commands::collector::run(context, command),
         Command::Projects => commands::projects::run(context),
         Command::Skills => commands::skills::run(context),
         Command::Drafts => commands::drafts::run(context),
