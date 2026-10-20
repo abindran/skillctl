@@ -558,7 +558,7 @@ skillctl-logger@1.0.0
   events: SessionStart, SessionEnd, UserPromptSubmit, PostToolUse, Stop, SubagentStart, SubagentStop, PreCompact, PostCompact (all registered)
 ```
 
-(`skillctl-logger@1.2.2` at the time of writing; the version follows the hook's `metadata.version`.)
+(`skillctl-logger@1.2.3` at the time of writing; the version follows the hook's `metadata.version`.)
 
 Then send one prompt in Claude Code (or Cursor) and watch the log:
 
@@ -634,7 +634,7 @@ MANDATORY SKILL CHECK. Candidates: db-migrations
 For each: [name] - YES/NO - [reason]. Call Skill(name) for every YES before any other tool.
 ```
 
-In community measurements this forced YES/NO evaluation took activation from about 50% to 100% and stayed silent on prompts that needed no skill, where an LLM-based classifier invented skill names. It is deliberately the second layer: directive descriptions (O140–O145) come first, and `hook add` warns if any pinned skill still fails them.
+Community reports describe this forced YES/NO evaluation raising activation sharply and staying silent on prompts that need no skill (not a controlled measurement; `log summary` measures it on your machine as activation through the hook), where an LLM-based classifier invented skill names. It is deliberately the second layer: directive descriptions (O140–O145) come first, and `hook add` warns if any pinned skill still fails them.
 
 ```bash
 skillctl install ./hooks/skill-forced-eval && skillctl hook add skill-forced-eval

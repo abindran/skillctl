@@ -25,6 +25,10 @@ heading when cutting a release.
   wrote. `report [--days <n>]` breaks cost and tokens down by model,
   skill, agent and source from the API request events, with tool runs and
   failures, slash commands and active time.
+- The app's Document card shows every bundled file (references, scripts,
+  schemas) from its chips, with line numbers, and Preview, Open and Reveal
+  links sit beside every file the app names: findings, doctor problems and
+  the Quality scope cards.
 - `skillctl rules [--for <kind>]` prints the catalog of every validate and
   lint rule: ID, kind, group, default severity, a one-line summary and
   whether `validate.allow` can silence it. A test keeps it complete. The
@@ -289,6 +293,20 @@ heading when cutting a release.
   Cursor's numbers come from its usage dashboard and hook logs. The findings
   are advisory: they appear in the text report and under `telemetry` in
   `--json`, and never change the exit status.
+
+### Fixed
+
+- I305 no longer flags `$(…)` or `${…}` inside inline code: a rule that
+  documents `"${...}"` placeholders does not expand anything. The
+  onezoho-automation YAML conventions rule was a false positive.
+- `subagent-schema` 1.0.1 finds an agent's `schema.json` by its frontmatter
+  `name` as well as its file name (Claude Code identifies agents by `name`),
+  and looks in `~/.claude/agents` for global agents after the project.
+- `skill-forced-eval` 1.0.3 no longer states an unsourced "50% to 100%"
+  activation figure; it points at `log summary`'s activation through the
+  hook as the measurement. `skillctl-logger` 1.2.3 corrects the comment on
+  Cursor's native event names, and the `skill-check` rule 1.0.1 lists
+  `.cursor/skills/`, Cursor's own skills folder.
 
 ### Changed
 

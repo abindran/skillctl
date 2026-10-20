@@ -2,7 +2,7 @@
 name: skill-forced-eval
 description: Before each prompt in Claude Code, shortlists the skills the agent can see whose name, trigger phrasings or file paths match the prompt, and injects a mandatory YES/NO check so the agent decides explicitly whether to invoke each candidate. Silent in Cursor, in folders without skills, and for prompts that match nothing.
 metadata:
-  version: "1.0.2"
+  version: "1.0.3"
 events: [UserPromptSubmit]
 timeout: 10
 entry: hook.py
@@ -12,9 +12,12 @@ companions: [skill-check]
 # skill-forced-eval
 
 The activation hook of the LLM optimisation strategy (work items W13 and W14).
-In community measurements a forced YES/NO evaluation per candidate skill took
-activation from about 50% to 100% and stayed silent on prompts that needed no
-skill, where an LLM-based classifier invented skill names. Directive
+Community reports describe a forced YES/NO evaluation per candidate skill
+raising activation sharply, and staying silent on prompts that need no skill
+where an LLM-based classifier invented skill names. Those reports are not a
+controlled measurement: measure it on your own machine with `skillctl log
+summary`, whose "activation through the hook" line counts the shortlists this
+hook wrote that were followed by an activation. Directive
 descriptions come first (rules O140–O145); this hook is the second layer.
 
 ```

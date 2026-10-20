@@ -32,26 +32,55 @@ def debug(message):
         sys.stderr.write(f"subagent-schema: {message}\n")
 
 
-def schema_for(cwd, agent_type):
-    """The schema.json beside the agent definition the link points at."""
-    agents_dir = os.path.join(cwd, ".claude", "agents")
+def frontmatter_name(path):
+    """The `name:` field of a Markdown file's frontmatter, or None."""
     try:
-        entries = os.listdir(agents_dir)
+        with open(path, encoding="utf-8") as handle:
+            if handle.readline().strip() != "---":
+                return None
+            for _ in range(40):
+                line = handle.readline()
+                if not line or line.strip() == "---":
+                    return None
+                if line.startswith("name:"):
+                    return line[5:].strip().strip("\"'")
     except OSError:
         return None
-    wanted = f"{agent_type}.md".lower()
-    for entry in entries:
-        if entry.lower() != wanted:
-            continue
-        link = os.path.join(agents_dir, entry)
-        target = os.path.realpath(link)
-        path = os.path.join(os.path.dirname(target), "schema.json")
+    return None
+
+
+def load_schema(agent_file):
+    """schema.json beside the agent definition the file (or link) points at."""
+    target = os.path.realpath(agent_file)
+    path = os.path.join(os.path.dirname(target), "schema.json")
+    try:
+        with open(path, encoding="utf-8") as handle:
+            schema = json.load(handle)
+    except (OSError, ValueError):
+        return None
+    return schema if isinstance(schema, dict) else None
+
+
+def schema_for(cwd, agent_type):
+    """The schema of the agent named `agent_type`: project agents first, then
+    global ones. Claude Code identifies agents by their frontmatter `name`, so
+    a file whose name differs is matched by that field."""
+    wanted = agent_type.lower()
+    folders = [os.path.join(cwd, ".claude", "agents"),
+               os.path.join(os.path.expanduser("~"), ".claude", "agents")]
+    for agents_dir in folders:
         try:
-            with open(path, encoding="utf-8") as handle:
-                schema = json.load(handle)
-        except (OSError, ValueError):
-            return None
-        return schema if isinstance(schema, dict) else None
+            entries = sorted(os.listdir(agents_dir))
+        except OSError:
+            continue
+        files = [os.path.join(agents_dir, e) for e in entries if e.lower().endswith(".md")]
+        for path in files:
+            if os.path.basename(path).lower() == f"{wanted}.md":
+                return load_schema(path)
+        for path in files:
+            name = frontmatter_name(path)
+            if name and name.lower() == wanted:
+                return load_schema(path)
     return None
 
 

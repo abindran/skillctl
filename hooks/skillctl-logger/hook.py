@@ -101,8 +101,10 @@ def log_path():
     return os.path.join(home, "log", "events.jsonl")
 
 
-# Cursor's own event names for the events it maps from Claude Code hooks;
-# the rest only differ by their first letter's case.
+# Cursor's native event names. Imported Claude Code hooks normally receive
+# the mapped names (preToolUse, postToolUse, …), which differ only by their
+# first letter's case and are handled below; these entries are kept so the
+# hook still files events correctly if a payload carries the native name.
 CURSOR_EVENTS = {
     "beforeSubmitPrompt": "UserPromptSubmit",
     "beforeShellExecution": "PreToolUse",

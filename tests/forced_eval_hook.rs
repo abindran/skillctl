@@ -81,7 +81,7 @@ fn forced_eval_hook_validates_and_installs() {
     let out = Command::new(env!("CARGO_BIN_EXE_skillctl"))
         .env("SKILLCTL_HOME", &home)
         .env("HOME", temp.path())
-        .args(["validate", "skill-forced-eval@1.0.2"])
+        .args(["validate", "skill-forced-eval@1.0.3"])
         .output()
         .unwrap();
     assert_eq!(

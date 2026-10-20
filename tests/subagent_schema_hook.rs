@@ -22,6 +22,8 @@ fn python() -> Option<PathBuf> {
 fn run(cwd: &Path, tmp: &Path, event: &Value) -> (i32, String, String) {
     let mut child = Command::new(hook_dir().join("hook.py"))
         .env("TMPDIR", tmp)
+        // The hook also reads ~/.claude/agents; keep the user's out of it.
+        .env("HOME", tmp)
         .env("SKILLCTL_SUBAGENT_SCHEMA_DEBUG", "1")
         .current_dir(cwd)
         .stdin(Stdio::piped())
@@ -62,7 +64,7 @@ fn subagent_schema_hook_validates_and_installs() {
     let out = Command::new(env!("CARGO_BIN_EXE_skillctl"))
         .env("SKILLCTL_HOME", &home)
         .env("HOME", temp.path())
-        .args(["validate", "subagent-schema@1.0.0"])
+        .args(["validate", "subagent-schema@1.0.1"])
         .output()
         .unwrap();
     assert_eq!(
@@ -171,4 +173,59 @@ fn invalid_output_is_sent_back_three_times_then_reported() {
         .unwrap();
     child.stdin.take().unwrap().write_all(b"garbage").unwrap();
     assert!(child.wait().unwrap().success());
+}
+
+#[cfg(unix)]
+#[test]
+fn the_schema_is_found_by_frontmatter_name_and_in_global_agents() {
+    if python().is_none() {
+        eprintln!("python3 not on PATH; skipping");
+        return;
+    }
+    let temp = tempfile::tempdir().unwrap();
+    let project = temp.path().join("project");
+    let tmp = temp.path().join("tmp");
+    let store = temp.path().join("store/explore/1.0.0/explore");
+    fs::create_dir_all(project.join(".claude/agents")).unwrap();
+    fs::create_dir_all(&store).unwrap();
+    for file in ["AGENT.md", "schema.json"] {
+        fs::copy(
+            Path::new(env!("CARGO_MANIFEST_DIR"))
+                .join("agents/explore")
+                .join(file),
+            store.join(file),
+        )
+        .unwrap();
+    }
+    let prose = |agent: &str| {
+        json!({
+            "session_id": "s", "cwd": project, "hook_event_name": "SubagentStop",
+            "agent_id": format!("id-{agent}"), "agent_type": agent,
+            "last_assistant_message": "only prose"
+        })
+    };
+    // A file whose name differs from the agent's `name` field is still matched.
+    std::os::unix::fs::symlink(
+        store.join("AGENT.md"),
+        project.join(".claude/agents/renamed-explorer.md"),
+    )
+    .unwrap();
+    let (code, _, err) = run(&project, &tmp, &prose("explore"));
+    assert_eq!(code, 2, "{err}");
+    fs::remove_file(project.join(".claude/agents/renamed-explorer.md")).unwrap();
+
+    // A global agent under ~/.claude/agents (HOME is the temp folder in `run`).
+    fs::create_dir_all(tmp.join(".claude/agents")).unwrap();
+    std::os::unix::fs::symlink(
+        store.join("AGENT.md"),
+        tmp.join(".claude/agents/explore.md"),
+    )
+    .unwrap();
+    let (code, _, err) = run(&project, &tmp, &prose("explore"));
+    assert_eq!(code, 2, "{err}");
+
+    // Neither: no schema, no check.
+    fs::remove_file(tmp.join(".claude/agents/explore.md")).unwrap();
+    let (code, out, _) = run(&project, &tmp, &prose("explore"));
+    assert_eq!((code, out.as_str()), (0, ""));
 }
