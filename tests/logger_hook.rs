@@ -68,7 +68,7 @@ fn logger_hook_validates_and_installs() {
     let out = Command::new(env!("CARGO_BIN_EXE_skillctl"))
         .env("SKILLCTL_HOME", &home)
         .env("HOME", temp.path())
-        .args(["validate", "skillctl-logger@1.2.1"])
+        .args(["validate", "skillctl-logger@1.2.2"])
         .output()
         .unwrap();
     assert!(
@@ -249,4 +249,50 @@ fn logger_records_claude_code_and_cursor_events_and_never_fails() {
     assert_eq!(records[12]["tool_name"], "Shell");
     assert_eq!(records[12]["test_command"], "raw");
     assert!(records[12].get("command").is_none());
+}
+
+#[test]
+fn logger_records_slash_command_names_and_nothing_else_of_the_prompt() {
+    if python().is_none() {
+        eprintln!("python3 not on PATH; skipping");
+        return;
+    }
+    let temp = tempfile::tempdir().unwrap();
+    let home = temp.path().join("skills");
+    for prompt in [
+        "/checkpoint keep the decisions about the schema",
+        "  /Plugin:Review-PR 42",
+        "please run /checkpoint later",
+        "/",
+    ] {
+        run_hook(
+            &home,
+            &json!({"session_id": "s", "cwd": "/w", "hook_event_name": "UserPromptSubmit", "prompt": prompt}),
+            false,
+        );
+    }
+    run_hook(
+        &home,
+        &json!({
+            "session_id": "s", "cwd": "/w", "hook_event_name": "PostToolUse",
+            "tool_name": "SlashCommand", "tool_input": {"command": "/triage open bugs"}
+        }),
+        false,
+    );
+    let records = lines(&home);
+    assert_eq!(records.len(), 5);
+    assert_eq!(records[0]["command"], "checkpoint");
+    assert_eq!(records[0]["prompt_chars"], 47);
+    assert!(
+        records[0].get("prompt").is_none(),
+        "the prompt text is never written"
+    );
+    assert_eq!(records[1]["command"], "plugin:review-pr");
+    assert!(
+        records[2].get("command").is_none(),
+        "only a leading slash command counts"
+    );
+    assert!(records[3].get("command").is_none());
+    assert_eq!(records[4]["tool_name"], "SlashCommand");
+    assert_eq!(records[4]["command"], "triage");
 }

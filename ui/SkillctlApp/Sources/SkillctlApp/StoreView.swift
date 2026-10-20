@@ -101,6 +101,11 @@ struct StoreView: View {
                                 if let count = row.children?.count, count > 1 {
                                     Text("\(count) versions").font(.caption).foregroundStyle(.secondary)
                                 }
+                                if row.pinnedBy.contains("global") {
+                                    SeverityBadge(text: "global").help(Scope.global.help)
+                                } else if row.kind != "hook", row.pinnedBy.contains(where: { $0 != "hook" }) {
+                                    SeverityBadge(text: "project").help(Scope.project.help)
+                                }
                             }
                         } else {
                             Text("v\(row.version ?? "")").foregroundStyle(.secondary)

@@ -13,6 +13,18 @@ heading when cutting a release.
 
 ### Added
 
+- `global add` accepts commands and agents: they link into
+  `~/.claude/commands`, `~/.cursor/commands`, `~/.claude/agents` and (with
+  a `cursor.md` override) `~/.cursor/agents`, so every project sees them.
+  `global list`, `doctor` and `doctor --fix` cover those links; rules and
+  scripts stay project-level.
+- `skillctl-logger` 1.2.2 records the name of a slash command a prompt
+  starts with, or that the model runs through `SlashCommand` (`command`),
+  so commands get recorded uses in `artifacts` and a count in `log
+  summary`; pinned commands with no use after a week now show as unused.
+- The app badges every skill, command and agent `global`, `project` or
+  `unused`, offers Make global and Remove from global, and has a per-kind
+  Clean up unused action.
 - `log usage [--days <n>]`: Claude Code cost and tokens per day from
   `ccusage daily --json`, joined with the log's prompts for cost per prompt,
   output tokens per prompt and cache hit ratio; clear report when ccusage

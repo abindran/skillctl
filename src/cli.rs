@@ -311,19 +311,21 @@ pub enum Command {
 /// Operations on globally installed skills.
 #[derive(Debug, Subcommand)]
 pub enum GlobalCommand {
-    /// Install a skill globally.
+    /// Make a skill, command or agent global: linked into the user-level
+    /// folders (~/.claude/skills, ~/.claude/commands, ~/.claude/agents and the
+    /// Cursor equivalents) so every project sees it.
     Add {
-        /// Name of the skill to install.
+        /// Artifact name, optionally followed by @version.
         skill: String,
     },
 
-    /// Remove a globally installed skill.
+    /// Remove an artifact from the global set and its user-level links.
     Remove {
-        /// Name of the skill to remove.
+        /// Name of the artifact to remove.
         skill: SkillName,
     },
 
-    /// List globally installed skills.
+    /// List global artifacts with their links.
     List,
 }
 /// Subagent operations.

@@ -38,6 +38,30 @@ struct Artifact: Decodable, Hashable, Identifiable {
 
     var id: String { "\(name)@\(version)" }
     var reference: String { id }
+    /// Linked into the user-level folders, so every project sees it.
+    var isGlobal: Bool { pinned_by.contains("global") }
+    /// The projects that pin this version.
+    var projects: [String] { pinned_by.filter { $0 != "global" && $0 != "hook" } }
+}
+
+/// Where an artifact is in effect: user-level (global), in specific
+/// projects, or nowhere yet.
+enum Scope: String {
+    case global, project, unpinned
+
+    static func of(_ versions: [Artifact]) -> Scope {
+        if versions.contains(where: \.isGlobal) { return .global }
+        if versions.contains(where: { !$0.projects.isEmpty }) { return .project }
+        return .unpinned
+    }
+
+    var help: String {
+        switch self {
+        case .global: return "Global: linked into ~/.claude and ~/.cursor, so every project sees it"
+        case .project: return "Project: linked only into the projects that pin it"
+        case .unpinned: return "Not pinned anywhere"
+        }
+    }
 }
 
 /// The root document of a version or draft, with the files beside it (`skillctl show`).
@@ -217,6 +241,8 @@ struct LogWindow: Decodable, Hashable {
     let compactions: Int
     let compactions_per_session: Double?
     let mcp_calls: [String: Int]
+    /// Slash commands run, by name.
+    let commands: [String: Int]
     let test_commands_raw: Int
     let test_commands_wrapped: Int
     /// Prompts for which the forced-eval hook injected a shortlist, and how

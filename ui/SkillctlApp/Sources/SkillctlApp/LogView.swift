@@ -32,6 +32,11 @@ struct LogView: View {
                         chart("Subagent runs", Count.from(summary.current.agents), empty: "No subagent runs in this window.")
                         chart("MCP tool calls", Count.from(summary.current.mcp_calls), empty: "No MCP tool calls in this window.")
                     }
+                    HStack(alignment: .top, spacing: Metrics.gap) {
+                        chart("Slash commands", Count.from(summary.current.commands), empty: "No slash commands recorded (skillctl-logger 1.2.2 records them).")
+                        Spacer().frame(maxWidth: .infinity)
+                        Spacer().frame(maxWidth: .infinity)
+                    }
                     Text(summary.note).font(.caption).foregroundStyle(.tertiary)
                 }
                 .pageLayout()

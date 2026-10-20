@@ -107,6 +107,8 @@ struct SeverityBadge: View {
         case "warning": return .orange
         case "info": return .blue
         case "ok", "fixed": return .green
+        case "global": return .purple
+        case "project": return .teal
         default: return .secondary
         }
     }

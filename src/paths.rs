@@ -166,6 +166,12 @@ impl fmt::Display for HomePath {
     }
 }
 
+/// The user's home folder, the root of the user-level folders both harnesses
+/// read (`~/.claude/commands`, `~/.claude/agents`, `~/.cursor/commands`, …).
+pub fn user_home_dir() -> Result<PathBuf, Error> {
+    user_home()
+}
+
 fn user_home() -> Result<PathBuf, Error> {
     dirs::home_dir()
         .filter(|path| path.is_absolute())

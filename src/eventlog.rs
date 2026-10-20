@@ -36,6 +36,9 @@ pub struct Event {
     pub harness_version: Option<String>,
     /// The skills the forced-eval hook shortlisted, on `SkillShortlist`.
     pub candidates: Option<Vec<String>>,
+    /// The slash command a prompt started with, or the one the model ran
+    /// through `SlashCommand`: the name only, lowercase.
+    pub command: Option<String>,
 }
 
 impl Event {

@@ -1,14 +1,58 @@
 use crate::{
+    artifact::Kind,
     cli::GlobalCommand,
     context::Context,
     error::Error,
     linker::{self, ReconcileReport},
     names::SkillName,
-    paths::{HomePath, RelPath},
+    paths::{HomePath, Paths, RelPath},
     registry::{Instance, Pin, Project, Registry, Settings},
+    services::fs::Fs,
     store,
 };
 use std::{collections::BTreeMap, path::PathBuf};
+
+/// Kinds that can be pinned globally: skills (linked into
+/// `global_link_targets`), and commands and agents (linked into the
+/// user-level folders both harnesses read: `~/.claude/commands`,
+/// `~/.cursor/commands`, `~/.claude/agents`, `~/.cursor/agents`). Rules and
+/// scripts are project-level; hooks are registered with `hook add`.
+pub fn global_kind(kind: Kind) -> bool {
+    matches!(kind, Kind::Skill | Kind::Command | Kind::Agent)
+}
+
+/// A set of pins by artifact name.
+pub type Pins = BTreeMap<SkillName, Pin>;
+
+/// Split global pins into skills and the commands and agents beside them. A
+/// pin whose kind cannot be read stays with the skills, as in the linker.
+pub fn split(fs: &dyn Fs, home: &Paths, pins: &Pins) -> Result<(Pins, Pins), Error> {
+    let mut skills = BTreeMap::new();
+    let mut others = BTreeMap::new();
+    for (name, pin) in pins {
+        let kind = Kind::detect(fs, &store::store_dir(home, name, pin))?.unwrap_or(Kind::Skill);
+        if kind == Kind::Skill {
+            skills.insert(name.clone(), pin.clone());
+        } else {
+            others.insert(name.clone(), pin.clone());
+        }
+    }
+    Ok((skills, others))
+}
+
+/// The user home as the root the user-level kind folders live under.
+pub fn user_root() -> Result<PathBuf, Error> {
+    crate::paths::canonicalize(&crate::paths::user_home_dir()?)
+}
+
+/// The links the global commands and agents need, rooted at the user home.
+pub fn user_level_plans(
+    fs: &dyn Fs,
+    home: &Paths,
+    pins: &BTreeMap<SkillName, Pin>,
+) -> Result<Vec<linker::LinkPlan>, Error> {
+    linker::plans(fs, home, pins, &[], linker::Layout::Kinds)
+}
 
 /// Reuse the ownership/convergence engine for user-level folders without Git.
 /// Resolve the target directory itself when it is a symlink; links remain per-skill.
@@ -16,10 +60,43 @@ pub(super) fn reconcile(
     context: &Context<'_>,
     registry: &Registry,
 ) -> Result<Vec<ReconcileReport>, Error> {
-    reconcile_into(
-        context,
-        &registry.global.skills,
-        &registry.settings.global_link_targets,
+    let (skills, others) = split(context.fs.as_ref(), &context.home, &registry.global.skills)?;
+    let mut reports = reconcile_into(context, &skills, &registry.settings.global_link_targets)?;
+    reports.push(reconcile_user_level(context, &others)?);
+    Ok(reports)
+}
+
+/// Link global commands and agents under the user home with the project
+/// layout, so `~/.claude/commands/<name>.md` and friends appear exactly as
+/// they would inside a project. Always run, even with no such pins, so the
+/// links of one removed from the global set are swept; only managed links
+/// (symlinks into the store or drafts) are ever touched.
+fn reconcile_user_level(
+    context: &Context<'_>,
+    pins: &BTreeMap<SkillName, Pin>,
+) -> Result<ReconcileReport, Error> {
+    let project = Project {
+        skills: pins.clone(),
+        instances: vec![],
+    };
+    let mut instance = Instance {
+        path: user_root()?,
+        attached_at: super::attach::now(),
+        created_dirs: vec![],
+    };
+    let settings = Settings {
+        link_targets: vec![],
+        git_exclude: false,
+        previous_link_targets: vec![],
+        ..Settings::default()
+    };
+    linker::reconcile(
+        context.fs.as_ref(),
+        &context.home,
+        &mut instance,
+        &project,
+        &settings,
+        linker::Layout::Kinds,
     )
 }
 
@@ -97,12 +174,16 @@ pub fn run(context: &mut Context<'_>, command: GlobalCommand) -> Result<(), Erro
             GlobalCommand::Add { skill } => {
                 let (name, pin) = super::attach::skill_pin(context, &skill)?;
                 let dir = store::store_dir(&context.home, &name, &pin);
-                if crate::artifact::Kind::of(context.fs.as_ref(), &dir)?
-                    != crate::artifact::Kind::Skill
-                {
-                    return Err(super::attach::usage(format!(
-                        "'{name}' is not a skill; rules and commands are project-level, pin them with skillctl add inside the project"
-                    )));
+                let kind = Kind::of(context.fs.as_ref(), &dir)?;
+                if !global_kind(kind) {
+                    return Err(super::attach::usage(match kind {
+                        Kind::Hook => {
+                            format!("'{name}' is a hook; register it with skillctl hook add {name}")
+                        }
+                        _ => format!(
+                            "'{name}' is a {kind}; {kind}s are project-level, pin them with skillctl add inside the project"
+                        ),
+                    }));
                 }
                 if registry
                     .projects
@@ -110,7 +191,7 @@ pub fn run(context: &mut Context<'_>, command: GlobalCommand) -> Result<(), Erro
                     .any(|p| p.skills.contains_key(&name))
                 {
                     return Err(super::attach::usage(format!(
-                        "Skill '{name}' is pinned by a project"
+                        "'{name}' is pinned by a project; unpin it there first (skillctl remove {name} --project <project>)"
                     )));
                 }
                 registry.global.skills.insert(name.clone(), pin.clone());
@@ -142,7 +223,7 @@ pub fn run(context: &mut Context<'_>, command: GlobalCommand) -> Result<(), Erro
             )?),
             None => None,
         };
-        context.output.result(&serde_json::json!({"skills":registry.global.skills,"reports":reports,"advisory":advisory,"dry_run":context.flags.dry_run}),"Updated global skills").map_err(super::output_error)?;
+        context.output.result(&serde_json::json!({"skills":registry.global.skills,"reports":reports,"advisory":advisory,"dry_run":context.flags.dry_run}),"Updated global artifacts").map_err(super::output_error)?;
         super::attach::conflicts(reports.iter().any(ReconcileReport::has_conflicts))
     })
 }
@@ -151,19 +232,29 @@ fn list(context: &mut Context<'_>) -> Result<(), Error> {
     let rows = super::read_locked(context, || {
         let registry = super::load_registry(context)?;
         let mut rows = Vec::new();
+        let root = user_root()?;
         for (name, pin) in &registry.global.skills {
             let want = store::store_dir(&context.home, name, pin);
+            let kind = Kind::detect(context.fs.as_ref(), &want)?.unwrap_or(Kind::Skill);
             let mut links = Vec::new();
-            for target in &registry.settings.global_link_targets {
-                let path: PathBuf = target.expand()?.join(name.as_str());
-                links.push(serde_json::json!({"path":path,"status":super::status::health(context,&path,&want)?}));
+            if kind == Kind::Skill {
+                for target in &registry.settings.global_link_targets {
+                    let path: PathBuf = target.expand()?.join(name.as_str());
+                    links.push(serde_json::json!({"path":path,"status":super::status::health(context,&path,&want)?}));
+                }
+            } else {
+                let single = BTreeMap::from([(name.clone(), pin.clone())]);
+                for plan in user_level_plans(context.fs.as_ref(), &context.home, &single)? {
+                    let path = plan.path(&root);
+                    links.push(serde_json::json!({"path":path,"status":super::status::health(context,&path,&plan.target)?}));
+                }
             }
-            rows.push(serde_json::json!({"name":name,"pin":pin,"links":links}));
+            rows.push(serde_json::json!({"name":name,"pin":pin,"kind":kind,"links":links}));
         }
         Ok(rows)
     })?;
     let text = if rows.is_empty() {
-        "No global skills.".into()
+        "Nothing is global.".into()
     } else {
         let mut text = String::new();
         for (index, r) in rows.iter().enumerate() {

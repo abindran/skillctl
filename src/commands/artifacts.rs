@@ -27,9 +27,9 @@ pub struct Row {
     pub description: Option<String>,
     /// Project names pinning this version, plus `global` or `hook`.
     pub pinned_by: Vec<String>,
-    /// Recorded uses: skill activations (`PostToolUse` of `Skill`) or
-    /// subagent runs (`SubagentStop` by `agent_type`); `None` for kinds the
-    /// log cannot see (hooks, rules, commands, scripts).
+    /// Recorded uses: skill activations (`PostToolUse` of `Skill`), subagent
+    /// runs (`SubagentStop` by `agent_type`) or slash-command runs (logger
+    /// 1.2.2+); `None` for kinds the log cannot see (hooks, rules, scripts).
     pub uses: Option<usize>,
     pub last_used: Option<String>,
     pub unused: bool,
@@ -40,6 +40,7 @@ pub struct Row {
 struct Usage {
     skills: BTreeMap<String, (usize, String)>,
     agents: BTreeMap<String, (usize, String)>,
+    commands: BTreeMap<String, (usize, String)>,
     span_days: i64,
 }
 
@@ -69,6 +70,9 @@ fn usage(log: &std::path::Path) -> Usage {
                 }
             }
             _ => {}
+        }
+        if let Some(command) = &event.command {
+            bump(&mut usage.commands, command.to_lowercase(), &event.ts);
         }
     }
     usage
@@ -111,6 +115,7 @@ pub fn rows(context: &Context<'_>, registry: &Registry) -> Result<Vec<Row>, Erro
             let seen = match kind {
                 Kind::Skill => Some(usage.skills.get(&name.as_str().to_lowercase())),
                 Kind::Agent => Some(usage.agents.get(&name.as_str().to_lowercase())),
+                Kind::Command => Some(usage.commands.get(&name.as_str().to_lowercase())),
                 _ => None,
             };
             let (uses, last_used) = match seen {

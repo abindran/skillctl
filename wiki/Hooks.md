@@ -102,6 +102,7 @@ The log path is `$SKILLCTL_HOME/log/events.jsonl`, falling back to `~/.skills/lo
 - Claude Code fires `SubagentStop` for its own auxiliary agents (for example the one that titles the session after each turn), a few seconds after each `Stop`, with an `agent_id` but **no `agent_type`**. The logger therefore writes no `agent` field for them. Delegation metrics must filter on `agent` being present, or they will count one phantom subagent per turn.
 - The documented `PreCompact` payload carries `trigger` (and `custom_instructions`, which is dropped) but no token count; context size at compaction has to be derived from the transcript, whose path is logged.
 
+- Since 1.2.2 the logger keeps the **name** of a slash command a prompt starts with (`/checkpoint …` → `"command":"checkpoint"`, by the anchored `SLASH` pattern) and of one the model runs through the `SlashCommand` tool (matcher now `Skill|SlashCommand|Bash|mcp__.*`). Nothing else of the prompt is written. This makes commands the third kind with recorded uses after skills and agents.
 - Cursor passes its **own** event names to imported hooks (`beforeSubmitPrompt` was observed in the log where `UserPromptSubmit` was expected), so the logger maps the names that differ by more than their first letter (`CURSOR_EVENTS` in `hook.py`, 1.2.1) and reads the top-level `command` of Cursor's shell events for `test_command`. Cursor's `cursor_version` is kept as `harness_version`; Claude Code's payload has no version field, which is why `doctor` asks the binary.
 
 ## The `skill-forced-eval` hook

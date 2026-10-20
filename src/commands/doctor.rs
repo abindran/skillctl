@@ -328,13 +328,24 @@ fn diagnose(context: &Context<'_>, fix: bool) -> Result<Vec<Problem>, Error> {
             }
         }
     }
-    for (skill, pin) in &registry.global.skills {
+    let (global_skills, global_others) = super::global::split(fs, home, &registry.global.skills)?;
+    for (skill, pin) in &global_skills {
         let want = store::store_dir(home, skill, pin);
         for target in &registry.settings.global_link_targets {
             checks.push((
                 target.expand()?.join(skill.as_str()),
                 want.clone(),
                 "the global skills".to_owned(),
+            ));
+        }
+    }
+    if !global_others.is_empty() {
+        let root = super::global::user_root()?;
+        for plan in super::global::user_level_plans(fs, home, &global_others)? {
+            checks.push((
+                plan.path(&root),
+                plan.target.clone(),
+                "the global commands and agents".to_owned(),
             ));
         }
     }

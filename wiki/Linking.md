@@ -145,7 +145,7 @@ flowchart LR
 
 Real project content, foreign links and symlinked directory chains are preserved throughout. `--keep-links` skips every filesystem step; `--delete-project` removes the project entry only when its last instance leaves.
 
-## Global skills
+## Global skills, commands and agents
 
 Global skills are pinned once in the registry's `global.skills` map and linked into **user-level** folders instead of project folders, so every folder a harness opens sees them.
 
@@ -162,3 +162,4 @@ Global skills are pinned once in the registry's `global.skills` map and linked i
 - **No Git exclude step**, since home folders are not project repositories.
 - `settings.global_in_instances: true` additionally links global skills into every attached instance's link targets (a stopgap to reach harnesses without a known user-level folder). Global mutations then reconcile every instance as well.
 - `relink --all` reconciles globals first, then every instance.
+- **Commands and agents can be global too.** `global::split` separates the global pins by detected kind: skills keep the `Folders` layout into `global_link_targets`; commands and agents are reconciled with the `Kinds` layout and the user home as the instance root (`global::reconcile_user_level`), so they land exactly where a project would put them, one level up: `~/.claude/commands/<name>.md`, `~/.cursor/commands/<name>.md`, `~/.claude/agents/<name>.md` and `~/.cursor/agents/<name>.md` for a `cursor.md` override. That reconcile always runs, even with no such pins, so a removed global's links are swept; under the ownership rule only symlinks into the store or drafts are touched, so the user's own command and agent files stay. Rules (`~/.cursor/rules` is not read by Cursor) and scripts (paths are project-relative) are refused, hooks go through `hook add`. `doctor` checks these links with the same plans (`global::user_level_plans`), and `doctor --fix` repairs them through `pins::reconcile_everything`.

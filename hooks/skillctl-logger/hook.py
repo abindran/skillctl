@@ -82,6 +82,18 @@ def classify_test_command(command):
     return "raw"
 
 
+# A slash command at the start of a prompt (`/checkpoint`, `/plugin:cmd`).
+# Only the name is kept; the rest of the prompt never is.
+SLASH = re.compile(r"\A\s*/([A-Za-z0-9][A-Za-z0-9:_.-]{0,63})(?=\s|\Z)")
+
+
+def slash_command(text):
+    if not isinstance(text, str):
+        return None
+    match = SLASH.match(text)
+    return match.group(1).lower() if match else None
+
+
 def log_path():
     home = os.environ.get("SKILLCTL_HOME") or os.path.join(
         os.path.expanduser("~"), ".skills"
@@ -143,6 +155,9 @@ def record_for(event):
             record[key] = event[key]
     if name == "UserPromptSubmit" and isinstance(event.get("prompt"), str):
         record["prompt_chars"] = len(event["prompt"])
+        command = slash_command(event["prompt"])
+        if command:
+            record["command"] = command
     if name in ("PreToolUse", "PostToolUse"):
         tool_name = event.get("tool_name")
         record["tool_name"] = tool_name
@@ -159,6 +174,11 @@ def record_for(event):
             skill = tool_input.get("skill") or tool_input.get("name")
             if isinstance(skill, str):
                 record["skill"] = skill
+        if isinstance(tool_input, dict) and tool_name == "SlashCommand":
+            # The model running a custom command: tool_input.command is "/name args".
+            command = slash_command(tool_input.get("command"))
+            if command:
+                record["command"] = command
         if isinstance(tool_input, dict) and tool_name in ("Bash", "Shell"):
             kind = classify_test_command(tool_input.get("command"))
             if kind:

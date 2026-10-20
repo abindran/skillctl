@@ -41,6 +41,8 @@ pub struct Window {
     pub compactions: usize,
     pub compactions_per_session: Option<f64>,
     pub mcp_calls: BTreeMap<String, usize>,
+    /// Slash commands run, by name (logger 1.2.2+).
+    pub commands: BTreeMap<String, usize>,
     pub test_commands_raw: usize,
     pub test_commands_wrapped: usize,
     /// Prompts for which the forced-eval hook injected a shortlist.
@@ -136,6 +138,9 @@ fn window(events: &[Event], from: DateTime<Utc>, to: DateTime<Utc>) -> Window {
         if let Some(session) = &event.session {
             sessions.insert(session.clone());
             day_sessions.insert(session.clone());
+        }
+        if let Some(command) = &event.command {
+            *window.commands.entry(command.to_lowercase()).or_default() += 1;
         }
         match event.event.as_str() {
             "UserPromptSubmit" => {
@@ -391,6 +396,14 @@ pub fn text(summary: &Summary) -> String {
         mcp_now,
         mcp_before,
         counts(&cur.mcp_calls),
+    ));
+    let commands_now: usize = cur.commands.values().sum();
+    let commands_before: usize = prev.commands.values().sum();
+    lines.push(row(
+        "slash commands",
+        commands_now,
+        commands_before,
+        counts(&cur.commands),
     ));
     lines.push(format!(
         "  {:<18}raw {}, wrapped {} (prev raw {}, wrapped {})",

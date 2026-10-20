@@ -14,6 +14,11 @@ struct KindView: View {
     @State private var showNew = false
     @State private var newName = ""
     @State private var showInstall = false
+    @State private var showCleanup = false
+
+    private var unusedVersions: [Artifact] {
+        state.artifacts.filter { $0.kind == kind.id && $0.unused }
+    }
 
     /// One artifact of this kind: its draft (if any) and its store versions.
     struct Entry: Identifiable, Hashable {
@@ -68,7 +73,15 @@ struct KindView: View {
                     .help("skillctl new --kind \(kind.id) <name>")
                 Button { showInstall = true } label: { Label("Install…", systemImage: "square.and.arrow.down") }
                     .help("Install from a folder or a Git URL")
+                Button { showCleanup = true } label: { Label("Clean up unused…", systemImage: "trash") }
+                    .disabled(unusedVersions.isEmpty)
+                    .help(unusedVersions.isEmpty
+                          ? "No unused \(kind.title.lowercased())"
+                          : "Delete the \(unusedVersions.count) unused \(kind.title.lowercased()) version(s); pinned ones are skipped")
             }
+        }
+        .sheet(isPresented: $showCleanup) {
+            BulkDeleteSheet(versions: unusedVersions, registered: state.registeredHookNames) {}
         }
         .sheet(isPresented: $showNew) { newSheet }
         .sheet(isPresented: $showInstall) { InstallSheet() }
@@ -103,14 +116,29 @@ struct KindView: View {
 
     private func row(_ entry: Entry) -> some View {
         VStack(alignment: .leading, spacing: 2) {
-            HStack(spacing: 6) {
+            HStack(spacing: Metrics.tight) {
                 Text(entry.name).fontWeight(.medium)
+                    .lineLimit(1).truncationMode(.middle)
+                Spacer(minLength: 0)
                 if entry.draft != nil { SeverityBadge(text: "draft") }
+                scopeBadge(entry)
             }
             Text(subtitle(entry)).font(.caption).foregroundStyle(.secondary).lineLimit(1)
         }
         .padding(.vertical, 4)
         .tag(entry.name)
+    }
+
+    @ViewBuilder
+    private func scopeBadge(_ entry: Entry) -> some View {
+        if kind.id != "hook", !entry.versions.isEmpty {
+            let scope = Scope.of(entry.versions)
+            if scope == .unpinned {
+                if entry.versions.allSatisfy(\.unused) { SeverityBadge(text: "unused").help("Nothing pins it") }
+            } else {
+                SeverityBadge(text: scope.rawValue).help(scope.help)
+            }
+        }
     }
 
     private func subtitle(_ entry: Entry) -> String {
@@ -119,10 +147,12 @@ struct KindView: View {
         if entry.versions.count > 1 { parts[0] += " (+\(entry.versions.count - 1) older)" }
         if kind.id == "hook" {
             parts.append(state.registeredHookNames.contains(entry.name) ? "registered" : "not registered")
-        } else if latest.pinned_by.isEmpty {
+        } else if latest.isGlobal {
+            parts.append("every project")
+        } else if latest.projects.isEmpty {
             parts.append("unpinned")
         } else {
-            parts.append("pinned by \(latest.pinned_by.joined(separator: ", "))")
+            parts.append(latest.projects.joined(separator: ", "))
         }
         return parts.joined(separator: " · ")
     }
@@ -180,6 +210,8 @@ struct ArtifactDetail: View {
     @State private var loadingDocument = false
 
     private var isHook: Bool { kind.id == "hook" }
+    /// Skills, commands and agents can be global; rules and scripts are project-level.
+    private var canBeGlobal: Bool { ["skill", "command", "agent"].contains(kind.id) }
     private var pinnedVersions: [Artifact] { entry.versions.filter { !$0.pinned_by.isEmpty } }
     private var version: Artifact? {
         entry.versions.first { $0.id == selectedVersion } ?? entry.latest
@@ -257,7 +289,25 @@ struct ArtifactDetail: View {
                 Text(entry.name).font(.title2.bold())
                 SeverityBadge(text: kind.id)
                 if entry.draft != nil { SeverityBadge(text: "draft") }
+                if !isHook, !entry.versions.isEmpty {
+                    let scope = Scope.of(entry.versions)
+                    if scope != .unpinned { SeverityBadge(text: scope.rawValue).help(scope.help) }
+                }
                 Spacer()
+                if canBeGlobal, let latest = entry.latest {
+                    if let global = entry.versions.first(where: \.isGlobal) {
+                        Button("Remove from global") { Task { await state.removeGlobal(global.name) } }
+                            .controlSize(.small)
+                            .help("skillctl global remove \(global.name): drops the user-level links")
+                    } else {
+                        Button("Make global") { Task { await state.makeGlobal(latest.reference) } }
+                            .controlSize(.small)
+                            .disabled(entry.versions.contains { !$0.projects.isEmpty })
+                            .help(entry.versions.contains { !$0.projects.isEmpty }
+                                  ? "Pinned by a project; unpin it there first"
+                                  : "skillctl global add \(latest.reference): linked into ~/.claude and ~/.cursor for every project")
+                    }
+                }
                 if !entry.versions.isEmpty {
                     Menu {
                         Button("Delete all \(entry.versions.count) version(s)…", role: .destructive) { confirmDelete = entry.name }

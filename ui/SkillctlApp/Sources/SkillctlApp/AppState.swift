@@ -197,6 +197,16 @@ final class AppState {
         await perform(args) { await self.loadDrafts(); await self.loadArtifacts() }
     }
 
+    /// Make a skill, command or agent global (user-level links in ~/.claude
+    /// and ~/.cursor). The CLI refuses project-pinned ones and other kinds.
+    func makeGlobal(_ reference: String) async {
+        await perform(["global", "add", reference]) { await self.loadArtifacts() }
+    }
+
+    func removeGlobal(_ name: String) async {
+        await perform(["global", "remove", name]) { await self.loadArtifacts() }
+    }
+
     func derive(agent: String, model: String) async {
         await perform(["agent", "derive", agent, "--model", model]) { await self.loadDrafts() }
     }
