@@ -123,6 +123,16 @@ Decisions:
 3. **Bounded retries.** A counter file `$TMPDIR/skillctl-subagent-schema-<agent_id>.count` makes exit 2 happen at most `MAX_ATTEMPTS` (3) times per agent run; the fourth failure exits 0 with a `systemMessage` so the lead treats the result as `partial` rather than looping. The counter is keyed by `agent_id`, which is unique per spawn.
 4. **Never fail otherwise.** Malformed input, missing fields, an unreadable schema or an auxiliary agent (no `agent_type`) all exit 0 silently; `SKILLCTL_SUBAGENT_SCHEMA_DEBUG=1` logs the decision.
 
+## The `quiet-commands` hook
+
+`hooks/quiet-commands/` (strategy W24): `events: [PreToolUse]`, `matchers: {PreToolUse: Bash}`, Python `hook.py`. Claude Code's `PreToolUse` payload carries `tool_name`, `tool_input.command` and `cwd`; exit 2 blocks the call with stderr as the reason the agent sees, and a JSON `hookSpecificOutput` with `updatedInput` changes the input but is accepted only with `permissionDecision: allow`.
+
+1. **Block by default, rewrite on request.** Blocking preserves the permission flow: the agent re-issues the wrapped command and the user is asked as for any command. `SKILLCTL_QUIET_REWRITE=1` switches to `updatedInput`, which runs the wrapped command without a prompt; that is documented as a trade-off, not hidden.
+2. **One classifier, two copies.** `classify` in the hook and `classify_test_command` in the logger are the same table (`TEST_COMMANDS`, `RUN_SCRIPTS`, the `COMPOUND` regex); hooks are standalone bundles, so the code is duplicated rather than shared, and the comment in each names the other. Leading `VAR=value` tokens are skipped, `shlex` handles quoting, and any shell operator makes the line compound and untouched because the wrapper takes one simple command.
+3. **The wrapper is found, never assumed.** `.claude/scripts/test-quiet/test-quiet.sh` is looked up from `cwd` upward; the wrapped command uses the relative path when `cwd` is the project root and the absolute path from subfolders. No wrapper means the project did not pin the bundle and the hook has nothing to redirect to.
+4. **Silent in Cursor.** Cursor routes shell commands through its own `beforeShellExecution` hook, so an imported `PreToolUse` hook would not see them; the script exits on `CURSOR_VERSION` or `cursor_version` like the forced-eval hook.
+5. **Conditional rollout.** The logger (1.2.0, matcher `Skill|Bash|mcp__.*`) writes `test_command: raw|wrapped` for Bash calls so the condition in the strategy, "only if agents bypass the wrappers", can be read from the log before the hook is registered.
+
 ## doctor
 
 With at least one hook pinned, `doctor` adds to its usual checks:

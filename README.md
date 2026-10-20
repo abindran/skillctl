@@ -524,7 +524,7 @@ skillctl-logger@1.0.0
   events: SessionStart, SessionEnd, UserPromptSubmit, PostToolUse, Stop, SubagentStart, SubagentStop, PreCompact, PostCompact (all registered)
 ```
 
-(`skillctl-logger@1.1.0` at the time of writing; the version follows the hook's `metadata.version`.)
+(`skillctl-logger@1.2.0` at the time of writing; the version follows the hook's `metadata.version`.)
 
 Then send one prompt in Claude Code (or Cursor) and watch the log:
 
@@ -548,6 +548,7 @@ tail -f ~/.skills/log/events.jsonl
 | `transcript` | when the harness provides it | Path to the conversation transcript, from which context size can be derived |
 | `prompt_chars` | `UserPromptSubmit` | Length of the prompt. The text itself is never recorded. |
 | `tool_name`, `skill` | `PostToolUse` | The tool that ran and, for the `Skill` tool, the skill name: this is how skill activations are counted |
+| `test_command` | `PostToolUse` on `Bash` | `raw` when a bare test or build command ran (`cargo test`, `npm test`, `pytest`, `go test`, …), `wrapped` when it went through the `test-quiet` wrapper; the command text itself is never recorded. Raw next to wrapped is the signal to register the `quiet-commands` hook |
 | `server` | `PostToolUse` on an MCP tool | The server name from `mcp__<server>__<tool>`; `doctor` uses it to tell which configured servers are actually used |
 | `agent`, `agent_id` | subagent events | The subagent type and id. `agent` is absent for the harness's own auxiliary agents (for example the one that titles the session after each turn), which also fire `SubagentStop`; count only lines with `agent` when measuring delegation |
 | `trigger` | `PreCompact`, `PostCompact` | `auto` or `manual` |
@@ -613,6 +614,21 @@ skillctl install ./hooks/subagent-schema && skillctl hook add subagent-schema
 ```
 
 The schema subset it understands is what the bundled agents use: `type`, `required`, per-property `type` and `enum`.
+
+### The quiet-commands hook
+
+[`hooks/quiet-commands/`](hooks/quiet-commands/) is the command rewrite of work item W24, for projects whose agents keep running `cargo test` or `npm test` bare although `AGENTS.md` points them at the quiet wrapper. On every Bash call in Claude Code it checks whether the command is a bare test or build command and the project links `.claude/scripts/test-quiet/test-quiet.sh`; if both hold it blocks the call (exit 2) and gives the agent the exact wrapped command as the reason, which the agent then runs through the normal permission flow:
+
+```
+Run tests and builds through the quiet wrapper so only failures reach the context. Run exactly:
+.claude/scripts/test-quiet/test-quiet.sh cargo test --locked
+```
+
+```bash
+skillctl install ./hooks/quiet-commands && skillctl hook add quiet-commands
+```
+
+Register it only when the log shows the problem: the logger's `test_command` field counts raw against wrapped runs, and while agents follow `AGENTS.md` the instruction alone is cheaper. The hook is silent in Cursor (shell commands there go through Cursor's own `beforeShellExecution` hook, not imported `PreToolUse` hooks), in projects without the wrapper, and for commands that are already wrapped, compound (`&&`, `|`, `;`, redirections) or not tests or builds. Setting `SKILLCTL_QUIET_REWRITE=1` in the hook's environment makes it rewrite the command in place through `updatedInput` instead of blocking; Claude Code accepts that only with `permissionDecision: allow`, so the wrapped command then runs without a permission prompt. `SKILLCTL_QUIET_COMMANDS_DEBUG=1` logs its decisions.
 
 **Upgrading, pausing, removing.** A new version of the logger is `skillctl install …` followed by `skillctl hook add skillctl-logger@<version>`; the link moves, the settings stay. To pause logging without losing the registration history, `skillctl hook remove skillctl-logger` and `hook add` it again later. The log file is plain JSONL; rotate or delete it whenever you like, the hook recreates it.
 
@@ -861,6 +877,7 @@ scripts/release/build-universal.sh && scripts/release/package.sh 0.1.0 && script
 | Script bundles (`.claude/scripts/<name>`), K501–K507, the bundled `test-quiet` and `log-errors` wrappers | Implemented (W23) |
 | Model and effort defaults documented; `doctor` reports them (`model-defaults`) | Implemented (W25) |
 | `artifacts --unused` for the periodic bloat review | Implemented (W30) |
+| `quiet-commands` hook: bare test and build commands redirected through the `test-quiet` wrapper; logger 1.2.0 counts raw against wrapped runs | Implemented, register when the log shows bypasses (W24) |
 | Subagent telemetry: the logger records `SubagentStart`/`SubagentStop` with the agent type (Cursor maps only `SubagentStop`) | Implemented by the logger (W21) |
 | `install` from Git and local folders, `edit`, `doctor --fix`, `gc`, `config`, `completions` | Implemented |
 | Release pipeline: universal build, optional signing and notarization, clean-runner verification, GitHub release, crates.io publish and verification | Implemented (GitHub Actions) |

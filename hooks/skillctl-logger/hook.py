@@ -8,6 +8,8 @@ length.
 """
 import json
 import os
+import re
+import shlex
 import sys
 from datetime import datetime, timezone
 
@@ -21,6 +23,63 @@ COPIED = {
     "PreCompact": ["trigger"],
     "PostCompact": ["trigger"],
 }
+
+# Bare test and build commands whose output is mostly noise on success; the
+# log records only whether such a command ran raw or through the test-quiet
+# wrapper, never the command text. Keep in step with hooks/quiet-commands.
+TEST_COMMANDS = {
+    "cargo": {"test", "build", "check", "clippy", "nextest"},
+    "npm": {"test", "t", "run"},
+    "pnpm": {"test", "t", "run", "build"},
+    "yarn": {"test", "run", "build"},
+    "bun": {"test", "run"},
+    "npx": {"jest", "vitest", "mocha", "tsc", "eslint", "playwright"},
+    "pytest": None,
+    "tox": None,
+    "go": {"test", "build", "vet"},
+    "mvn": {"test", "verify", "package", "install", "compile"},
+    "gradle": {"test", "build", "check", "assemble"},
+    "gradlew": {"test", "build", "check", "assemble"},
+    "make": {"test", "check", "build", "all"},
+    "dotnet": {"test", "build"},
+    "swift": {"test", "build"},
+    "xcodebuild": None,
+    "ctest": None,
+    "ninja": None,
+}
+RUN_SCRIPTS = {"test", "build", "lint", "check", "typecheck", "coverage"}
+COMPOUND = re.compile(r"(\|\||&&|[|;&<>`]|\$\(|\n)")
+
+
+def classify_test_command(command):
+    """'wrapped', 'raw' or None for a shell command line."""
+    if not isinstance(command, str) or not command.strip():
+        return None
+    if "test-quiet" in command:
+        return "wrapped"
+    if COMPOUND.search(command):
+        return None
+    try:
+        tokens = shlex.split(command)
+    except ValueError:
+        return None
+    while tokens and re.match(r"^[A-Za-z_][A-Za-z0-9_]*=", tokens[0]):
+        tokens = tokens[1:]
+    if not tokens:
+        return None
+    first = os.path.basename(tokens[0])
+    if first in ("python", "python3") and tokens[1:3] == ["-m", "pytest"]:
+        return "raw"
+    allowed = TEST_COMMANDS.get(first, False)
+    if allowed is False:
+        return None
+    if allowed is None:
+        return "raw"
+    if len(tokens) < 2 or tokens[1] not in allowed:
+        return None
+    if tokens[1] == "run" and (len(tokens) < 3 or tokens[2] not in RUN_SCRIPTS):
+        return None
+    return "raw"
 
 
 def log_path():
@@ -80,6 +139,10 @@ def record_for(event):
             skill = tool_input.get("skill") or tool_input.get("name")
             if isinstance(skill, str):
                 record["skill"] = skill
+        if isinstance(tool_input, dict) and tool_name in ("Bash", "Shell"):
+            kind = classify_test_command(tool_input.get("command"))
+            if kind:
+                record["test_command"] = kind
     return record
 
 

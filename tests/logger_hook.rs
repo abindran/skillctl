@@ -68,7 +68,7 @@ fn logger_hook_validates_and_installs() {
     let out = Command::new(env!("CARGO_BIN_EXE_skillctl"))
         .env("SKILLCTL_HOME", &home)
         .env("HOME", temp.path())
-        .args(["validate", "skillctl-logger@1.1.0"])
+        .args(["validate", "skillctl-logger@1.2.0"])
         .output()
         .unwrap();
     assert!(
@@ -134,6 +134,22 @@ fn logger_records_claude_code_and_cursor_events_and_never_fails() {
         }),
         false,
     );
+    // Bash commands: only whether a test or build command ran raw or wrapped.
+    for command in [
+        "cargo test --locked",
+        ".claude/scripts/test-quiet/test-quiet.sh cargo test",
+        "ls -la",
+        "cd crates/x && cargo test",
+    ] {
+        run_hook(
+            &home,
+            &json!({
+                "session_id": "s1", "cwd": "/work/crm", "hook_event_name": "PostToolUse",
+                "tool_name": "Bash", "tool_input": {"command": command, "description": "x"}
+            }),
+            false,
+        );
+    }
     // Cursor-shaped payload, camelCase event, cursor_version present.
     run_hook(
         &home,
@@ -161,7 +177,7 @@ fn logger_records_claude_code_and_cursor_events_and_never_fails() {
     assert!(out.status.success());
 
     let records = lines(&home);
-    assert_eq!(records.len(), 7);
+    assert_eq!(records.len(), 11);
     let first = &records[0];
     assert_eq!(first["tool"], "claude-code");
     assert_eq!(first["event"], "PreCompact");
@@ -185,12 +201,27 @@ fn logger_records_claude_code_and_cursor_events_and_never_fails() {
         records[4].get("skill").is_none(),
         "name only counts for the Skill tool"
     );
-    assert_eq!(records[5]["tool"], "cursor");
-    assert_eq!(records[5]["event"], "SessionEnd");
-    assert_eq!(records[5]["session"], "c7");
-    assert_eq!(records[5]["cwd"], "/work/api");
-    assert!(records[5].get("transcript").is_none());
-    assert_eq!(records[6]["tool"], "cursor");
-    assert_eq!(records[6]["event"], "Stop");
-    assert_eq!(records[6]["stop_hook_active"], true);
+    assert_eq!(records[5]["tool_name"], "Bash");
+    assert_eq!(records[5]["test_command"], "raw");
+    assert!(
+        records[5].get("command").is_none(),
+        "command text is never logged"
+    );
+    assert_eq!(records[6]["test_command"], "wrapped");
+    assert!(
+        records[7].get("test_command").is_none(),
+        "ls is not a test command"
+    );
+    assert!(
+        records[8].get("test_command").is_none(),
+        "compound lines are not classified"
+    );
+    assert_eq!(records[9]["tool"], "cursor");
+    assert_eq!(records[9]["event"], "SessionEnd");
+    assert_eq!(records[9]["session"], "c7");
+    assert_eq!(records[9]["cwd"], "/work/api");
+    assert!(records[9].get("transcript").is_none());
+    assert_eq!(records[10]["tool"], "cursor");
+    assert_eq!(records[10]["event"], "Stop");
+    assert_eq!(records[10]["stop_hook_active"], true);
 }

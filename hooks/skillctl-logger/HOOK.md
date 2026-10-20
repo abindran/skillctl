@@ -1,11 +1,11 @@
 ---
 name: skillctl-logger
-description: Appends one JSON line per harness lifecycle event to ~/.skills/log/events.jsonl, tagged with the tool that fired it, so sessions, prompts, compactions, subagent runs, skill activations and MCP tool calls can be counted and compared between Claude Code and Cursor.
+description: Appends one JSON line per harness lifecycle event to ~/.skills/log/events.jsonl, tagged with the tool that fired it, so sessions, prompts, compactions, subagent runs, skill activations, MCP tool calls and raw versus wrapped test commands can be counted and compared between Claude Code and Cursor.
 metadata:
-  version: "1.1.0"
+  version: "1.2.0"
 events: [SessionStart, SessionEnd, UserPromptSubmit, PostToolUse, Stop, SubagentStart, SubagentStop, PreCompact, PostCompact]
 matchers:
-  PostToolUse: "Skill|mcp__.*"
+  PostToolUse: "Skill|Bash|mcp__.*"
 timeout: 10
 entry: hook.py
 ---

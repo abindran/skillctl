@@ -13,6 +13,16 @@ heading when cutting a release.
 
 ### Added
 
+- `hooks/quiet-commands` (strategy work item W24): a `PreToolUse` hook on
+  Claude Code's Bash tool that blocks bare test and build commands in
+  projects linking the `test-quiet` wrapper and hands the agent the wrapped
+  command; `SKILLCTL_QUIET_REWRITE=1` rewrites in place instead (which
+  Claude Code only allows together with auto-approval). Silent in Cursor and
+  wherever there is nothing to redirect.
+- `skillctl-logger` 1.2.0 records `test_command: raw|wrapped` for Bash
+  calls that run a recognised test or build command (the matcher now
+  includes `Bash`); the command text is still never logged. Raw next to
+  wrapped is the signal that the `quiet-commands` hook is needed.
 - `artifacts [--unused]` (strategy work item W30): every store version with
   its kind, pins and recorded use from the event log (skill activations,
   subagent runs); `--unused` keeps unpinned versions and pinned skills or
