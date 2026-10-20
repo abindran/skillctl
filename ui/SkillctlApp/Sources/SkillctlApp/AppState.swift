@@ -49,6 +49,29 @@ final class AppState {
     }
 
     var isBusy: Bool { !busy.isEmpty }
+    /// The CLI inside this app bundle, if the build carries one.
+    var bundledBinary: URL? { CLI.bundled }
+    var usesBundledBinary: Bool { cli != nil && cli?.binary == CLI.bundled }
+
+    /// Make a CLI usable from a terminal as `<directory>/skillctl` by linking
+    /// to it. Replaces an existing symlink, never a regular file. Returns the
+    /// message to show.
+    func linkCommandLineTool(_ binary: URL, into directory: URL) -> String {
+        let link = directory.appendingPathComponent("skillctl")
+        do {
+            try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+            if let attributes = try? FileManager.default.attributesOfItem(atPath: link.path) {
+                guard attributes[.type] as? FileAttributeType == .typeSymbolicLink else {
+                    return "\(link.path) exists and is not a symlink; move it away first."
+                }
+                try FileManager.default.removeItem(at: link)
+            }
+            try FileManager.default.createSymbolicLink(at: link, withDestinationURL: binary)
+            return "Linked \(link.path) → \(binary.path). Add \(directory.path) to PATH if it is not there yet."
+        } catch {
+            return "Could not link: \(error.localizedDescription)"
+        }
+    }
     var storeHooks: [Artifact] { artifacts.filter { $0.kind == "hook" } }
     var registeredHookNames: Set<String> { Set(hooks.map(\.name)) }
 

@@ -240,12 +240,33 @@ final class EndToEndTests: XCTestCase {
         XCTAssertEqual(currentMissing, [])
     }
 
-    func testBinaryDiscoveryPrefersAnExplicitPathThenACheckoutsDebugBuild() throws {
+    func testBinaryDiscoveryPrefersAnExplicitPathThenTheBundledCopyThenACheckoutsDebugBuild() throws {
         let candidates = CLI.candidates(preferred: "~/custom/skillctl").map(\.path)
         XCTAssertEqual(candidates.first, FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("custom/skillctl").path)
+        let contents = try XCTUnwrap(Bundle.main.executableURL?.deletingLastPathComponent().deletingLastPathComponent().path)
+        XCTAssertEqual(candidates[1], contents + "/Helpers/skillctl", "the copy bundled with the app comes second")
         let debugIndex = try XCTUnwrap(candidates.firstIndex { $0.hasSuffix("target/debug/skillctl") })
+        XCTAssertGreaterThan(debugIndex, 1)
         let cargoIndex = try XCTUnwrap(candidates.firstIndex { $0.hasSuffix(".cargo/bin/skillctl") })
         XCTAssertLessThan(debugIndex, cargoIndex, "a checkout's debug build beats an installed, possibly older, copy")
         XCTAssertNil(CLI.locate(preferred: temp.appendingPathComponent("missing").path).flatMap { $0.path.hasSuffix("missing") ? $0 : nil })
+    }
+
+    func testLinkingTheCommandLineToolReplacesOnlySymlinks() throws {
+        let binary = try XCTUnwrap(Self.debugBinary())
+        let bin = temp.appendingPathComponent("local/bin")
+        let link = bin.appendingPathComponent("skillctl")
+        let first = state.linkCommandLineTool(binary, into: bin)
+        XCTAssertTrue(first.hasPrefix("Linked "), first)
+        XCTAssertEqual(try FileManager.default.destinationOfSymbolicLink(atPath: link.path), binary.path)
+        // A second run replaces the symlink.
+        let second = state.linkCommandLineTool(binary, into: bin)
+        XCTAssertTrue(second.hasPrefix("Linked "), second)
+        // A regular file in the way is never touched.
+        try FileManager.default.removeItem(at: link)
+        try "#!/bin/sh\n".write(to: link, atomically: true, encoding: .utf8)
+        let refused = state.linkCommandLineTool(binary, into: bin)
+        XCTAssertTrue(refused.contains("is not a symlink"), refused)
+        XCTAssertEqual(try String(contentsOf: link, encoding: .utf8), "#!/bin/sh\n")
     }
 }

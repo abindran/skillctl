@@ -2,6 +2,7 @@ import SwiftUI
 
 struct SettingsView: View {
     @Environment(AppState.self) private var state
+    @State private var linkMessage: String?
 
     var body: some View {
         @Bindable var state = state
@@ -24,6 +25,26 @@ struct SettingsView: View {
                 DisclosureGroup("Searched locations") {
                     ForEach(state.searched, id: \.self) { path in
                         Text(path).font(.caption).foregroundStyle(.secondary)
+                    }
+                }
+            }
+            Section("Command line") {
+                LabeledContent("Bundled CLI") {
+                    Text(state.bundledBinary?.path ?? "not in this build")
+                        .foregroundStyle(.secondary).textSelection(.enabled)
+                        .lineLimit(1).truncationMode(.middle)
+                }
+                if let bundled = state.bundledBinary {
+                    HStack {
+                        Button("Link skillctl into ~/.local/bin") {
+                            let bin = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".local/bin")
+                            linkMessage = state.linkCommandLineTool(bundled, into: bin)
+                        }
+                        Text("so the same binary the app uses works in a terminal; no separate install needed")
+                            .font(.caption).foregroundStyle(.secondary)
+                    }
+                    if let linkMessage {
+                        Text(linkMessage).font(.caption).textSelection(.enabled)
                     }
                 }
             }

@@ -25,7 +25,10 @@ heading when cutting a release.
   validate/lint. Every screen runs the CLI with `--json`; a console pane
   shows each command and its output. `Scripts/bundle.sh` produces
   `Skillctl.app`; `.github/workflows/swift.yml` builds it in CI. The app
-  prefers a checkout's `target/debug/skillctl` over installed copies and
+  bundles the CLI at `Contents/Helpers/skillctl` (`Scripts/bundle.sh` builds
+  it; `UNIVERSAL=1` for both architectures), prefers that copy, then a
+  checkout's `target/debug/skillctl`, over installed copies, offers to link
+  the bundled binary into `~/.local/bin` for terminal use, and
   reports a binary that lacks the subcommands it needs instead of using
   it. `swift test` runs end-to-end tests that drive the real binary through
   the app's state layer against a temporary home.

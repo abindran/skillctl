@@ -53,8 +53,26 @@ struct CLI {
     /// Extra variables for the child process (tests redirect `HOME`).
     var environment: [String: String] = [:]
 
-    /// Where the binary is looked for, in order: the path from Settings; a
-    /// debug build of the skillctl checkout the app itself lives in
+    /// Where a CLI shipped inside the app bundle lives:
+    /// `Contents/Helpers/skillctl`, beside `Contents/MacOS/Skillctl`. (Not in
+    /// `MacOS/` itself: the default filesystem is case-insensitive, so
+    /// `skillctl` there would be the app executable.)
+    static var bundledLocation: URL? {
+        Bundle.main.executableURL?
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .appendingPathComponent("Helpers/skillctl")
+    }
+
+    /// The CLI shipped inside the app bundle, when this build carries one.
+    static var bundled: URL? {
+        guard let url = bundledLocation, FileManager.default.isExecutableFile(atPath: url.path) else { return nil }
+        return url
+    }
+
+    /// Where the binary is looked for, in order: the path from Settings; the
+    /// copy bundled with the app, so an installed app needs no separate CLI;
+    /// a debug build of the skillctl checkout the app itself lives in
     /// (`target/debug/skillctl`, found by walking up from the executable),
     /// because the app is developed against the CLI it ships with and an
     /// installed copy may predate it; then the Cargo and Homebrew locations
@@ -63,6 +81,9 @@ struct CLI {
         var urls: [URL] = []
         if let preferred, !preferred.isEmpty {
             urls.append(URL(fileURLWithPath: (preferred as NSString).expandingTildeInPath))
+        }
+        if let bundled = bundledLocation {
+            urls.append(bundled)
         }
         var folder = Bundle.main.executableURL?.deletingLastPathComponent()
         for _ in 0..<8 {
