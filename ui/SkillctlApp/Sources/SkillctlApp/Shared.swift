@@ -1,6 +1,93 @@
 import AppKit
 import SwiftUI
 
+/// The app's one spacing scale. Every screen, card, bar and sheet uses these
+/// values, so edges line up across screens and nothing is spaced by eye.
+enum Metrics {
+    /// Outer margin of every screen and sheet.
+    static let page: CGFloat = 24
+    /// Vertical gap between the sections of a screen.
+    static let section: CGFloat = 20
+    /// Inner padding of a card.
+    static let card: CGFloat = 14
+    /// Gap between items inside a card, grid or bar.
+    static let gap: CGFloat = 12
+    /// Gap between a label and what it labels.
+    static let tight: CGFloat = 6
+    /// Gap between a card's title row and its body.
+    static let header: CGFloat = 8
+    /// Width of the list column of a list-plus-detail screen.
+    static let listWidth: CGFloat = 280
+    /// Corner radius of cards and tiles.
+    static let radius: CGFloat = 10
+}
+
+/// Every `GroupBox` in the app: a title row aligned with the card's left
+/// edge, then the body on a rounded surface with the same inner padding
+/// everywhere. Applied once at the root so call sites stay plain GroupBoxes.
+struct CardGroupBoxStyle: GroupBoxStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        VStack(alignment: .leading, spacing: Metrics.header) {
+            configuration.label
+                .fontWeight(.semibold)
+                .frame(maxWidth: .infinity, alignment: .leading)
+            // One stack around the body: a GroupBox body with several children
+            // must become one card, not one card per child.
+            VStack(alignment: .leading, spacing: Metrics.header) {
+                configuration.content
+            }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(Metrics.card)
+                .background(
+                    RoundedRectangle(cornerRadius: Metrics.radius)
+                        .fill(Color.secondary.opacity(0.08))
+                )
+                .overlay(
+                    RoundedRectangle(cornerRadius: Metrics.radius)
+                        .strokeBorder(Color.secondary.opacity(0.12))
+                )
+        }
+    }
+}
+
+/// The frame of every sheet: a title, the body, then the buttons right-aligned
+/// at the bottom, all inside the page margin.
+struct SheetLayout<Content: View, Buttons: View>: View {
+    let title: String
+    let width: CGFloat
+    @ViewBuilder let content: Content
+    @ViewBuilder let buttons: Buttons
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: Metrics.gap) {
+            Text(title).font(.title3.bold())
+            content
+            HStack(spacing: Metrics.gap) {
+                Spacer()
+                buttons
+            }
+            .padding(.top, Metrics.tight)
+        }
+        .padding(Metrics.page)
+        .frame(width: width)
+    }
+}
+
+extension View {
+    /// The outer margin of a scrolling screen, pinned to the top-left.
+    func pageLayout() -> some View {
+        padding(Metrics.page)
+            .frame(maxWidth: .infinity, alignment: .topLeading)
+    }
+
+    /// A full-width bar (filters, summaries) aligned to the page margin.
+    func barLayout(vertical: CGFloat = Metrics.gap) -> some View {
+        padding(.horizontal, Metrics.page)
+            .padding(.vertical, vertical)
+            .frame(maxWidth: .infinity, alignment: .leading)
+    }
+}
+
 /// A coloured pill for `error`, `warning`, `info` and link states.
 struct SeverityBadge: View {
     let text: String
@@ -45,7 +132,10 @@ struct FindingsTable: View {
 
     var body: some View {
         if findings.isEmpty {
-            ContentUnavailableView(emptyText, systemImage: "checkmark.circle")
+            Label(emptyText, systemImage: "checkmark.circle.fill")
+                .foregroundStyle(.green)
+                .padding(Metrics.card)
+                .frame(maxWidth: .infinity, alignment: .leading)
         } else {
             VStack(alignment: .leading, spacing: 0) {
                 HStack(spacing: 10) {
@@ -59,14 +149,14 @@ struct FindingsTable: View {
                     }
                 }
                 .font(.callout)
-                .padding(.horizontal, 12).padding(.vertical, 8)
+                .padding(.horizontal, Metrics.card).padding(.vertical, Metrics.header)
                 Divider()
-                List {
+                VStack(alignment: .leading, spacing: Metrics.gap) {
                     group("Errors", errors)
                     group("Warnings", warnings)
                     group("Notes", others)
                 }
-                .listStyle(.inset)
+                .padding(Metrics.card)
             }
         }
     }
@@ -74,8 +164,15 @@ struct FindingsTable: View {
     @ViewBuilder
     private func group(_ title: String, _ items: [Finding]) -> some View {
         if !items.isEmpty {
-            SwiftUI.Section(title) {
-                ForEach(items) { finding in row(finding) }
+            VStack(alignment: .leading, spacing: 0) {
+                Text(title.uppercased())
+                    .font(.caption2.weight(.semibold))
+                    .foregroundStyle(.secondary)
+                    .padding(.bottom, Metrics.tight)
+                ForEach(Array(items.enumerated()), id: \.element.id) { index, finding in
+                    if index > 0 { Divider() }
+                    row(finding)
+                }
             }
         }
     }
@@ -111,7 +208,7 @@ struct FindingsTable: View {
                 .foregroundStyle(.tertiary)
             }
         }
-        .padding(.vertical, 4)
+        .padding(.vertical, Metrics.tight)
     }
 
     private func location(_ path: String, _ line: Int?) -> String {
@@ -139,7 +236,7 @@ struct ProblemsList: View {
                 }
                 Spacer(minLength: 0)
             }
-            .padding(.vertical, 3)
+            .padding(.vertical, Metrics.tight)
         }
     }
 }
@@ -160,8 +257,9 @@ struct StatTile: View {
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(12)
-        .background(.quaternary.opacity(0.5), in: RoundedRectangle(cornerRadius: 10))
+        .padding(Metrics.card)
+        .background(RoundedRectangle(cornerRadius: Metrics.radius).fill(Color.secondary.opacity(0.08)))
+        .overlay(RoundedRectangle(cornerRadius: Metrics.radius).strokeBorder(Color.secondary.opacity(0.12)))
     }
 }
 

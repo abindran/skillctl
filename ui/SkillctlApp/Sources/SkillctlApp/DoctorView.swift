@@ -11,7 +11,7 @@ struct DoctorView: View {
 
     var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 18) {
+            VStack(alignment: .leading, spacing: Metrics.section) {
                 if let report = state.doctor {
                     statusCard(report)
                     if !report.problems.isEmpty {
@@ -35,8 +35,7 @@ struct DoctorView: View {
                         description: Text("Run it to check links, pins, store integrity, hook registration, telemetry, harness versions and MCP usage."))
                 }
             }
-            .padding(20)
-            .frame(maxWidth: .infinity, alignment: .leading)
+            .pageLayout()
         }
         .navigationTitle("Doctor")
         .toolbar {
@@ -90,7 +89,6 @@ struct DoctorView: View {
                 }
                 .controlSize(.small)
             }
-            .padding(4)
         }
     }
 
@@ -110,7 +108,7 @@ struct DoctorView: View {
                     }
                     if let footer {
                         Divider()
-                        Text(footer).font(.caption).foregroundStyle(.secondary).padding(.top, 6)
+                        Text(footer).font(.caption).foregroundStyle(.secondary).padding(.top, Metrics.header)
                     }
                 }
             }
@@ -164,7 +162,7 @@ struct DoctorView: View {
             .controlSize(.small)
             .help("Copy the suggested fix to the clipboard")
         }
-        .padding(.vertical, 8)
+        .padding(.vertical, Metrics.gap)
     }
 
     private func harnessCard(_ findings: [Problem], _ harnesses: Harnesses) -> some View {

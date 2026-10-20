@@ -10,16 +10,17 @@ struct ProjectsView: View {
     }
 
     var body: some View {
-        HSplitView {
+        HStack(spacing: 0) {
             List(state.projects, selection: $selected) { project in
-                VStack(alignment: .leading) {
-                    Text(project.name).bold()
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(project.name).fontWeight(.medium)
                     Text("\(project.skills.count) pin(s), \(project.instances.count) folder(s)")
                         .font(.caption).foregroundStyle(.secondary)
                 }
+                .padding(.vertical, 4)
                 .tag(project.id)
             }
-            .frame(minWidth: 200, idealWidth: 240, maxWidth: 280)
+            .frame(width: Metrics.listWidth)
             .listStyle(.inset)
             .overlay {
                 if state.projects.isEmpty {
@@ -27,6 +28,7 @@ struct ProjectsView: View {
                                            description: Text("Attach a folder to create one."))
                 }
             }
+            Divider()
             if let project {
                 ProjectDetail(project: project)
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -56,20 +58,21 @@ struct ProjectDetail: View {
 
     var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 18) {
+            VStack(alignment: .leading, spacing: Metrics.section) {
                 VStack(alignment: .leading, spacing: 4) {
                     Text(project.name).font(.title2.bold())
                     Text("\(project.skills.count) pin(s) linked into \(project.instances.count) folder(s). Pins are per project; every attached folder of the project receives the same links.")
                         .font(.callout).foregroundStyle(.secondary)
                 }
-                GroupBox("Attached folders") {
+                GroupBox {
                     if project.instances.isEmpty {
                         Text("None. Attach a folder to this project to link its pins.")
                             .foregroundStyle(.secondary)
                             .frame(maxWidth: .infinity, alignment: .leading)
                     }
-                    ForEach(project.instances) { instance in
-                        HStack(alignment: .firstTextBaseline) {
+                    ForEach(Array(project.instances.enumerated()), id: \.element.id) { index, instance in
+                        if index > 0 { Divider() }
+                        HStack(alignment: .center, spacing: Metrics.gap) {
                             VStack(alignment: .leading, spacing: 2) {
                                 Text(instance.path).font(.system(.body, design: .monospaced))
                                 if let status = statuses[instance.path], let links = status.links {
@@ -88,8 +91,11 @@ struct ProjectDetail: View {
                             Button("Reveal") { Panels.reveal(instance.path) }
                             Button("Detach…", role: .destructive) { confirmDetach = instance }
                         }
-                        .padding(.vertical, 2)
+                        .controlSize(.small)
+                        .padding(.vertical, 4)
                     }
+                } label: {
+                    Label("Attached folders", systemImage: "folder")
                 }
 
                 GroupBox {
@@ -112,15 +118,16 @@ struct ProjectDetail: View {
                         .frame(minHeight: CGFloat(project.pins.count) * 28 + 40)
                     }
                 } label: {
-                    HStack {
-                        Text("Pins")
+                    HStack(spacing: Metrics.tight) {
+                        Label("Pins", systemImage: "pin")
                         Spacer()
                         Button("Relink") { Task { await state.relink(project: project.name) } }
                         Button("Add pin…") { showAddPin = true }
                     }
+                    .controlSize(.small)
                 }
             }
-            .padding(20)
+            .padding(Metrics.page)
         }
         .sheet(isPresented: $showAddPin) {
             AddPinSheet(project: project)
@@ -162,7 +169,7 @@ struct AddPinSheet: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
+        VStack(alignment: .leading, spacing: Metrics.gap) {
             Text("Pin into \(project.name)").font(.headline)
             TextField("Filter", text: $filter)
             Table(candidates, selection: $selection) {
@@ -186,7 +193,7 @@ struct AddPinSheet: View {
                 .disabled(selection == nil)
             }
         }
-        .padding(20)
+        .padding(Metrics.page)
         .frame(width: 620)
     }
 }
@@ -201,7 +208,7 @@ struct AttachSheet: View {
     @State private var skills: Set<Artifact.ID> = []
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
+        VStack(alignment: .leading, spacing: Metrics.gap) {
             Text("Attach a folder").font(.headline)
             HStack {
                 Text(folder?.path ?? "No folder chosen").lineLimit(1).truncationMode(.middle)
@@ -244,7 +251,7 @@ struct AttachSheet: View {
                 .disabled(folder == nil || (mode == 0 ? newName.isEmpty : existing == nil))
             }
         }
-        .padding(20)
+        .padding(Metrics.page)
         .frame(width: 520)
     }
 }

@@ -42,9 +42,10 @@ struct KindView: View {
     }
 
     var body: some View {
-        HSplitView {
+        HStack(spacing: 0) {
             list
-                .frame(minWidth: 230, idealWidth: 270, maxWidth: 320)
+                .frame(width: Metrics.listWidth)
+            Divider()
             if let entry = selected {
                 ArtifactDetail(kind: kind, entry: entry)
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -77,7 +78,7 @@ struct KindView: View {
         VStack(spacing: 0) {
             TextField("Search \(kind.title.lowercased())", text: $search)
                 .textFieldStyle(.roundedBorder)
-                .padding(10)
+                .padding(Metrics.gap)
             List(selection: $selectedName) {
                 let drafts = entries.filter { $0.draft != nil }
                 let installed = entries.filter { $0.draft == nil }
@@ -95,7 +96,8 @@ struct KindView: View {
             Text("\(entries.count) \(kind.title.lowercased()), \(entries.flatMap(\.versions).count) version(s)")
                 .font(.caption).foregroundStyle(.secondary)
                 .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(8)
+                .padding(.horizontal, Metrics.gap)
+                .padding(.vertical, Metrics.header)
         }
     }
 
@@ -107,7 +109,7 @@ struct KindView: View {
             }
             Text(subtitle(entry)).font(.caption).foregroundStyle(.secondary).lineLimit(1)
         }
-        .padding(.vertical, 2)
+        .padding(.vertical, 4)
         .tag(entry.name)
     }
 
@@ -126,7 +128,7 @@ struct KindView: View {
     }
 
     private var newSheet: some View {
-        VStack(alignment: .leading, spacing: 12) {
+        VStack(alignment: .leading, spacing: Metrics.gap) {
             Text("New \(kind.singular) draft").font(.headline)
             TextField("Name (lowercase letters, digits, hyphens)", text: $newName)
             Text("Runs skillctl new --kind \(kind.id) <name>: a writable folder under ~/.skills/drafts with a \(kind.document) scaffold. Edit it in your editor, validate, then seal.")
@@ -146,7 +148,7 @@ struct KindView: View {
                 .disabled(newName.trimmingCharacters(in: .whitespaces).isEmpty)
             }
         }
-        .padding(20)
+        .padding(Metrics.page)
         .frame(width: 460)
     }
 }
@@ -188,7 +190,7 @@ struct ArtifactDetail: View {
 
     var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 20) {
+            VStack(alignment: .leading, spacing: Metrics.section) {
                 header
                 if let draft = entry.draft { draftCard(draft) }
                 if isHook { registrationCard }
@@ -197,8 +199,7 @@ struct ArtifactDetail: View {
                 Text("Root document \(kind.document). A pin links to \(kind.linksTo).")
                     .font(.caption).foregroundStyle(.tertiary)
             }
-            .padding(20)
-            .frame(maxWidth: .infinity, alignment: .leading)
+            .pageLayout()
         }
         .task(id: "\(entry.name)|\(selectedVersion ?? "")|\(entry.draft?.path ?? "")") {
             // The selected version's document, or the draft's when there is no version.
@@ -209,16 +210,20 @@ struct ArtifactDetail: View {
         .sheet(isPresented: $showDerive) { deriveSheet }
         .sheet(isPresented: $showPin) { pinSheet }
         .sheet(isPresented: Binding(get: { validating != nil }, set: { if !$0 { validating = nil } })) {
-            VStack(alignment: .leading, spacing: 12) {
+            VStack(alignment: .leading, spacing: Metrics.gap) {
                 Text("Validation of \(validating ?? "")").font(.headline)
                 if let findings {
-                    FindingsTable(findings: findings, emptyText: "0 error(s), 0 warning(s)").frame(minHeight: 240)
+                    ScrollView {
+                        FindingsTable(findings: findings, emptyText: "0 error(s), 0 warning(s)")
+                    }
+                    .frame(minHeight: 160, maxHeight: 480)
+                    .background(RoundedRectangle(cornerRadius: Metrics.radius).fill(Color.secondary.opacity(0.08)))
                 } else {
                     ProgressView().frame(maxWidth: .infinity, minHeight: 240)
                 }
                 HStack { Spacer(); Button("Close") { validating = nil }.keyboardShortcut(.defaultAction) }
             }
-            .padding(20)
+            .padding(Metrics.page)
             .frame(width: 720)
         }
         .confirmationDialog(
@@ -459,7 +464,7 @@ struct ArtifactDetail: View {
                             .font(.system(.body, design: .monospaced))
                             .textSelection(.enabled)
                             .frame(maxWidth: .infinity, alignment: .leading)
-                            .padding(10)
+                            .padding(Metrics.gap)
                     }
                     .frame(minHeight: 160, idealHeight: 420, maxHeight: 560)
                     .background(Color(nsColor: .textBackgroundColor), in: RoundedRectangle(cornerRadius: 6))
@@ -475,7 +480,7 @@ struct ArtifactDetail: View {
     }
 
     private var sealSheet: some View {
-        VStack(alignment: .leading, spacing: 12) {
+        VStack(alignment: .leading, spacing: Metrics.gap) {
             Text("Seal \(entry.name)").font(.headline)
             Picker("Version bump", selection: $sealBump) {
                 Text("as written in \(kind.document)").tag("keep")
@@ -495,12 +500,12 @@ struct ArtifactDetail: View {
                 .keyboardShortcut(.defaultAction)
             }
         }
-        .padding(20)
+        .padding(Metrics.page)
         .frame(width: 460)
     }
 
     private var deriveSheet: some View {
-        VStack(alignment: .leading, spacing: 12) {
+        VStack(alignment: .leading, spacing: Metrics.gap) {
             Text("Cursor override for \(entry.name)").font(.headline)
             TextField("Cursor model id, for example gpt-5 or claude-4.5-sonnet[effort=high]", text: $deriveModel)
             Text("Writes cursor.md into the draft: the same prompt with this model and a read-the-skill line per preloaded skill. Once sealed and pinned it links as .cursor/agents/\(entry.name).md, and rule H222 stops firing.")
@@ -516,12 +521,12 @@ struct ArtifactDetail: View {
                 .disabled(deriveModel.trimmingCharacters(in: .whitespaces).isEmpty)
             }
         }
-        .padding(20)
+        .padding(Metrics.page)
         .frame(width: 520)
     }
 
     private var pinSheet: some View {
-        VStack(alignment: .leading, spacing: 12) {
+        VStack(alignment: .leading, spacing: Metrics.gap) {
             Text("Pin \(version?.reference ?? entry.name)").font(.headline)
             Picker("Project", selection: $pinProject) {
                 ForEach(state.projects) { Text($0.name).tag(String?.some($0.name)) }
@@ -541,7 +546,7 @@ struct ArtifactDetail: View {
                 .disabled(pinProject == nil || version == nil)
             }
         }
-        .padding(20)
+        .padding(Metrics.page)
         .frame(width: 460)
     }
 }

@@ -164,8 +164,8 @@ struct StoreView: View {
     }
 
     private var filterBar: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            HStack(spacing: 8) {
+        VStack(alignment: .leading, spacing: Metrics.gap) {
+            HStack(spacing: Metrics.tight) {
                 ForEach(kindCounts, id: \.id) { item in
                     Button {
                         kind = item.id
@@ -180,15 +180,15 @@ struct StoreView: View {
                 }
                 Spacer()
             }
-            HStack {
+            HStack(spacing: Metrics.gap) {
                 TextField("Search by name", text: $search)
                     .textFieldStyle(.roundedBorder)
-                    .frame(maxWidth: 280)
+                    .frame(width: Metrics.listWidth)
                 Toggle("Unused only", isOn: $unusedOnly)
                 Spacer()
             }
         }
-        .padding(12)
+        .barLayout()
     }
 
     private var summaryBar: some View {
@@ -206,7 +206,7 @@ struct StoreView: View {
         }
         .font(.caption)
         .foregroundStyle(.secondary)
-        .padding(8)
+        .barLayout(vertical: Metrics.header)
     }
 
     @ViewBuilder
@@ -234,7 +234,7 @@ struct CleanupSheet: View {
     @State private var victims: [GcReport.Victim]?
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
+        VStack(alignment: .leading, spacing: Metrics.gap) {
             Text("Clean up the store").font(.headline)
             Stepper("Keep the newest \(keep) version(s) of every artifact", value: $keep, in: 1...10)
                 .onChange(of: keep) { Task { await preview() } }
@@ -272,7 +272,7 @@ struct CleanupSheet: View {
                 .keyboardShortcut(.defaultAction)
             }
         }
-        .padding(20)
+        .padding(Metrics.page)
         .frame(width: 560)
         .task { await preview() }
     }
@@ -292,7 +292,7 @@ struct InstallSheet: View {
     @State private var all = true
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
+        VStack(alignment: .leading, spacing: Metrics.gap) {
             Text("Install into the store").font(.headline)
             HStack {
                 TextField("Folder path or Git URL (git@…, https://…, file://…)", text: $source)
@@ -316,7 +316,7 @@ struct InstallSheet: View {
                 .disabled(source.trimmingCharacters(in: .whitespaces).isEmpty)
             }
         }
-        .padding(20)
+        .padding(Metrics.page)
         .frame(width: 560)
     }
 }
@@ -333,7 +333,7 @@ struct BulkDeleteSheet: View {
     private var pinned: [Artifact] { versions.filter { !$0.pinned_by.isEmpty } }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
+        VStack(alignment: .leading, spacing: Metrics.gap) {
             Text("Delete \(deletable.count) version(s) from the store").font(.headline)
             if !deletable.isEmpty {
                 GroupBox("Will be deleted") {
@@ -382,7 +382,7 @@ struct BulkDeleteSheet: View {
                 .keyboardShortcut(.defaultAction)
             }
         }
-        .padding(20)
+        .padding(Metrics.page)
         .frame(width: 560)
     }
 }

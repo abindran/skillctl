@@ -36,6 +36,8 @@ heading when cutting a release.
   scripts, hooks) laid out as a searchable list of artifacts and a detail
   pane (description, draft, versions, hook registration) with the authoring
   actions new, validate, seal, edit, pin, register and agent derive, a
+  one spacing scale (`Metrics`) and a shared card style applied to every
+  screen, card, bar and sheet, fixed-width list columns, a
   needs-attention section on the dashboard, a Log screen with activity by
   day, activation through the hook and ccusage cost and tokens, a Doctor
   status card with copyable fixes, bulk deletion of selected (for example

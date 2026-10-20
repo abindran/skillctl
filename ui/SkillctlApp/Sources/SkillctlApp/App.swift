@@ -24,6 +24,7 @@ struct SkillctlApp: App {
         Settings {
             SettingsView()
                 .environment(state)
+                .groupBoxStyle(CardGroupBoxStyle())
         }
     }
 }

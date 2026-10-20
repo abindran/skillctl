@@ -85,7 +85,8 @@ struct ContentView: View {
                     }
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(8)
+                .padding(.horizontal, Metrics.gap)
+                .padding(.vertical, Metrics.header)
             }
         } detail: {
             VSplitView {
@@ -112,6 +113,7 @@ struct ContentView: View {
                 .help("Show the commands the app ran and their output (⌘`)")
             }
         }
+        .groupBoxStyle(CardGroupBoxStyle())
         .alert("skillctl reported a problem", isPresented: Binding(
             get: { state.lastError != nil },
             set: { if !$0 { state.lastError = nil } }
@@ -141,7 +143,9 @@ struct ContentView: View {
         try? await Task.sleep(for: .seconds(1))
         await state.refreshAll()
         await state.runDoctor(fix: false)
-        for item in [Screen.dashboard] + Screen.library + [.projects] + Screen.health {
+        let only = ProcessInfo.processInfo.environment["SKILLCTL_APP_SNAPSHOT_ONLY"]
+        let all: [Screen] = [Screen.dashboard] + Screen.library + [.projects] + Screen.health
+        for item in all where only == nil || only == item.id {
             screen = item
             try? await Task.sleep(for: .seconds(item == .quality ? 3 : item == .log ? 12 : 1.2))
             guard let window = NSApp.windows.first(where: { $0.isVisible && $0.contentView != nil && $0.frame.width > 600 }) else { continue }
@@ -228,11 +232,11 @@ struct ConsoleView: View {
                     .font(.system(.caption, design: .monospaced))
                     .textSelection(.enabled)
                     .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(8)
+                    .padding(Metrics.gap)
                 } else {
                     Text("No commands run yet.")
                         .foregroundStyle(.secondary)
-                        .padding()
+                        .padding(Metrics.gap)
                 }
             }
         }

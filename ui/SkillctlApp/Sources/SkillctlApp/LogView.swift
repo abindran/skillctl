@@ -19,7 +19,7 @@ struct LogView: View {
         @Bindable var state = state
         ScrollView {
             if let summary = state.summary {
-                VStack(alignment: .leading, spacing: 20) {
+                VStack(alignment: .leading, spacing: Metrics.section) {
                     Text("\(summary.current.day.from) → \(summary.current.day.to), compared with \(summary.previous.day.from) → \(summary.previous.day.to)")
                         .foregroundStyle(.secondary)
 
@@ -27,20 +27,19 @@ struct LogView: View {
                     metrics(summary)
                     alerts(summary)
                     usageSection
-                    HStack(alignment: .top, spacing: 16) {
+                    HStack(alignment: .top, spacing: Metrics.gap) {
                         chart("Skill activations", Count.from(summary.current.skills), empty: "No skill activations in this window.")
                         chart("Subagent runs", Count.from(summary.current.agents), empty: "No subagent runs in this window.")
                         chart("MCP tool calls", Count.from(summary.current.mcp_calls), empty: "No MCP tool calls in this window.")
                     }
                     Text(summary.note).font(.caption).foregroundStyle(.tertiary)
                 }
-                .padding(20)
-                .frame(maxWidth: .infinity, alignment: .leading)
+                .pageLayout()
             } else {
                 ContentUnavailableView(
                     "No summary", systemImage: "chart.bar",
                     description: Text("The event log is written by the skillctl-logger hook. Register it on the Hooks screen and use Claude Code or Cursor once."))
-                .padding(40)
+                .padding(Metrics.page)
             }
         }
         .navigationTitle("Log")
@@ -96,7 +95,7 @@ struct LogView: View {
     private func metrics(_ summary: LogSummary) -> some View {
         let cur = summary.current
         let prev = summary.previous
-        return LazyVGrid(columns: [GridItem(.adaptive(minimum: 170), spacing: 12)], spacing: 12) {
+        return LazyVGrid(columns: [GridItem(.adaptive(minimum: 180), spacing: Metrics.gap)], spacing: Metrics.gap) {
             StatTile(title: "Sessions", value: "\(cur.sessions)", detail: "prev \(prev.sessions)")
             StatTile(title: "Prompts", value: "\(cur.prompts)",
                      detail: "prev \(prev.prompts) · " + cur.by_tool.sorted { $0.key < $1.key }.map { "\($0.key) \($0.value)" }.joined(separator: ", "))
@@ -183,7 +182,7 @@ struct LogView: View {
 
     private func usageBody(_ usage: UsageReport) -> some View {
         VStack(alignment: .leading, spacing: 14) {
-            LazyVGrid(columns: [GridItem(.adaptive(minimum: 170), spacing: 12)], spacing: 12) {
+            LazyVGrid(columns: [GridItem(.adaptive(minimum: 180), spacing: Metrics.gap)], spacing: Metrics.gap) {
                 StatTile(title: "Cost", value: dollars(usage.total_cost), detail: "\(usage.days.count) day(s) with activity")
                 StatTile(title: "Cost per prompt", value: usage.cost_per_prompt.map(dollars) ?? "—",
                          detail: "\(usage.prompts) Claude Code prompt(s) in the log")
@@ -196,7 +195,7 @@ struct LogView: View {
                          tint: (usage.cache_hit_ratio ?? 1) < 0.8 ? .orange : .green)
             }
             if usage.days.count > 1 {
-                HStack(alignment: .top, spacing: 16) {
+                HStack(alignment: .top, spacing: Metrics.gap) {
                     GroupBox("Cost per day") {
                         Chart(usage.days) { day in
                             BarMark(x: .value("Day", String(day.date.suffix(5))), y: .value("USD", day.cost))

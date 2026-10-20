@@ -6,7 +6,7 @@ struct DashboardView: View {
 
     var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 20) {
+            VStack(alignment: .leading, spacing: Metrics.section) {
                 if state.cli == nil || state.toolProblem != nil {
                     GroupBox {
                         VStack(alignment: .leading, spacing: 6) {
@@ -15,7 +15,7 @@ struct DashboardView: View {
                                 .foregroundStyle(.secondary)
                             SettingsLink { Text("Open Settings…") }
                         }
-                        .padding(4)
+                        
                     }
                 }
 
@@ -41,7 +41,7 @@ struct DashboardView: View {
                 }
 
                 Text("Overview").font(.title2.bold())
-                LazyVGrid(columns: [GridItem(.adaptive(minimum: 180), spacing: 12)], spacing: 12) {
+                LazyVGrid(columns: [GridItem(.adaptive(minimum: 180), spacing: Metrics.gap)], spacing: Metrics.gap) {
                     Button { select(.projects) } label: {
                         StatTile(title: "Projects", value: "\(state.projects.count)",
                                  detail: "\(state.projects.flatMap(\.instances).count) attached folder(s)")
@@ -66,7 +66,7 @@ struct DashboardView: View {
                 .buttonStyle(.plain)
 
                 Text("Library").font(.title2.bold())
-                LazyVGrid(columns: [GridItem(.adaptive(minimum: 150), spacing: 12)], spacing: 12) {
+                LazyVGrid(columns: [GridItem(.adaptive(minimum: 180), spacing: Metrics.gap)], spacing: Metrics.gap) {
                     ForEach(ArtifactKind.all) { kind in
                         let names = Set(state.artifacts.filter { $0.kind == kind.id }.map(\.name))
                         let drafts = state.drafts.filter { $0.kind == kind.id }.count
@@ -81,7 +81,7 @@ struct DashboardView: View {
 
                 if let summary = state.summary {
                     Text("Last \(summary.days) days").font(.title2.bold())
-                    LazyVGrid(columns: [GridItem(.adaptive(minimum: 180), spacing: 12)], spacing: 12) {
+                    LazyVGrid(columns: [GridItem(.adaptive(minimum: 180), spacing: Metrics.gap)], spacing: Metrics.gap) {
                         StatTile(title: "Prompts", value: "\(summary.current.prompts)",
                                  detail: "prev \(summary.previous.prompts)")
                         StatTile(title: "Skill activations / 100 prompts",
@@ -107,13 +107,12 @@ struct DashboardView: View {
                                 }
                             }
                             .frame(maxWidth: .infinity, alignment: .leading)
-                            .padding(4)
+                            
                         }
                     }
                 }
             }
-            .padding(20)
-            .frame(maxWidth: .infinity, alignment: .leading)
+            .pageLayout()
         }
         .navigationTitle("Dashboard")
     }

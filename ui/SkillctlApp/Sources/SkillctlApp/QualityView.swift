@@ -15,15 +15,25 @@ struct QualityView: View {
     }
 
     var body: some View {
-        VStack(spacing: 0) {
-            Picker("", selection: $tab) {
-                Text("Validate an artifact").tag(0)
-                Text("Lint instruction files").tag(1)
+        VStack(alignment: .leading, spacing: 0) {
+            HStack {
+                Picker("", selection: $tab) {
+                    Text("Validate an artifact").tag(0)
+                    Text("Lint instruction files").tag(1)
+                }
+                .pickerStyle(.segmented)
+                .labelsHidden()
+                .fixedSize()
+                Spacer()
             }
-            .pickerStyle(.segmented)
-            .padding(12)
+            .barLayout()
             Divider()
-            if tab == 0 { validate } else { lint }
+            ScrollView {
+                Group {
+                    if tab == 0 { validate } else { lint }
+                }
+                .pageLayout()
+            }
         }
         .navigationTitle("Quality")
         .task {
@@ -38,79 +48,103 @@ struct QualityView: View {
     }
 
     private var validate: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            HStack {
-                Menu(reference ?? "Choose an artifact…") {
-                    ForEach(ArtifactKind.all) { kind in
-                        let items = state.artifacts.filter { $0.kind == kind.id }
-                        if !items.isEmpty {
-                            SwiftUI.Section(kind.title) {
-                                ForEach(items) { artifact in
-                                    Button(artifact.reference) { reference = artifact.id; validateFindings = nil }
+        VStack(alignment: .leading, spacing: Metrics.section) {
+            GroupBox {
+                VStack(alignment: .leading, spacing: Metrics.gap) {
+                    HStack(spacing: Metrics.gap) {
+                        Menu(reference ?? "Choose an artifact…") {
+                            ForEach(ArtifactKind.all) { kind in
+                                let items = state.artifacts.filter { $0.kind == kind.id }
+                                if !items.isEmpty {
+                                    SwiftUI.Section(kind.title) {
+                                        ForEach(items) { artifact in
+                                            Button(artifact.reference) { reference = artifact.id; validateFindings = nil }
+                                        }
+                                    }
                                 }
                             }
                         }
+                        .fixedSize()
+                        Button("Validate") {
+                            guard let reference else { return }
+                            running = true
+                            Task {
+                                validateFindings = await state.validate(reference) ?? []
+                                running = false
+                            }
+                        }
+                        .buttonStyle(.borderedProminent)
+                        .disabled(reference == nil || running)
+                        if running { ProgressView().controlSize(.small) }
+                        Spacer()
                     }
+                    Text("Skills get S and O rules (including the directive-description rules O140–O145), hooks K1xx, rules K2xx, commands K3xx, agents H22x, scripts K5xx. Nothing is written.")
+                        .font(.caption).foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
                 }
-                .frame(maxWidth: 420)
-                Button("Validate") {
-                    guard let reference else { return }
-                    running = true
-                    Task {
-                        validateFindings = await state.validate(reference) ?? []
-                        running = false
-                    }
-                }
-                .disabled(reference == nil || running)
-                if running { ProgressView().controlSize(.small) }
-                Spacer()
+            } label: {
+                Label("Artifact", systemImage: "checkmark.seal")
             }
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(.horizontal, 12)
-            Text("Skills get S and O rules (including the directive-description rules O140–O145), hooks K1xx, rules K2xx, commands K3xx, agents H22x, scripts K5xx. Nothing is written.")
-                .font(.caption).foregroundStyle(.secondary).padding(.horizontal, 12)
-            if let validateFindings {
-                FindingsTable(findings: validateFindings, emptyText: "0 error(s), 0 warning(s)")
-            } else {
-                Spacer()
-            }
+            results(validateFindings, emptyText: "0 error(s), 0 warning(s)", prompt: "Choose an artifact and press Validate.")
         }
-        .padding(.top, 12)
     }
 
     private var lint: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            HStack {
-                Menu(lintFolder?.path ?? "Choose a folder…") {
-                    ForEach(instanceFolders, id: \.self) { url in
-                        Button(url.path) { lintFolder = url }
+        VStack(alignment: .leading, spacing: Metrics.section) {
+            GroupBox {
+                VStack(alignment: .leading, spacing: Metrics.gap) {
+                    HStack(spacing: Metrics.gap) {
+                        Menu(lintFolder?.path ?? "Choose a folder…") {
+                            ForEach(instanceFolders, id: \.self) { url in
+                                Button(url.path) { lintFolder = url }
+                            }
+                            Divider()
+                            Button("Other folder…") { lintFolder = Panels.chooseFolder(prompt: "Lint") ?? lintFolder }
+                        }
+                        .fixedSize()
+                        Button("Lint") {
+                            guard let lintFolder else { return }
+                            running = true
+                            Task {
+                                lintFindings = await state.lint(folder: lintFolder) ?? []
+                                running = false
+                            }
+                        }
+                        .buttonStyle(.borderedProminent)
+                        .disabled(lintFolder == nil || running)
+                        if running { ProgressView().controlSize(.small) }
+                        Spacer()
                     }
-                    Divider()
-                    Button("Other folder…") { lintFolder = Panels.chooseFolder(prompt: "Lint") ?? lintFolder }
+                    Text("Read-only checks I301–I306, I308 and I309 on AGENTS.md, CLAUDE.md, CLAUDE.local.md and .cursor/rules; each finding carries the suggested fix. The files are team-owned and changed through review, never by skillctl.")
+                        .font(.caption).foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
                 }
-                .frame(maxWidth: 520)
-                Button("Lint") {
-                    guard let lintFolder else { return }
-                    running = true
-                    Task {
-                        lintFindings = await state.lint(folder: lintFolder) ?? []
-                        running = false
-                    }
-                }
-                .disabled(lintFolder == nil || running)
-                if running { ProgressView().controlSize(.small) }
-                Spacer()
+            } label: {
+                Label("Folder", systemImage: "folder")
             }
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(.horizontal, 12)
-            Text("Read-only checks I301–I306, I308 and I309 on AGENTS.md, CLAUDE.md, CLAUDE.local.md and .cursor/rules; each finding carries the suggested fix. The files are team-owned and changed through review, never by skillctl.")
-                .font(.caption).foregroundStyle(.secondary).padding(.horizontal, 12)
-            if let lintFindings {
-                FindingsTable(findings: lintFindings, emptyText: "No instruction-file findings.")
-            } else {
-                Spacer()
-            }
+            results(lintFindings, emptyText: "No instruction-file findings.", prompt: "Choose a folder and press Lint.")
         }
-        .padding(.top, 12)
+    }
+
+    /// The findings, filling the rest of the screen on the same card surface.
+    @ViewBuilder
+    private func results(_ findings: [Finding]?, emptyText: String, prompt: String) -> some View {
+        VStack(alignment: .leading, spacing: Metrics.header) {
+            Label("Findings", systemImage: "list.bullet.rectangle").fontWeight(.semibold)
+            Group {
+                if let findings {
+                    FindingsTable(findings: findings, emptyText: emptyText)
+                } else {
+                    Text(prompt)
+                        .foregroundStyle(.secondary)
+                        .padding(Metrics.card)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .topLeading)
+            .background(RoundedRectangle(cornerRadius: Metrics.radius).fill(Color.secondary.opacity(0.08)))
+            .overlay(RoundedRectangle(cornerRadius: Metrics.radius).strokeBorder(Color.secondary.opacity(0.12)))
+            .clipShape(RoundedRectangle(cornerRadius: Metrics.radius))
+        }
     }
 }
