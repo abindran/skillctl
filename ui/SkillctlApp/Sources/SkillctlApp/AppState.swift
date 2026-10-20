@@ -7,17 +7,20 @@ import SwiftUI
 @Observable
 final class AppState {
     // Settings, persisted.
+    private let defaults: UserDefaults
     var binaryPath: String {
-        didSet { UserDefaults.standard.set(binaryPath, forKey: "binaryPath"); relocate() }
+        didSet { defaults.set(binaryPath, forKey: "binaryPath"); relocate() }
     }
     var homeOverride: String {
-        didSet { UserDefaults.standard.set(homeOverride, forKey: "homeOverride"); relocate() }
+        didSet { defaults.set(homeOverride, forKey: "homeOverride"); relocate() }
     }
 
     // Resolved tool.
     private(set) var cli: CLI?
     private(set) var version: String?
     private(set) var searched: [String] = []
+    /// Why the resolved binary cannot be used (older than the app), or nil.
+    private(set) var toolProblem: String?
 
     // Loaded data.
     var projects: [Project] = []
@@ -33,9 +36,14 @@ final class AppState {
     var console: [CommandRun] = []
     var showConsole = false
 
-    init() {
-        binaryPath = UserDefaults.standard.string(forKey: "binaryPath") ?? ""
-        homeOverride = UserDefaults.standard.string(forKey: "homeOverride") ?? ""
+    /// Extra environment for every CLI call (tests redirect `HOME`).
+    private let environment: [String: String]
+
+    init(defaults: UserDefaults = .standard, environment: [String: String] = [:]) {
+        self.defaults = defaults
+        self.environment = environment
+        binaryPath = defaults.string(forKey: "binaryPath") ?? ""
+        homeOverride = defaults.string(forKey: "homeOverride") ?? ""
         relocate()
     }
 
@@ -53,18 +61,32 @@ final class AppState {
 
     private func relocate() {
         searched = CLI.candidates(preferred: binaryPath).map(\.path)
+        toolProblem = nil
         if let url = CLI.locate(preferred: binaryPath) {
-            cli = CLI(binary: url, home: homeOverride)
-            Task { version = await cli?.version() }
+            cli = CLI(binary: url, home: homeOverride, environment: environment)
+            Task { await checkTool() }
         } else {
             cli = nil
             version = nil
         }
     }
 
+    /// Record the binary's version and whether it is current enough for the app.
+    func checkTool() async {
+        guard let cli else { return }
+        version = await cli.version()
+        let missing = await cli.missingCommands()
+        toolProblem = missing.isEmpty ? nil : """
+            skillctl at \(cli.binary.path) (\(version ?? "unknown version")) has no \(missing.joined(separator: ", ")) command(s), so it is older than this app. \
+            Point Settings (⌘,) at a current build, for example the checkout's target/debug/skillctl, or reinstall skillctl.
+            """
+    }
+
     // MARK: Loading
 
     func refreshAll() async {
+        await checkTool()
+        if toolProblem != nil { return }
         async let a: () = loadProjects()
         async let b: () = loadArtifacts()
         async let c: () = loadHooks()

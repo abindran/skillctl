@@ -19,7 +19,11 @@ heading when cutting a release.
   doctor (run, fix, advisory sections), log summary with charts, and
   validate/lint. Every screen runs the CLI with `--json`; a console pane
   shows each command and its output. `Scripts/bundle.sh` produces
-  `Skillctl.app`; `.github/workflows/swift.yml` builds it in CI.
+  `Skillctl.app`; `.github/workflows/swift.yml` builds it in CI. The app
+  prefers a checkout's `target/debug/skillctl` over installed copies and
+  reports a binary that lacks the subcommands it needs instead of using
+  it. `swift test` runs end-to-end tests that drive the real binary through
+  the app's state layer against a temporary home.
 - `log summary [--days <n>] [--until <time>] [--strict]` (strategy work
   item W29): the event log over two windows with per-skill, per-agent,
   per-server and test-command counts, and the alerts `log-silent`,

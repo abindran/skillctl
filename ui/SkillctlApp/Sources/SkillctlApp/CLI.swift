@@ -50,15 +50,25 @@ struct CLI {
     let binary: URL
     /// `SKILLCTL_HOME` override; nil keeps the user's default `~/.skills`.
     let home: String?
+    /// Extra variables for the child process (tests redirect `HOME`).
+    var environment: [String: String] = [:]
 
-    /// Where the binary is looked for, in order: the path from Settings, the
-    /// Cargo and Homebrew locations, every `PATH` entry, and a debug build of
-    /// the skillctl repository the app itself lives in (`target/debug/skillctl`
-    /// found by walking up from the executable).
+    /// Where the binary is looked for, in order: the path from Settings; a
+    /// debug build of the skillctl checkout the app itself lives in
+    /// (`target/debug/skillctl`, found by walking up from the executable),
+    /// because the app is developed against the CLI it ships with and an
+    /// installed copy may predate it; then the Cargo and Homebrew locations
+    /// and every `PATH` entry.
     static func candidates(preferred: String?) -> [URL] {
         var urls: [URL] = []
         if let preferred, !preferred.isEmpty {
             urls.append(URL(fileURLWithPath: (preferred as NSString).expandingTildeInPath))
+        }
+        var folder = Bundle.main.executableURL?.deletingLastPathComponent()
+        for _ in 0..<8 {
+            guard let current = folder else { break }
+            urls.append(current.appendingPathComponent("target/debug/skillctl"))
+            folder = current.deletingLastPathComponent()
         }
         let homeDir = FileManager.default.homeDirectoryForCurrentUser
         urls.append(homeDir.appendingPathComponent(".cargo/bin/skillctl"))
@@ -69,13 +79,24 @@ struct CLI {
                 urls.append(URL(fileURLWithPath: String(entry)).appendingPathComponent("skillctl"))
             }
         }
-        var folder = Bundle.main.executableURL?.deletingLastPathComponent()
-        for _ in 0..<8 {
-            guard let current = folder else { break }
-            urls.append(current.appendingPathComponent("target/debug/skillctl"))
-            folder = current.deletingLastPathComponent()
-        }
         return urls
+    }
+
+    /// Subcommands the app depends on. An installed skillctl without one of
+    /// them is older than the app and is reported instead of used.
+    static let requiredCommands = ["artifacts", "doctor", "hook", "lint", "log", "projects", "validate"]
+
+    /// The required subcommands this binary's `--help` does not list; empty
+    /// when the binary supports everything the app uses.
+    func missingCommands() async -> [String] {
+        let run = await run(["--help"], json: false)
+        guard run.succeeded else { return Self.requiredCommands }
+        let listed = Set(
+            run.stdout.split(separator: "\n")
+                .map { $0.trimmingCharacters(in: .whitespaces) }
+                .compactMap { $0.split(separator: " ", maxSplits: 1).first.map(String.init) }
+        )
+        return Self.requiredCommands.filter { !listed.contains($0) }
     }
 
     static func locate(preferred: String?) -> URL? {
@@ -108,6 +129,7 @@ struct CLI {
             if let home, !home.isEmpty {
                 environment["SKILLCTL_HOME"] = (home as NSString).expandingTildeInPath
             }
+            environment.merge(self.environment) { _, override in override }
             // Never let a prompt block: stdin is closed, and --yes answers.
             environment["CI"] = environment["CI"] ?? "1"
             process.environment = environment

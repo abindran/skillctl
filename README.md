@@ -839,13 +839,13 @@ cargo fmt --check && cargo clippy --all-targets --locked -- -D warnings && cargo
 | Log | `log summary` over 7, 14 or 30 days: metrics against the previous window, alerts, bar charts of skills, agents and MCP servers | Change the window |
 | Quality | `validate` of any store version; `lint` of an attached folder or any other folder | Run either |
 
-Requirements: macOS 14 or later and Xcode 15 or later (the Swift toolchain). The app finds the binary in `~/.cargo/bin`, Homebrew, `PATH`, or the repository's `target/debug/skillctl` when run from a checkout; Settings (⌘,) takes an explicit path and an optional `SKILLCTL_HOME` override, which is how a test home can be inspected.
+Requirements: macOS 14 or later and Xcode 15 or later (the Swift toolchain). The app looks for the binary in this order: the path set in Settings (⌘,), a checkout's `target/debug/skillctl` (found by walking up from the app, so a development build always drives the app built next to it), then `~/.cargo/bin`, Homebrew and `PATH`. It then checks `skillctl --help` for the subcommands it needs; an installed copy that predates the app (for example one without `log` or `artifacts`) is reported on the Dashboard and in the sidebar instead of producing errors screen by screen. Settings also take a `SKILLCTL_HOME` override, which is how a test home can be inspected.
 
 ```bash
 ui/SkillctlApp/Scripts/bundle.sh && open ui/SkillctlApp/dist/Skillctl.app
 ```
 
-`swift run` inside `ui/SkillctlApp/` starts it without bundling, and opening that folder in Xcode gives the usual editor. The bundle is unsigned; sign it with `codesign --deep --force --sign "<identity>" ui/SkillctlApp/dist/Skillctl.app` before handing it to someone else. `.github/workflows/swift.yml` builds the app on every change under `ui/` and uploads `Skillctl.app` as a workflow artifact.
+`swift run` inside `ui/SkillctlApp/` starts it without bundling, and opening that folder in Xcode gives the usual editor. `swift test` runs the end-to-end tests in `Tests/SkillctlAppTests`: they drive the checkout's `target/debug/skillctl` through the app's state layer against a temporary home and a redirected `HOME` (init, author a skill and a hook, attach, pin, register the hook, feed a log, summary, doctor, status, validate, lint, a failing command, unpin, unregister, detach), so the Rust JSON and the Swift models are checked together; build the CLI first with `cargo build`. The bundle is unsigned; sign it with `codesign --deep --force --sign "<identity>" ui/SkillctlApp/dist/Skillctl.app` before handing it to someone else. `.github/workflows/swift.yml` builds the app on every change under `ui/` and uploads `Skillctl.app` as a workflow artifact.
 
 ## Releasing
 

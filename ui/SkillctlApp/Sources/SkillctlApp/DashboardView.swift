@@ -7,11 +7,11 @@ struct DashboardView: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 20) {
-                if state.cli == nil {
+                if state.cli == nil || state.toolProblem != nil {
                     GroupBox {
                         VStack(alignment: .leading, spacing: 6) {
-                            Text("The skillctl binary was not found.").bold()
-                            Text("Open Settings (⌘,) and point the app at it, for example ~/.cargo/bin/skillctl or the repository's target/debug/skillctl.")
+                            Text(state.cli == nil ? "The skillctl binary was not found." : "The skillctl binary is older than this app.").bold()
+                            Text(state.toolProblem ?? "Open Settings (⌘,) and point the app at it, for example the checkout's target/debug/skillctl or ~/.cargo/bin/skillctl.")
                                 .foregroundStyle(.secondary)
                             SettingsLink { Text("Open Settings…") }
                         }

@@ -12,9 +12,14 @@ jobs:
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@v4
+      - name: Build the CLI the end-to-end tests drive
+        run: cargo build --locked
       - name: Build the SwiftUI app
         working-directory: ui/SkillctlApp
         run: swift build -c release
+      - name: End-to-end tests (app state layer against the real binary)
+        working-directory: ui/SkillctlApp
+        run: swift test
       - name: Bundle Skillctl.app
         run: ui/SkillctlApp/Scripts/bundle.sh release
       - uses: actions/upload-artifact@v4

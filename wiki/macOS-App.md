@@ -7,13 +7,14 @@
 | File | Role |
 |---|---|
 | `Package.swift` | SwiftPM executable target, macOS 14 deployment target, Swift 5 language mode (tools version 5.10) so strict concurrency does not block a small app |
-| `CLI.swift` | `CLI`: binary discovery (Settings path, `~/.cargo/bin`, Homebrew, `PATH`, then `target/debug/skillctl` found by walking up from the executable so a checkout's debug build is used), `run` (background queue, both pipes drained concurrently, stdin closed, optional `SKILLCTL_HOME`), `decode`, `perform`, and `failure(of:)`, which turns the CLI's `{"error","message","hint","exit_code"}` object into a `CLIError`. `CommandRun` is the console record. |
+| `CLI.swift` | `CLI`: binary discovery (Settings path, then `target/debug/skillctl` found by walking up from the executable so a checkout's debug build beats an installed, possibly older, copy, then `~/.cargo/bin`, Homebrew, `PATH`), `missingCommands` (the `requiredCommands` that `--help` does not list; an outdated binary is reported, not used), `run` (background queue, both pipes drained concurrently, stdin closed, optional `SKILLCTL_HOME` and extra environment), `decode`, `perform`, and `failure(of:)`, which turns the CLI's `{"error","message","hint","exit_code"}` object into a `CLIError`. `CommandRun` is the console record. |
 | `Models.swift` | Codable mirrors: `Project`, `Instance`, `Artifact` (the `artifacts` row), `HookEntry`, `DoctorReport` with `Problem`, `Telemetry`, `Harnesses`, `MCPAudit`, `LogSummary` with `LogWindow` and `LogAlert`, `Finding` (validate and lint), `StatusReport` |
 | `AppState.swift` | `@Observable @MainActor` store: settings persisted in `UserDefaults`, loaded data, a `busy` set, the console, `lastError`, and one method per CLI action. `doctor` is decoded regardless of exit status because it exits 1 while problems remain; `validate` and `lint` accept exit 3 for the same reason. |
 | `ContentView.swift` | `NavigationSplitView` with the `Screen` sidebar (badges: unused versions, unhealthy hooks, doctor problems, warning alerts), the toolbar, the error alert, the `VSplitView` console |
 | `DashboardView`, `ProjectsView`, `StoreView`, `HooksView`, `DoctorView`, `LogView`, `QualityView`, `SettingsView` | One file per screen; sheets for attach, add pin, install and register hook; confirmation dialogs before detach, garbage collection and hook removal |
 | `Shared.swift` | `SeverityBadge`, `FindingsTable`, `ProblemsList`, `StatTile`, `Panels` (NSOpenPanel wrappers, reveal in Finder) |
-| `Scripts/bundle.sh`, `Resources/Info.plist` | `swift build` plus a hand-made `Skillctl.app` bundle in `dist/`; unsigned |
+| `Scripts/bundle.sh`, `Resources/Info.plist` | `swift build` plus a hand-made `Skillctl.app` bundle in `dist/`; unsigned. The script quits a running copy first because `open` only activates an already running app. |
+| `Tests/SkillctlAppTests/EndToEndTests.swift` | XCTest, `@MainActor`. Finds `target/debug/skillctl` by walking up from the test file (skips if the CLI is not built), builds an `AppState` with a private `UserDefaults` suite, a temporary `SKILLCTL_HOME` and `HOME` redirected into the temp folder, then runs the whole workflow against the real binary: init, `new`/`seal` a skill and a hook, attach a Git folder to a new project with a pin, register the hook (settings land in the redirected `HOME`), write a log and read the summary, doctor with its advisory sections (Cursor's version from the log), status, validate, lint, a failing `add`, unpin, unregister, detach. Two more tests cover the outdated-binary report (a fake `skillctl` whose `--help` lacks `log`) and the discovery order. |
 
 ## Decisions
 
@@ -21,7 +22,8 @@
 2. **No prompts, ever.** Every call passes `--yes` where a prompt is possible and closes stdin, so a command can never hang on a question; anything that deserves a confirmation is confirmed in the app instead (detach, gc, hook remove).
 3. **Working folder is a parameter.** Commands that act on the current folder (`attach`, `detach`, `status`, `lint`) receive the chosen folder as the process's `currentDirectoryURL`; the app itself has no notion of a current project.
 4. **Failures are the CLI's words.** The error alert shows the CLI's `message` (and `hint` as the recovery suggestion), never an app-side paraphrase.
-5. **Not in the Rust CI.** `ci.yml` is untouched; `swift.yml` runs only when `ui/**` changes and uploads the bundle as an artifact.
+5. **Not in the Rust CI.** `ci.yml` is untouched; `swift.yml` runs only when `ui/**` changes: it builds the CLI, builds the app, runs `swift test` and uploads the bundle as an artifact.
+6. **Development builds win.** The user tests with the debug build until a release is cut, and an installed `~/.cargo/bin/skillctl` from an earlier release produced `unrecognized subcommand 'log'` in the first version of the app. Hence the discovery order and the `--help` capability check.
 
 ## Running
 

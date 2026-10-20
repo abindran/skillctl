@@ -37,9 +37,9 @@ struct ContentView: View {
             .navigationSplitViewColumnWidth(min: 180, ideal: 200)
             .safeAreaInset(edge: .bottom) {
                 VStack(alignment: .leading, spacing: 2) {
-                    Text(state.version ?? "skillctl not found")
+                    Text(state.toolProblem != nil ? "\(state.version ?? "skillctl") is outdated" : state.version ?? "skillctl not found")
                         .font(.caption)
-                        .foregroundStyle(state.cli == nil ? Color.red : Color.secondary)
+                        .foregroundStyle(state.cli == nil || state.toolProblem != nil ? Color.red : Color.secondary)
                     if let cli = state.cli {
                         Text(cli.binary.path)
                             .font(.caption2)
