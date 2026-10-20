@@ -193,6 +193,11 @@ final class AppState {
         await perform(["agent", "derive", agent, "--model", model]) { await self.loadDrafts() }
     }
 
+    /// The root document and file list of `name@version` or `name@draft`.
+    func show(_ reference: String) async -> ShownDocument? {
+        await load("show", ShownDocument.self, ["show", reference])
+    }
+
     func validateDraft(_ name: String) async -> [Finding]? {
         await validate("\(name)@draft")
     }

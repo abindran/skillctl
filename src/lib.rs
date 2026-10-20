@@ -58,6 +58,7 @@ pub fn run(command: Command, context: &mut Context<'_>) -> Result<(), Error> {
         Command::Skills => commands::skills::run(context),
         Command::Drafts => commands::drafts::run(context),
         Command::Uninstall { target } => commands::uninstall::run(context, &target),
+        Command::Show { target } => commands::show::run(context, &target),
         Command::Artifacts { unused } => commands::artifacts::run(context, unused),
         Command::Relink { all, project } => commands::pins::relink(context, all, project.as_ref()),
         Command::New {

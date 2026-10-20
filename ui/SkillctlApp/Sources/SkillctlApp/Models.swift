@@ -40,6 +40,26 @@ struct Artifact: Decodable, Hashable, Identifiable {
     var reference: String { id }
 }
 
+/// The root document of a version or draft, with the files beside it (`skillctl show`).
+struct ShownDocument: Decodable, Hashable {
+    struct Entry: Decodable, Hashable, Identifiable {
+        let path: String
+        let bytes: Int
+        var id: String { path }
+    }
+    let name: String
+    /// A semantic version, or `draft`.
+    let version: String
+    let kind: String
+    let dir: String
+    /// The root document's file name, for example `SKILL.md`.
+    let document: String
+    let content: String
+    let files: [Entry]
+
+    var documentURL: URL { URL(fileURLWithPath: dir).appendingPathComponent(document) }
+}
+
 /// What `gc` would delete (`--dry-run`) or did delete.
 struct GcReport: Decodable, Hashable {
     struct Victim: Decodable, Hashable, Identifiable {

@@ -103,6 +103,15 @@ final class EndToEndTests: XCTestCase {
         XCTAssertNil(state.artifact(named: "review", version: "0.1.0"))
         XCTAssertNotNil(state.artifact(named: "review", version: "0.2.0"))
 
+        // The root document of a version or a draft is readable through the app.
+        let shownValue = await state.show("review@0.2.0")
+        let shownDocument = try XCTUnwrap(shownValue)
+        XCTAssertEqual(shownDocument.document, "SKILL.md")
+        XCTAssertEqual(shownDocument.version, "0.2.0")
+        XCTAssertTrue(shownDocument.content.contains("name: review"), shownDocument.content)
+        XCTAssertEqual(shownDocument.files.map(\.path), ["SKILL.md"])
+        XCTAssertTrue(shownDocument.documentURL.path.hasSuffix("/review/SKILL.md"))
+
         // A specific version can be deleted from the store; pinned ones are refused.
         await state.edit("review@0.2.0")  // edit itself bumps the draft to 0.2.1
         await state.seal("review", bump: nil)
@@ -243,7 +252,7 @@ final class EndToEndTests: XCTestCase {
         try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: fake.path)
         let old = CLI(binary: fake, home: home.path, environment: [:])
         let missing = await old.missingCommands()
-        XCTAssertEqual(missing, ["artifacts", "drafts", "hook", "lint", "log", "projects", "uninstall"])
+        XCTAssertEqual(missing, ["artifacts", "drafts", "hook", "lint", "log", "projects", "show", "uninstall"])
 
         let defaults = UserDefaults(suiteName: "dev.abindran.skillctl.tests.\(UUID().uuidString)")!
         defaults.set(fake.path, forKey: "binaryPath")

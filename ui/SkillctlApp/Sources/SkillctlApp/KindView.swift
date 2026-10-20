@@ -172,6 +172,10 @@ struct ArtifactDetail: View {
     @State private var findings: [Finding]?
     @State private var confirmRemoveHook: HookEntry?
     @State private var confirmDelete: String?
+    /// Which document the lower pane shows: a version reference or `<name>@draft`.
+    @State private var shownReference: String?
+    @State private var shown: ShownDocument?
+    @State private var loadingDocument = false
 
     private var isHook: Bool { kind.id == "hook" }
     private var pinnedVersions: [Artifact] { entry.versions.filter { !$0.pinned_by.isEmpty } }
@@ -189,11 +193,17 @@ struct ArtifactDetail: View {
                 if let draft = entry.draft { draftCard(draft) }
                 if isHook { registrationCard }
                 if !entry.versions.isEmpty { versionsCard }
+                documentCard
                 Text("Root document \(kind.document). A pin links to \(kind.linksTo).")
                     .font(.caption).foregroundStyle(.tertiary)
             }
             .padding(20)
             .frame(maxWidth: .infinity, alignment: .leading)
+        }
+        .task(id: "\(entry.name)|\(selectedVersion ?? "")|\(entry.draft?.path ?? "")") {
+            // The selected version's document, or the draft's when there is no version.
+            let reference = version?.reference ?? entry.draft.map { "\($0.name)@draft" }
+            await showDocument(reference)
         }
         .sheet(isPresented: $showSeal) { sealSheet }
         .sheet(isPresented: $showDerive) { deriveSheet }
@@ -388,6 +398,80 @@ struct ArtifactDetail: View {
         findings = nil
         validating = reference
         Task { findings = await state.validate(reference) ?? [] }
+    }
+
+    @MainActor
+    private func showDocument(_ reference: String?) async {
+        shownReference = reference
+        guard let reference else { shown = nil; return }
+        loadingDocument = true
+        let document = await state.show(reference)
+        if shownReference == reference { shown = document }
+        loadingDocument = false
+    }
+
+    private var documentCard: some View {
+        GroupBox {
+            VStack(alignment: .leading, spacing: 8) {
+                HStack(spacing: 8) {
+                    if let draft = entry.draft {
+                        Picker("", selection: Binding(
+                            get: { shownReference ?? "" },
+                            set: { reference in Task { await showDocument(reference) } }
+                        )) {
+                            if let version { Text("v\(version.version)").tag(version.reference) }
+                            Text("draft").tag("\(draft.name)@draft")
+                        }
+                        .pickerStyle(.segmented)
+                        .fixedSize()
+                    } else if let version {
+                        Text("v\(version.version)").font(.callout).foregroundStyle(.secondary)
+                    }
+                    if let shown {
+                        Text(shown.document).font(.system(.callout, design: .monospaced))
+                        Text("\(shown.files.count) file(s)").font(.caption).foregroundStyle(.secondary)
+                    }
+                    Spacer()
+                    if let shown {
+                        Button("Open") { NSWorkspace.shared.open(shown.documentURL) }
+                            .help("Open \(shown.document) in the default editor" + (shown.version == "draft" ? "" : "; store files are read-only"))
+                        Button("Reveal") { Panels.reveal(shown.dir) }
+                    }
+                }
+                .controlSize(.small)
+                if loadingDocument && shown == nil {
+                    ProgressView().controlSize(.small).frame(maxWidth: .infinity, minHeight: 80)
+                } else if let shown {
+                    if shown.files.count > 1 {
+                        ScrollView(.horizontal, showsIndicators: false) {
+                            HStack(spacing: 6) {
+                                ForEach(shown.files) { file in
+                                    Text(file.path)
+                                        .font(.system(.caption2, design: .monospaced))
+                                        .padding(.horizontal, 6).padding(.vertical, 2)
+                                        .background(Color.secondary.opacity(file.path == shown.document ? 0.25 : 0.12), in: Capsule())
+                                }
+                            }
+                        }
+                    }
+                    ScrollView {
+                        Text(shown.content)
+                            .font(.system(.body, design: .monospaced))
+                            .textSelection(.enabled)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .padding(10)
+                    }
+                    .frame(minHeight: 160, idealHeight: 420, maxHeight: 560)
+                    .background(Color(nsColor: .textBackgroundColor), in: RoundedRectangle(cornerRadius: 6))
+                } else {
+                    Text("Select a version above to read its \(kind.document).")
+                        .font(.caption).foregroundStyle(.secondary)
+                        .frame(maxWidth: .infinity, minHeight: 60, alignment: .center)
+                }
+            }
+        } label: {
+            Label("Document", systemImage: "doc.text")
+        }
     }
 
     private var sealSheet: some View {

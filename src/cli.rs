@@ -235,6 +235,12 @@ pub enum Command {
         version: Option<String>,
     },
 
+    /// Print the root document of a stored version (default: newest stable) or a draft.
+    Show {
+        /// Artifact name, optionally followed by @version or @draft.
+        target: String,
+    },
+
     /// Delete a store version, or every version of an artifact, that nothing pins.
     Uninstall {
         /// Artifact name, optionally followed by @version (default: every version).

@@ -20,6 +20,7 @@ pub mod new;
 pub mod pins;
 pub mod projects;
 pub mod seal;
+pub mod show;
 pub mod skills;
 pub mod status;
 pub mod telemetry;

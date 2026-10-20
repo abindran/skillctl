@@ -13,6 +13,9 @@ heading when cutting a release.
 
 ### Added
 
+- `show <name>[@<version>|@draft]`: prints the root document of a stored
+  version or a draft; `--json` adds kind, folder and the file list. The
+  macOS app renders it under the selected version.
 - `uninstall <name>[@<version>]`: deletes one store version or every version
   of an artifact, refusing pinned ones with the pins named; `--dry-run`
   previews. The macOS app's delete actions use it.
@@ -24,7 +27,8 @@ heading when cutting a release.
   scripts, hooks) laid out as a searchable list of artifacts and a detail
   pane (description, draft, versions, hook registration) with the authoring
   actions new, validate, seal, edit, pin, register and agent derive, a
-  needs-attention section on the dashboard, delete actions for a version or
+  needs-attention section on the dashboard, the selected version's root
+  document shown under the versions table, delete actions for a version or
   a whole artifact (through `uninstall`), findings shown as a summary plus
   cards grouped by severity, a Store screen with one
   expandable row per artifact, kind chips, an inspector and a cleanup flow
