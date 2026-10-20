@@ -13,6 +13,13 @@ heading when cutting a release.
 
 ### Added
 
+- A native macOS app in `ui/SkillctlApp/` (SwiftUI, macOS 14+): dashboard,
+  projects (attach, pin, unpin, relink, detach), store (install, validate,
+  garbage collection, unused review), hooks (register, repair, remove),
+  doctor (run, fix, advisory sections), log summary with charts, and
+  validate/lint. Every screen runs the CLI with `--json`; a console pane
+  shows each command and its output. `Scripts/bundle.sh` produces
+  `Skillctl.app`; `.github/workflows/swift.yml` builds it in CI.
 - `log summary [--days <n>] [--until <time>] [--strict]` (strategy work
   item W29): the event log over two windows with per-skill, per-agent,
   per-server and test-command counts, and the alerts `log-silent`,

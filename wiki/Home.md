@@ -23,12 +23,15 @@ This wiki documents how the tool is built. Usage, use cases and build instructio
 | [Linking](Linking) | Link targets, ownership rule, instance resolution, the reconcile algorithm, atomic link replacement, Git exclude block, global skills |
 | [Hooks](Hooks) | Hook artifacts (`HOOK.md`), registration into `~/.claude/settings.json` and the `~/.claude/hooks` link folder, how Cursor imports the same registration, the `skillctl-logger` internals, doctor's hook checks |
 | [Validation](Validation) | Validation pipeline, `Rule` trait, spec/org/harness rule groups, suppression and strict policy, text/JSON/JUnit reports, reference-validator integration |
+| [macOS App](macOS-App) | The SwiftUI front end in `ui/SkillctlApp`: how it drives the CLI's `--json` output, file layout, decisions |
 
 ## System context
 
 ```mermaid
 flowchart LR
     Dev([Developer]) --> CLI[skillctl CLI]
+    Dev --> App[Skillctl.app]
+    App -- --json --> CLI
     CLI --> Reg[(~/.skills/registry.yml)]
     CLI --> Store[(~/.skills/store)]
     CLI --> Drafts[(~/.skills/drafts)]

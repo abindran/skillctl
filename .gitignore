@@ -1,3 +1,8 @@
 target/
 .zcode/target/
 /dist
+
+# macOS app (SwiftPM)
+ui/SkillctlApp/.build/
+ui/SkillctlApp/dist/
+ui/SkillctlApp/.swiftpm/

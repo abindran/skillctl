@@ -25,6 +25,7 @@ The technical architecture lives in the [project wiki](https://github.com/abindr
 - [Configuration](#configuration)
 - [Home folder layout](#home-folder-layout)
 - [Development](#development)
+- [macOS app](#macos-app)
 - [Implementation status](#implementation-status)
 
 ## Use cases
@@ -824,6 +825,28 @@ cargo fmt --check && cargo clippy --all-targets --locked -- -D warnings && cargo
 - Every test sets `SKILLCTL_HOME` to a temporary folder and uses explicit temporary global targets, so tests never touch your real store or `~/.claude/skills/`.
 - CI (`.github/workflows/ci.yml`) runs formatting, Clippy and the locked test suite on Ubuntu and macOS 14.
 
+## macOS app
+
+[`ui/SkillctlApp/`](ui/SkillctlApp/) is a native SwiftUI front end for the same store, registry and hooks. It contains no skill logic: every screen runs the `skillctl` binary with `--json` and renders the result, so the app and the CLI can never disagree, and anything the app does can be repeated in a terminal (the **Console** pane, ⌘`, shows every command it ran with its output).
+
+| Screen | Shows | Actions |
+|---|---|---|
+| Dashboard | Project, store, hook and doctor counts; the last week's prompts, activations per 100 prompts, subagent runs, compactions per session; log alerts | Jump to a screen |
+| Projects | Each project's attached folders with their link health (`status`), and its pins with kind and version | Attach a folder to a new or existing project, pin and unpin artifacts (`add`/`remove --project`), relink, reveal in Finder, detach (keeping or deleting the project) |
+| Store | Every store version (`artifacts`) with kind, pins, recorded uses and the unused review flag; filters by kind, name and unused | Install from a folder or Git URL, validate a version, register a stored hook, collect garbage with a confirmation |
+| Hooks | `hook list`: link state, declared and registered events, missing registrations | Register a stored hook, repair a partial registration, remove a hook |
+| Doctor | Problems with their fixes, and the advisory Telemetry, Harness versions and MCP sections | Run, `--fix` |
+| Log | `log summary` over 7, 14 or 30 days: metrics against the previous window, alerts, bar charts of skills, agents and MCP servers | Change the window |
+| Quality | `validate` of any store version; `lint` of an attached folder or any other folder | Run either |
+
+Requirements: macOS 14 or later and Xcode 15 or later (the Swift toolchain). The app finds the binary in `~/.cargo/bin`, Homebrew, `PATH`, or the repository's `target/debug/skillctl` when run from a checkout; Settings (⌘,) takes an explicit path and an optional `SKILLCTL_HOME` override, which is how a test home can be inspected.
+
+```bash
+ui/SkillctlApp/Scripts/bundle.sh && open ui/SkillctlApp/dist/Skillctl.app
+```
+
+`swift run` inside `ui/SkillctlApp/` starts it without bundling, and opening that folder in Xcode gives the usual editor. The bundle is unsigned; sign it with `codesign --deep --force --sign "<identity>" ui/SkillctlApp/dist/Skillctl.app` before handing it to someone else. `.github/workflows/swift.yml` builds the app on every change under `ui/` and uploads `Skillctl.app` as a workflow artifact.
+
 ## Releasing
 
 Changes are tracked in [CHANGELOG.md](CHANGELOG.md) (Keep a Changelog format). Add entries under **Unreleased** as you go; when cutting a release, rename that heading to the version and date. A release is a Git tag `vX.Y.Z` whose version matches `Cargo.toml` **and** has a `## [X.Y.Z]` section in the changelog, which becomes the GitHub release notes. Pushing the tag runs [release.yml](.github/workflows/release.yml):
@@ -885,6 +908,7 @@ scripts/release/build-universal.sh && scripts/release/package.sh 0.1.0 && script
 | `quiet-commands` hook: bare test and build commands redirected through the `test-quiet` wrapper; logger 1.2.1 counts raw against wrapped runs | Implemented, register when the log shows bypasses (W24) |
 | `doctor` records harness versions and warns once after a Claude Code or Cursor upgrade (`harness-upgraded`) | Implemented; the weekly regression eval itself waits for W03–W05 (W28) |
 | `log summary` with `activation-drop`, `compaction-rise`, `log-silent` and `raw-test-commands` alerts; `--strict` for cron | Implemented for what the log holds; cache-hit and cost alerts belong to the OTel backend (W29) |
+| macOS app (`ui/SkillctlApp`, SwiftUI over the CLI's `--json` output): dashboard, projects, store, hooks, doctor, log, quality | Implemented; unsigned bundle via `Scripts/bundle.sh` |
 | Subagent telemetry: the logger records `SubagentStart`/`SubagentStop` with the agent type (Cursor maps only `SubagentStop`) | Implemented by the logger (W21) |
 | `install` from Git and local folders, `edit`, `doctor --fix`, `gc`, `config`, `completions` | Implemented |
 | Release pipeline: universal build, optional signing and notarization, clean-runner verification, GitHub release, crates.io publish and verification | Implemented (GitHub Actions) |

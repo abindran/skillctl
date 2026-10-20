@@ -1,0 +1,24 @@
+name: macOS app
+
+on:
+  push:
+    branches: [main]
+    paths: ["ui/**", ".github/workflows/swift.yml"]
+  pull_request:
+    paths: ["ui/**", ".github/workflows/swift.yml"]
+
+jobs:
+  build:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build the SwiftUI app
+        working-directory: ui/SkillctlApp
+        run: swift build -c release
+      - name: Bundle Skillctl.app
+        run: ui/SkillctlApp/Scripts/bundle.sh release
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Skillctl.app
+          path: ui/SkillctlApp/dist/Skillctl.app
+          if-no-files-found: error

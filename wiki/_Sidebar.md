@@ -4,3 +4,4 @@
 - [Linking](Linking)
 - [Hooks](Hooks)
 - [Validation](Validation)
+- [macOS App](macOS-App)
