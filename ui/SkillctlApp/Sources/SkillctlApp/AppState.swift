@@ -53,6 +53,10 @@ final class AppState {
     }
 
     var isBusy: Bool { !busy.isEmpty }
+    /// `0.1.0` from `skillctl 0.1.0 (commit …, registry schema 1)`.
+    var shortVersion: String? {
+        version?.split(separator: " ").dropFirst().first.map(String.init)
+    }
     /// The CLI inside this app bundle, if the build carries one.
     var bundledBinary: URL? { CLI.bundled }
     var usesBundledBinary: Bool { cli != nil && cli?.binary == CLI.bundled }

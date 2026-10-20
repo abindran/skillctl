@@ -25,6 +25,9 @@ heading when cutting a release.
   wrote. `report [--days <n>]` breaks cost and tokens down by model,
   skill, agent and source from the API request events, with tool runs and
   failures, slash commands and active time.
+- The app's sidebar footer shows only the skillctl version, and a warning
+  that opens Settings when the binary is missing or outdated; the binary's
+  path and build commit stay in Settings.
 - The app's Log screen has a Cost by skill and agent card: a switch that
   runs `telemetry enable` with the bundled CLI (so the login service runs
   the copy inside the app), the setup checklist, and cost by skill, agent

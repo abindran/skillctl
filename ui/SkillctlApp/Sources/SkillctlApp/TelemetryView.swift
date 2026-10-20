@@ -52,20 +52,19 @@ struct TelemetrySection: View {
 
     private func setup(_ status: TelemetryStatus) -> some View {
         VStack(alignment: .leading, spacing: Metrics.gap) {
-            Text("Claude Code can export the cost and tokens of every API request, tagged with the skill and subagent that made it. Turning this on writes six variables into the env block of ~/.claude/settings.json (merged, with a backup) and runs the collector bundled with this app as a login service on \(status.endpoint).")
+            Text("Claude Code can export the cost and tokens of every API request, tagged with the skill and subagent that made it. Turning this on updates your Claude Code settings (with a backup) and runs the collector bundled with this app in the background.")
                 .font(.callout)
                 .fixedSize(horizontal: false, vertical: true)
-            Text("Prompts, responses, tool inputs, error text and your account identity are dropped before anything is written to \(status.data_dir).")
+            Text("Prompts, responses, tool inputs, error text and your account identity are never stored.")
                 .font(.caption).foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
             VStack(alignment: .leading, spacing: Metrics.tight) {
-                check(status.settings.configured, "Claude Code exports to \(status.endpoint)",
-                      missing: status.settings.missing.isEmpty ? nil : "missing " + status.settings.missing.joined(separator: ", "))
+                check(status.settings.configured, "Claude Code sends its telemetry here", missing: nil)
                 if status.service.supported {
-                    check(status.service.loaded && status.service.program_exists, "Login service runs the collector",
+                    check(status.service.loaded && status.service.program_exists, "The collector starts at login",
                           missing: serviceProblem(status.service))
                 }
-                check(status.running, "Collector answers on port \(status.port)",
+                check(status.running, "The collector is running",
                       missing: status.collector == "port-taken" ? "another program uses this port" : nil)
             }
             HStack {
@@ -85,7 +84,7 @@ struct TelemetrySection: View {
 
     private func serviceProblem(_ service: TelemetryStatus.Service) -> String? {
         if !service.installed { return "not installed" }
-        if !service.program_exists { return "points at \(service.program ?? "a binary") that no longer exists" }
+        if !service.program_exists { return "its copy of skillctl was moved or deleted" }
         if !service.loaded { return "installed but not loaded" }
         return nil
     }
@@ -109,8 +108,9 @@ struct TelemetrySection: View {
             if let program = status.service.program, let current = state.cli?.binary.path, program != current {
                 HStack(spacing: Metrics.tight) {
                     Image(systemName: "info.circle").foregroundStyle(.secondary)
-                    Text("The login service runs \(program), not the skillctl this app uses.")
-                        .font(.caption).foregroundStyle(.secondary).lineLimit(2)
+                    Text("The collector runs a different copy of skillctl than this app.")
+                        .font(.caption).foregroundStyle(.secondary)
+                        .help(program)
                     Button("Use this app's") { Task { await state.setTelemetry(enabled: true) } }
                         .controlSize(.small)
                         .disabled(switching)

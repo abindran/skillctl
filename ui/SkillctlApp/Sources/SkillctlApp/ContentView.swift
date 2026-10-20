@@ -72,18 +72,21 @@ struct ContentView: View {
             .listStyle(.sidebar)
             .navigationSplitViewColumnWidth(min: 190, ideal: 210)
             .safeAreaInset(edge: .bottom) {
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(state.toolProblem != nil ? "\(state.version ?? "skillctl") is outdated" : state.version ?? "skillctl not found")
-                        .font(.caption)
-                        .foregroundStyle(state.cli == nil || state.toolProblem != nil ? Color.red : Color.secondary)
-                    if let cli = state.cli {
-                        Text(cli.binary.path)
-                            .font(.caption2)
-                            .foregroundStyle(.tertiary)
-                            .lineLimit(1)
-                            .truncationMode(.middle)
+                // The version only; the binary's path and build live in Settings.
+                Group {
+                    if state.cli == nil || state.toolProblem != nil {
+                        SettingsLink {
+                            Label(state.cli == nil ? "skillctl not found" : "skillctl is outdated",
+                                  systemImage: "exclamationmark.triangle.fill")
+                                .foregroundStyle(.red)
+                        }
+                        .buttonStyle(.plain)
+                        .help(state.toolProblem ?? "Choose the skillctl binary in Settings")
+                    } else if let version = state.shortVersion {
+                        Text("skillctl \(version)").foregroundStyle(.tertiary)
                     }
                 }
+                .font(.caption)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(.horizontal, Metrics.gap)
                 .padding(.vertical, Metrics.header)
