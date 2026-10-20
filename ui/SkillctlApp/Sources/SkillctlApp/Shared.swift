@@ -204,8 +204,7 @@ struct FindingsTable: View {
                     Text(location(path, finding.line))
                         .font(.system(.caption2, design: .monospaced))
                         .lineLimit(1).truncationMode(.middle)
-                    Button("Reveal") { Panels.reveal(path) }
-                        .buttonStyle(.link).font(.caption2)
+                    FileLinks(path: path, line: finding.line)
                 }
                 .foregroundStyle(.tertiary)
             }
@@ -291,6 +290,128 @@ enum Panels {
 
     static func reveal(_ path: String) {
         NSWorkspace.shared.activateFileViewerSelecting([URL(fileURLWithPath: path)])
+    }
+
+    /// Open a file in its default app (an editor for Markdown and scripts).
+    static func open(_ path: String) {
+        NSWorkspace.shared.open(URL(fileURLWithPath: path))
+    }
+}
+
+/// A file's text for display, or why it cannot be shown. Store files are
+/// read-only and small, so reading them directly is safe.
+enum FileText {
+    static let limit = 1_000_000
+
+    static func read(_ path: String) -> Result<String, FileTextError> {
+        let url = URL(fileURLWithPath: path)
+        guard let data = try? Data(contentsOf: url) else { return .failure(.unreadable) }
+        if data.count > limit { return .failure(.tooLarge(data.count)) }
+        guard let text = String(data: data, encoding: .utf8) else { return .failure(.binary(data.count)) }
+        return .success(text)
+    }
+}
+
+enum FileTextError: Error {
+    case unreadable
+    case tooLarge(Int)
+    case binary(Int)
+
+    var message: String {
+        switch self {
+        case .unreadable: return "The file could not be read."
+        case .tooLarge(let bytes): return "The file is \(ByteCountFormatter.string(fromByteCount: Int64(bytes), countStyle: .file)); open it in an editor instead."
+        case .binary(let bytes): return "Binary file (\(ByteCountFormatter.string(fromByteCount: Int64(bytes), countStyle: .file)))."
+        }
+    }
+}
+
+/// Monospaced text with line numbers; `highlight` marks one line and scrolls to it.
+struct NumberedText: View {
+    let text: String
+    var highlight: Int?
+
+    var body: some View {
+        let lines = text.components(separatedBy: "\n")
+        let width = CGFloat(String(lines.count).count) * 9 + 8
+        ScrollViewReader { proxy in
+            ScrollView(.vertical) {
+                LazyVStack(alignment: .leading, spacing: 0) {
+                    ForEach(Array(lines.enumerated()), id: \.offset) { index, line in
+                        HStack(alignment: .top, spacing: Metrics.gap) {
+                            Text("\(index + 1)")
+                                .foregroundStyle(.tertiary)
+                                .frame(width: width, alignment: .trailing)
+                            Text(line.isEmpty ? " " : line)
+                                .textSelection(.enabled)
+                                .fixedSize(horizontal: false, vertical: true)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                        }
+                        .font(.system(.callout, design: .monospaced))
+                        .padding(.vertical, 1)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .background(index + 1 == highlight ? Color.yellow.opacity(0.18) : Color.clear)
+                        .id(index + 1)
+                    }
+                }
+                .padding(Metrics.gap)
+                .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            .onAppear { if let highlight { proxy.scrollTo(highlight, anchor: .center) } }
+        }
+        .background(Color(nsColor: .textBackgroundColor), in: RoundedRectangle(cornerRadius: 6))
+    }
+}
+
+/// A sheet showing one file so it can be checked without leaving the app.
+struct FilePreviewSheet: View {
+    let path: String
+    var line: Int?
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: Metrics.gap) {
+            HStack(spacing: Metrics.tight) {
+                Image(systemName: "doc.text").foregroundStyle(.secondary)
+                Text((path as NSString).lastPathComponent).font(.headline)
+                if let line { Text("line \(line)").font(.caption).foregroundStyle(.secondary) }
+                Spacer()
+                Button("Open in Editor") { Panels.open(path) }
+                Button("Reveal") { Panels.reveal(path) }
+                Button("Done") { dismiss() }.keyboardShortcut(.defaultAction)
+            }
+            .controlSize(.small)
+            Text(path).font(.system(.caption2, design: .monospaced)).foregroundStyle(.tertiary)
+                .lineLimit(1).truncationMode(.middle)
+            switch FileText.read(path) {
+            case .success(let text): NumberedText(text: text, highlight: line)
+            case .failure(let error):
+                Text(error.message).foregroundStyle(.secondary).frame(maxWidth: .infinity, maxHeight: .infinity)
+            }
+        }
+        .padding(Metrics.page)
+        .frame(minWidth: 720, idealWidth: 860, minHeight: 480, idealHeight: 640)
+    }
+}
+
+/// Preview, Open and Reveal links for a file, shown next to its name.
+struct FileLinks: View {
+    let path: String
+    var line: Int?
+    @State private var previewing = false
+
+    var body: some View {
+        HStack(spacing: Metrics.header) {
+            Button("Preview") { previewing = true }
+                .help("Show the file here")
+            Button("Open") { Panels.open(path) }
+                .help("Open in the default editor")
+            Button("Reveal") { Panels.reveal(path) }
+                .help("Show in Finder")
+        }
+        .buttonStyle(.link)
+        .font(.caption)
+        .sheet(isPresented: $previewing) { FilePreviewSheet(path: path, line: line) }
     }
 }
 

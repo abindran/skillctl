@@ -616,7 +616,11 @@ fn volatile_lines(text: &str) -> Vec<(usize, String)> {
         } else if iso_date(line) && STAMP_WORDS.iter().any(|word| lower.contains(word)) {
             out.push((offset, "line carries a generated date stamp".to_owned()));
         }
-        if line.contains("!`") || line.contains("$(") || line.contains("${") {
+        // `$(…)` and `${…}` inside inline code document syntax (a YAML
+        // placeholder, a shell example) and are never expanded; `!`cmd`` is
+        // the one injection form, and it is written with a backtick.
+        let prose = outside_code_spans(line);
+        if line.contains("!`") || prose.contains("$(") || prose.contains("${") {
             out.push((
                 offset,
                 "line contains a shell expansion or command injection whose output varies"
@@ -636,6 +640,27 @@ fn volatile_lines(text: &str) -> Vec<(usize, String)> {
             }
         }
     }
+    out
+}
+
+/// The line with inline code spans (`` `…` ``) removed. An unclosed
+/// backtick leaves the rest of the line in place.
+fn outside_code_spans(line: &str) -> String {
+    let mut out = String::new();
+    let mut rest = line;
+    while let Some(start) = rest.find('`') {
+        out.push_str(&rest[..start]);
+        let ticks = rest[start..].chars().take_while(|c| *c == '`').count();
+        let fence = &rest[start..start + ticks];
+        match rest[start + ticks..].find(fence) {
+            Some(end) => rest = &rest[start + ticks + end + ticks..],
+            None => {
+                out.push_str(&rest[start..]);
+                return out;
+            }
+        }
+    }
+    out.push_str(rest);
     out
 }
 
@@ -1010,5 +1035,23 @@ mod tests {
         );
         assert_eq!(files[0].lines, Some(2));
         assert_eq!(files[5].loads, "Every turn in Cursor (alwaysApply)");
+    }
+
+    #[test]
+    fn expansions_inside_inline_code_are_documentation() {
+        let flagged = |text: &str| {
+            volatile_lines(text)
+                .iter()
+                .any(|(_, reason)| reason.contains("shell expansion"))
+        };
+        assert!(!flagged(
+            "- Quote placeholders (`\"${...}\"`, `\"*{...}\"`)."
+        ));
+        assert!(!flagged("Run ``echo $(date)`` to see the form."));
+        assert!(flagged("Today is $(date)."));
+        assert!(flagged("Home: ${HOME}"));
+        assert!(flagged("Status: !`git status`"));
+        assert!(flagged("Unclosed `code ${X}"));
+        assert_eq!(outside_code_spans("a `b` c ``d`e`` f"), "a  c  f");
     }
 }

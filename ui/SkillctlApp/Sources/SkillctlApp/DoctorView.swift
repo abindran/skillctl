@@ -148,7 +148,7 @@ struct DoctorView: View {
                     HStack(spacing: 6) {
                         Image(systemName: "doc.text").font(.caption2)
                         Text(path).font(.system(.caption2, design: .monospaced)).lineLimit(1).truncationMode(.middle)
-                        Button("Reveal") { Panels.reveal(path) }.buttonStyle(.link).font(.caption2)
+                        FileLinks(path: path)
                     }
                     .foregroundStyle(.tertiary)
                 }

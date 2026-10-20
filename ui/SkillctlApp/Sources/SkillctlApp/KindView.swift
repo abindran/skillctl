@@ -208,6 +208,9 @@ struct ArtifactDetail: View {
     @State private var shownReference: String?
     @State private var shown: ShownDocument?
     @State private var loadingDocument = false
+    /// The file shown in the Document card, relative to the version folder;
+    /// nil shows the root document.
+    @State private var selectedFile: String?
 
     private var isHook: Bool { kind.id == "hook" }
     /// Skills, commands and agents can be global; rules and scripts are project-level.
@@ -458,10 +461,16 @@ struct ArtifactDetail: View {
     @MainActor
     private func showDocument(_ reference: String?) async {
         shownReference = reference
+        selectedFile = nil
         guard let reference else { shown = nil; return }
         loadingDocument = true
         let document = await state.show(reference)
         if shownReference == reference { shown = document }
+        // Snapshot mode only: show the first bundled file so the layout can be reviewed.
+        if ContentView.snapshotFolder != nil, ProcessInfo.processInfo.environment["SKILLCTL_APP_SNAPSHOT_FILE"] == "1",
+           let file = document?.files.first(where: { $0.path != document?.document }) {
+            selectedFile = file.path
+        }
         loadingDocument = false
     }
 
@@ -483,14 +492,15 @@ struct ArtifactDetail: View {
                         Text("v\(version.version)").font(.callout).foregroundStyle(.secondary)
                     }
                     if let shown {
-                        Text(shown.document).font(.system(.callout, design: .monospaced))
+                        Text(selectedFile ?? shown.document).font(.system(.callout, design: .monospaced))
                         Text("\(shown.files.count) file(s)").font(.caption).foregroundStyle(.secondary)
                     }
                     Spacer()
                     if let shown {
-                        Button("Open") { NSWorkspace.shared.open(shown.documentURL) }
-                            .help("Open \(shown.document) in the default editor" + (shown.version == "draft" ? "" : "; store files are read-only"))
-                        Button("Reveal") { Panels.reveal(shown.dir) }
+                        let path = filePath(shown)
+                        Button("Open") { Panels.open(path) }
+                            .help("Open \((path as NSString).lastPathComponent) in the default editor" + (shown.version == "draft" ? "" : "; store files are read-only"))
+                        Button("Reveal") { Panels.reveal(path) }
                     }
                 }
                 .controlSize(.small)
@@ -501,23 +511,26 @@ struct ArtifactDetail: View {
                         ScrollView(.horizontal, showsIndicators: false) {
                             HStack(spacing: 6) {
                                 ForEach(shown.files) { file in
-                                    Text(file.path)
-                                        .font(.system(.caption2, design: .monospaced))
-                                        .padding(.horizontal, 6).padding(.vertical, 2)
-                                        .background(Color.secondary.opacity(file.path == shown.document ? 0.25 : 0.12), in: Capsule())
+                                    fileChip(file, in: shown)
                                 }
                             }
                         }
                     }
-                    ScrollView {
-                        Text(shown.content)
-                            .font(.system(.body, design: .monospaced))
-                            .textSelection(.enabled)
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                            .padding(Metrics.gap)
+                    Group {
+                        if (selectedFile ?? shown.document) == shown.document {
+                            NumberedText(text: shown.content)
+                        } else {
+                            switch FileText.read(filePath(shown)) {
+                            case .success(let text): NumberedText(text: text)
+                            case .failure(let error):
+                                Text(error.message).foregroundStyle(.secondary)
+                                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                                    .background(Color(nsColor: .textBackgroundColor), in: RoundedRectangle(cornerRadius: 6))
+                            }
+                        }
                     }
+                    .id(selectedFile ?? shown.document)
                     .frame(minHeight: 160, idealHeight: 420, maxHeight: 560)
-                    .background(Color(nsColor: .textBackgroundColor), in: RoundedRectangle(cornerRadius: 6))
                 } else {
                     Text("Select a version above to read its \(kind.document).")
                         .font(.caption).foregroundStyle(.secondary)
@@ -527,6 +540,30 @@ struct ArtifactDetail: View {
         } label: {
             Label("Document", systemImage: "doc.text")
         }
+    }
+
+    /// The absolute path of the file the Document card shows.
+    private func filePath(_ shown: ShownDocument) -> String {
+        URL(fileURLWithPath: shown.dir).appendingPathComponent(selectedFile ?? shown.document).path
+    }
+
+    /// One file of the version: click to show it below.
+    private func fileChip(_ file: ShownDocument.Entry, in shown: ShownDocument) -> some View {
+        let selected = (selectedFile ?? shown.document) == file.path
+        let symbol = file.path == shown.document ? "doc.richtext"
+            : file.path.hasPrefix("scripts/") || !file.path.contains(".") || [".sh", ".py", ".js", ".rb"].contains(where: file.path.hasSuffix) ? "terminal"
+            : file.path.hasSuffix(".json") ? "curlybraces" : "doc.text"
+        return Button {
+            selectedFile = file.path == shown.document ? nil : file.path
+        } label: {
+            Label(file.path, systemImage: symbol)
+                .font(.system(.caption, design: .monospaced))
+                .padding(.horizontal, 8).padding(.vertical, 3)
+                .background(selected ? Color.accentColor.opacity(0.25) : Color.secondary.opacity(0.12), in: Capsule())
+                .foregroundStyle(selected ? Color.primary : Color.secondary)
+        }
+        .buttonStyle(.plain)
+        .help("Show \(file.path) (\(ByteCountFormatter.string(fromByteCount: Int64(file.bytes), countStyle: .file)))")
     }
 
     private var sealSheet: some View {

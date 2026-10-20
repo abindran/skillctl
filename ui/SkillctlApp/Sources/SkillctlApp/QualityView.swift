@@ -135,7 +135,7 @@ struct QualityView: View {
                     Text("\(shown.name) \(shown.version == "draft" ? "draft" : "v\(shown.version)")").fontWeight(.semibold)
                     SeverityBadge(text: shown.kind)
                     Spacer()
-                    Button("Reveal") { Panels.reveal(shown.documentURL.path) }.controlSize(.small)
+                    FileLinks(path: shown.documentURL.path)
                 }
                 HStack(alignment: .firstTextBaseline) {
                     Text(kind.summary).font(.caption).foregroundStyle(.secondary)
@@ -155,6 +155,7 @@ struct QualityView: View {
                         Spacer()
                         Text(ByteCountFormatter.string(fromByteCount: Int64(file.bytes), countStyle: .file))
                             .font(.caption).foregroundStyle(.secondary).monospacedDigit()
+                        FileLinks(path: URL(fileURLWithPath: shown.dir).appendingPathComponent(file.path).path)
                     }
                 }
             }
@@ -192,6 +193,9 @@ struct QualityView: View {
                         Spacer(minLength: Metrics.gap)
                         Text(file.rules.joined(separator: " "))
                             .font(.caption2.monospaced()).foregroundStyle(.tertiary)
+                        if file.present {
+                            FileLinks(path: file.path)
+                        }
                     }
                     .padding(.vertical, Metrics.header)
                     if index < files.count - 1 { Divider() }
