@@ -293,6 +293,14 @@ pub enum Command {
         files: bool,
     },
 
+    /// List the rules validate and lint check, with severity and what each
+    /// checks, grouped by the artifact they apply to.
+    Rules {
+        /// Only the rules for one artifact kind, or `instructions` for lint.
+        #[arg(long = "for", value_name = "KIND")]
+        applies_to: Option<String>,
+    },
+
     /// Diagnose the skillctl environment.
     Doctor {
         /// Attempt to fix detected problems.

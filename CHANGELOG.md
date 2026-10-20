@@ -25,6 +25,11 @@ heading when cutting a release.
   wrote. `report [--days <n>]` breaks cost and tokens down by model,
   skill, agent and source from the API request events, with tool runs and
   failures, slash commands and active time.
+- `skillctl rules [--for <kind>]` prints the catalog of every validate and
+  lint rule: ID, kind, group, default severity, a one-line summary and
+  whether `validate.allow` can silence it. A test keeps it complete. The
+  app's Quality screen has a Rules reference tab with search and a kind
+  filter, opened pre-filtered from "N rules apply" on the scope cards.
 - `lint --files` lists the instruction files lint reads in a folder, each
   present or absent with its line count, whether it is a link, when the
   harnesses load it and the rules on it, so a folder with nothing to lint

@@ -20,6 +20,7 @@ pub mod mcp;
 pub mod new;
 pub mod pins;
 pub mod projects;
+pub mod rules;
 pub mod seal;
 pub mod show;
 pub mod skills;

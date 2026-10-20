@@ -196,6 +196,13 @@ final class AppState {
         await load("validate", [Finding].self, ["validate", reference], allowExit: 3)
     }
 
+    var rules: [RuleEntry] = []
+
+    /// The rule catalog, loaded once.
+    func loadRules() async {
+        if rules.isEmpty { rules = await load("rules", [RuleEntry].self, ["rules"]) ?? [] }
+    }
+
     /// The instruction files `lint` reads in `folder`, present or absent.
     func lintFiles(folder: URL) async -> [InspectedFile]? {
         await load("lint-files", [InspectedFile].self, ["lint", "--files", folder.path])

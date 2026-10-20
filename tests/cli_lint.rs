@@ -243,3 +243,40 @@ fn lint_files_lists_what_lint_reads_present_or_not() {
             .any(|rule| rule == "I301")
     );
 }
+
+#[test]
+fn rules_lists_the_catalog_and_filters_by_kind() {
+    let temp = tempfile::tempdir().unwrap();
+    let home = temp.path().join("skills");
+    let out = run(&home, temp.path(), &["--json", "rules"]);
+    assert!(
+        out.status.success(),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let all: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
+    let all = all.as_array().unwrap();
+    assert!(
+        all.iter()
+            .any(|rule| rule["id"] == "I309" && rule["reported_by"] == "lint")
+    );
+    assert!(
+        all.iter()
+            .any(|rule| rule["id"] == "S001" && rule["allow_listable"] == false)
+    );
+    let out = run(&home, temp.path(), &["--json", "rules", "--for", "hook"]);
+    let hooks: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
+    assert!(
+        hooks
+            .as_array()
+            .unwrap()
+            .iter()
+            .all(|rule| rule["applies_to"] == "hook")
+    );
+    assert!(
+        !run(&home, temp.path(), &["rules", "--for", "nope"])
+            .status
+            .success()
+    );
+    assert!(!home.exists(), "rules needs no home folder");
+}

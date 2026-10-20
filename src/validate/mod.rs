@@ -1,6 +1,7 @@
 //! Native validation. Structural failures suppress dependent field checks, not I/O errors.
 
 pub mod agent;
+pub mod catalog;
 pub mod command;
 pub mod description;
 pub mod fields;
@@ -76,7 +77,7 @@ pub fn run(fs: &dyn Fs, dir: &Path) -> Result<Vec<Finding>, Error> {
 
 /// Rules that make an artifact unloadable or unregistrable are never suppressed
 /// by an allow-list: the spec rules for skills, and the structural hook rules.
-fn suppressible(rule: &str) -> bool {
+pub(crate) fn suppressible(rule: &str) -> bool {
     !(rule.starts_with('S')
         || hook::STRUCTURAL.contains(&rule)
         || self::rule::STRUCTURAL.contains(&rule)

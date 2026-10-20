@@ -11,6 +11,8 @@ struct QualityView: View {
     @State private var lintFiles: [InspectedFile]?
     @State private var shown: ShownDocument?
     @State private var running = false
+    @State private var ruleFilter = "all"
+    @State private var ruleSearch = ""
 
     private var instanceFolders: [URL] {
         state.projects.flatMap(\.instances).map(\.url)
@@ -22,6 +24,7 @@ struct QualityView: View {
                 Picker("", selection: $tab) {
                     Text("Validate an artifact").tag(0)
                     Text("Lint instruction files").tag(1)
+                    Text("Rules reference").tag(2)
                 }
                 .pickerStyle(.segmented)
                 .labelsHidden()
@@ -32,12 +35,24 @@ struct QualityView: View {
             Divider()
             ScrollView {
                 Group {
-                    if tab == 0 { validate } else { lint }
+                    switch tab {
+                    case 0: validate
+                    case 1: lint
+                    default: rulesReference
+                    }
                 }
                 .pageLayout()
             }
         }
         .navigationTitle("Quality")
+        .task { await state.loadRules() }
+        .task {
+            // Snapshot mode only: open a tab (0 validate, 1 lint, 2 rules) for review.
+            if ContentView.snapshotFolder != nil,
+               let value = ProcessInfo.processInfo.environment["SKILLCTL_APP_SNAPSHOT_QUALITY_TAB"], let index = Int(value) {
+                tab = index
+            }
+        }
         .task {
             // Snapshot mode only: show a real validation so the layout can be reviewed.
             guard ContentView.snapshotFolder != nil, ProcessInfo.processInfo.environment["SKILLCTL_APP_SNAPSHOT_VALIDATE"] == "1", validateFindings == nil else { return }
@@ -122,8 +137,12 @@ struct QualityView: View {
                     Spacer()
                     Button("Reveal") { Panels.reveal(shown.documentURL.path) }.controlSize(.small)
                 }
-                Text(kind.summary).font(.caption).foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
+                HStack(alignment: .firstTextBaseline) {
+                    Text(kind.summary).font(.caption).foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                    Spacer()
+                    rulesLink(for: shown.kind)
+                }
                 Divider()
                 ForEach(shown.files) { file in
                     HStack(spacing: Metrics.tight) {
@@ -148,6 +167,10 @@ struct QualityView: View {
         return scopeCard(title: "What is linted", symbol: "doc.text.magnifyingglass",
                          trailing: "\(present) of \(files.count) present") {
             VStack(alignment: .leading, spacing: 0) {
+                HStack {
+                    Spacer()
+                    rulesLink(for: "instructions")
+                }
                 ForEach(Array(files.enumerated()), id: \.element.id) { index, file in
                     HStack(alignment: .firstTextBaseline, spacing: Metrics.gap) {
                         Image(systemName: file.present ? "checkmark.circle.fill" : "circle.dashed")
@@ -175,6 +198,120 @@ struct QualityView: View {
                 }
             }
         }
+    }
+
+    private func rulesLink(for kind: String) -> some View {
+        let count = state.rules.filter { $0.applies_to == kind && $0.reported_by != "advisory" }.count
+        return Button("\(count) rules apply") {
+            ruleFilter = kind
+            ruleSearch = ""
+            tab = 2
+        }
+        .buttonStyle(.link)
+        .font(.caption)
+        .disabled(count == 0)
+    }
+
+    // MARK: Rules reference
+
+    private var filteredRules: [RuleEntry] {
+        let query = ruleSearch.trimmingCharacters(in: .whitespaces).lowercased()
+        return state.rules.filter { rule in
+            (ruleFilter == "all" || rule.applies_to == ruleFilter)
+                && (query.isEmpty || rule.id.lowercased().contains(query) || rule.summary.lowercased().contains(query)
+                    || rule.group.lowercased().contains(query))
+        }
+    }
+
+    /// Group names in catalog order, each with its rules.
+    private var ruleGroups: [(name: String, appliesTo: String, rules: [RuleEntry])] {
+        var groups: [(name: String, appliesTo: String, rules: [RuleEntry])] = []
+        for rule in filteredRules {
+            if let index = groups.firstIndex(where: { $0.name == rule.group }) {
+                groups[index].rules.append(rule)
+            } else {
+                groups.append((rule.group, rule.applies_to, [rule]))
+            }
+        }
+        return groups
+    }
+
+    private func appliesToTitle(_ id: String) -> String {
+        id == "instructions" ? "Instruction files (lint)" : ArtifactKind.named(id).title
+    }
+
+    private var rulesReference: some View {
+        VStack(alignment: .leading, spacing: Metrics.section) {
+            GroupBox {
+                VStack(alignment: .leading, spacing: Metrics.gap) {
+                    HStack(spacing: Metrics.gap) {
+                        Picker("Applies to", selection: $ruleFilter) {
+                            Text("All").tag("all")
+                            Divider()
+                            ForEach(["skill", "hook", "rule", "command", "agent", "script"], id: \.self) { kind in
+                                Text(ArtifactKind.named(kind).title).tag(kind)
+                            }
+                            Divider()
+                            Text("Instruction files (lint)").tag("instructions")
+                        }
+                        .fixedSize()
+                        TextField("Search by ID or text", text: $ruleSearch)
+                            .textFieldStyle(.roundedBorder)
+                            .frame(maxWidth: 280)
+                        Spacer()
+                        Text("\(filteredRules.count) rule(s)").font(.caption).foregroundStyle(.secondary)
+                    }
+                    Text("Errors fail validate and lint (exit 3); warnings fail only with --strict. Rules with a lock make the artifact unloadable and cannot be silenced with validate.allow. The same list is in the terminal: skillctl rules --for <kind>.")
+                        .font(.caption).foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            } label: {
+                Label("Rules", systemImage: "book")
+            }
+            if state.rules.isEmpty {
+                ProgressView().frame(maxWidth: .infinity, minHeight: 80)
+            } else if ruleGroups.isEmpty {
+                Text("No rule matches \"\(ruleSearch)\".").foregroundStyle(.secondary)
+            }
+            ForEach(ruleGroups, id: \.name) { group in
+                GroupBox {
+                    VStack(alignment: .leading, spacing: 0) {
+                        ForEach(Array(group.rules.enumerated()), id: \.element.id) { index, rule in
+                            ruleRow(rule)
+                            if index < group.rules.count - 1 { Divider() }
+                        }
+                    }
+                } label: {
+                    HStack {
+                        Text(group.name)
+                        Text(appliesToTitle(group.appliesTo)).font(.caption).foregroundStyle(.secondary)
+                        Spacer()
+                        Text("\(group.rules.count)").font(.caption).foregroundStyle(.tertiary)
+                    }
+                }
+            }
+        }
+    }
+
+    private func ruleRow(_ rule: RuleEntry) -> some View {
+        HStack(alignment: .firstTextBaseline, spacing: Metrics.gap) {
+            Text(rule.id).font(.system(.callout, design: .monospaced).weight(.semibold))
+                .frame(width: 48, alignment: .leading)
+                .textSelection(.enabled)
+            SeverityBadge(text: rule.severity).frame(width: 64, alignment: .leading)
+            Text(rule.summary).font(.callout)
+                .fixedSize(horizontal: false, vertical: true)
+                .frame(maxWidth: .infinity, alignment: .leading)
+            if rule.reported_by == "advisory" {
+                Text("advisory").font(.caption2).foregroundStyle(.tertiary)
+                    .help("Reported after pin changes and by status --budget, not by validate")
+            }
+            if !rule.allow_listable {
+                Image(systemName: "lock.fill").font(.caption).foregroundStyle(.tertiary)
+                    .help("Cannot be silenced with validate.allow")
+            }
+        }
+        .padding(.vertical, Metrics.header)
     }
 
     private func scopeCard<Content: View>(title: String, symbol: String, trailing: String? = nil,

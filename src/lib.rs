@@ -100,6 +100,7 @@ pub fn run(command: Command, context: &mut Context<'_>) -> Result<(), Error> {
             strict,
             files: false,
         } => commands::lint::run(context, folder.as_deref(), format, strict),
+        Command::Rules { applies_to } => commands::rules::run(context, applies_to.as_deref()),
         Command::Doctor { fix } => commands::doctor::run(context, fix),
         Command::Gc { keep } => commands::gc::run(context, keep),
         Command::Config { command } => match command {

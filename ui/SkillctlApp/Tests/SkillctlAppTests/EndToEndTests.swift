@@ -315,6 +315,12 @@ final class EndToEndTests: XCTestCase {
         XCTAssertTrue(agents.present)
         XCTAssertEqual(agents.lines, 2)
         XCTAssertTrue(agents.rules.contains("I301"))
+
+        // The Rules reference tab decodes the catalog.
+        await state.loadRules()
+        XCTAssertNil(state.lastError, state.lastError ?? "")
+        XCTAssertTrue(state.rules.contains { $0.id == "S001" && !$0.allow_listable })
+        XCTAssertTrue(state.rules.contains { $0.id == "I309" && $0.reported_by == "lint" })
     }
 
     func testAnOutdatedBinaryIsReportedInsteadOfUsed() async throws {
@@ -330,7 +336,7 @@ final class EndToEndTests: XCTestCase {
         try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: fake.path)
         let old = CLI(binary: fake, home: home.path, environment: [:])
         let missing = await old.missingCommands()
-        XCTAssertEqual(missing, ["artifacts", "drafts", "hook", "lint", "log", "projects", "show", "telemetry", "uninstall"])
+        XCTAssertEqual(missing, ["artifacts", "drafts", "hook", "lint", "log", "projects", "rules", "show", "telemetry", "uninstall"])
 
         let defaults = UserDefaults(suiteName: "dev.abindran.skillctl.tests.\(UUID().uuidString)")!
         defaults.set(fake.path, forKey: "binaryPath")
