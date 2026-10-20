@@ -235,6 +235,12 @@ pub enum Command {
         version: Option<String>,
     },
 
+    /// Delete a store version, or every version of an artifact, that nothing pins.
+    Uninstall {
+        /// Artifact name, optionally followed by @version (default: every version).
+        target: String,
+    },
+
     /// Validate a skill or project.
     Validate {
         /// Target to validate.

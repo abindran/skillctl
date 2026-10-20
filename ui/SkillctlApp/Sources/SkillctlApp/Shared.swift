@@ -25,41 +25,98 @@ struct SeverityBadge: View {
     }
 }
 
-/// Validation and lint findings as a table with the hint under each row.
+/// Validation and lint findings: a summary line, then the findings grouped
+/// by severity, each with its rule, message, suggested fix and location.
 struct FindingsTable: View {
     let findings: [Finding]
     var emptyText = "No findings."
+
+    private var errors: [Finding] { findings.filter { $0.severity == "error" } }
+    private var warnings: [Finding] { findings.filter { $0.severity == "warning" } }
+    private var others: [Finding] { findings.filter { $0.severity != "error" && $0.severity != "warning" } }
+
+    /// The folder every finding shares, so each row shows only what differs.
+    private var commonFolder: String? {
+        let paths = findings.compactMap(\.path)
+        guard let first = paths.first else { return nil }
+        let folder = (first as NSString).deletingLastPathComponent
+        return paths.allSatisfy { ($0 as NSString).deletingLastPathComponent == folder } ? folder : nil
+    }
 
     var body: some View {
         if findings.isEmpty {
             ContentUnavailableView(emptyText, systemImage: "checkmark.circle")
         } else {
-            Table(findings) {
-                TableColumn("Rule") { finding in
-                    HStack(spacing: 6) {
-                        SeverityBadge(text: finding.severity)
-                        Text(finding.rule).font(.system(.body, design: .monospaced))
+            VStack(alignment: .leading, spacing: 0) {
+                HStack(spacing: 10) {
+                    if !errors.isEmpty { Label("\(errors.count) error(s)", systemImage: "xmark.octagon.fill").foregroundStyle(.red) }
+                    if !warnings.isEmpty { Label("\(warnings.count) warning(s)", systemImage: "exclamationmark.triangle.fill").foregroundStyle(.orange) }
+                    if !others.isEmpty { Label("\(others.count) note(s)", systemImage: "info.circle.fill").foregroundStyle(.blue) }
+                    Spacer()
+                    if let commonFolder {
+                        Text(commonFolder).font(.caption).foregroundStyle(.tertiary)
+                            .lineLimit(1).truncationMode(.middle)
                     }
                 }
-                .width(min: 110, ideal: 130)
-                TableColumn("Finding") { finding in
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text(finding.message)
-                        if let hint = finding.hint {
-                            Text(hint).font(.caption).foregroundStyle(.secondary)
-                        }
-                        if let path = finding.path {
-                            Text(finding.line.map { "\(path):\($0)" } ?? path)
-                                .font(.caption2)
-                                .foregroundStyle(.tertiary)
-                                .lineLimit(1)
-                                .truncationMode(.middle)
-                        }
-                    }
-                    .padding(.vertical, 2)
+                .font(.callout)
+                .padding(.horizontal, 12).padding(.vertical, 8)
+                Divider()
+                List {
+                    group("Errors", errors)
+                    group("Warnings", warnings)
+                    group("Notes", others)
                 }
+                .listStyle(.inset)
             }
         }
+    }
+
+    @ViewBuilder
+    private func group(_ title: String, _ items: [Finding]) -> some View {
+        if !items.isEmpty {
+            SwiftUI.Section(title) {
+                ForEach(items) { finding in row(finding) }
+            }
+        }
+    }
+
+    private func row(_ finding: Finding) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            HStack(alignment: .firstTextBaseline, spacing: 8) {
+                Text(finding.rule)
+                    .font(.system(.caption, design: .monospaced).weight(.semibold))
+                    .padding(.horizontal, 6).padding(.vertical, 2)
+                    .background(Color.secondary.opacity(0.15), in: RoundedRectangle(cornerRadius: 4))
+                Text(finding.message)
+                    .fixedSize(horizontal: false, vertical: true)
+                Spacer(minLength: 0)
+            }
+            if let hint = finding.hint, !hint.isEmpty {
+                HStack(alignment: .firstTextBaseline, spacing: 6) {
+                    Image(systemName: "wrench.adjustable").font(.caption).foregroundStyle(.secondary)
+                    Text(hint).font(.callout).foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                .padding(.leading, 2)
+            }
+            if let path = finding.path {
+                HStack(spacing: 6) {
+                    Image(systemName: "doc.text").font(.caption2)
+                    Text(location(path, finding.line))
+                        .font(.system(.caption2, design: .monospaced))
+                        .lineLimit(1).truncationMode(.middle)
+                    Button("Reveal") { Panels.reveal(path) }
+                        .buttonStyle(.link).font(.caption2)
+                }
+                .foregroundStyle(.tertiary)
+            }
+        }
+        .padding(.vertical, 4)
+    }
+
+    private func location(_ path: String, _ line: Int?) -> String {
+        let shown = commonFolder == nil ? path : (path as NSString).lastPathComponent
+        return line.map { "\(shown):\($0)" } ?? shown
     }
 }
 

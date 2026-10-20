@@ -23,6 +23,7 @@ pub mod seal;
 pub mod skills;
 pub mod status;
 pub mod telemetry;
+pub mod uninstall;
 pub mod validate;
 pub mod versions;
 

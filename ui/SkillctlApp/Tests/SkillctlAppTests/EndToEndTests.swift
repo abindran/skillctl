@@ -103,6 +103,15 @@ final class EndToEndTests: XCTestCase {
         XCTAssertNil(state.artifact(named: "review", version: "0.1.0"))
         XCTAssertNotNil(state.artifact(named: "review", version: "0.2.0"))
 
+        // A specific version can be deleted from the store; pinned ones are refused.
+        await state.edit("review@0.2.0")  // edit itself bumps the draft to 0.2.1
+        await state.seal("review", bump: nil)
+        XCTAssertNotNil(state.artifact(named: "review", version: "0.2.1"), "\(state.artifacts.map(\.reference))")
+        await state.uninstall("review@0.2.1")
+        XCTAssertNil(state.lastError, state.lastError ?? "")
+        XCTAssertNil(state.artifact(named: "review", version: "0.2.1"), "the version is gone")
+        XCTAssertNotNil(state.artifact(named: "review", version: "0.2.0"), "the other one stays")
+
         // Agents get a Cursor override through derive.
         await state.newDraft(kind: "agent", name: "explore")
         await state.derive(agent: "explore", model: "gpt-5")
@@ -199,6 +208,10 @@ final class EndToEndTests: XCTestCase {
         XCTAssertEqual(state.console.last?.succeeded, false)
         XCTAssertEqual(state.projects.first?.skills, ["review": "0.2.0"])
         state.lastError = nil
+        await state.uninstall("review@0.2.0")
+        XCTAssertTrue(state.lastError?.contains("pinned by web") == true, state.lastError ?? "no error")
+        XCTAssertNotNil(state.artifact(named: "review", version: "0.2.0"), "a pinned version is never deleted")
+        state.lastError = nil
 
         // Unpin, unregister, detach: back to empty.
         await state.removePin("review", project: "web")
@@ -230,7 +243,7 @@ final class EndToEndTests: XCTestCase {
         try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: fake.path)
         let old = CLI(binary: fake, home: home.path, environment: [:])
         let missing = await old.missingCommands()
-        XCTAssertEqual(missing, ["artifacts", "drafts", "hook", "lint", "log", "projects"])
+        XCTAssertEqual(missing, ["artifacts", "drafts", "hook", "lint", "log", "projects", "uninstall"])
 
         let defaults = UserDefaults(suiteName: "dev.abindran.skillctl.tests.\(UUID().uuidString)")!
         defaults.set(fake.path, forKey: "binaryPath")

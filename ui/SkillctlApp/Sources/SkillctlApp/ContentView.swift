@@ -130,16 +130,22 @@ struct ContentView: View {
     private func snapshotEveryScreen(into folder: URL) async {
         try? FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
         try? await Task.sleep(for: .seconds(1))
+        // macOS stops drawing a window that stays occluded, and a capture of
+        // such a window comes back blank, so the window floats while rendering.
+        NSApp.activate(ignoringOtherApps: true)
         if let window = NSApp.windows.first(where: { $0.isVisible }) {
             window.setContentSize(NSSize(width: 1280, height: 820))
-            window.makeKeyAndOrderFront(nil)
+            window.level = .floating
+            window.orderFrontRegardless()
         }
+        try? await Task.sleep(for: .seconds(1))
         await state.refreshAll()
         await state.runDoctor(fix: false)
         for item in [Screen.dashboard] + Screen.library + [.projects] + Screen.health {
             screen = item
-            try? await Task.sleep(for: .seconds(1.2))
-            guard let window = NSApp.windows.first(where: { $0.isVisible }) else { continue }
+            try? await Task.sleep(for: .seconds(item == .quality ? 3 : 1.2))
+            guard let window = NSApp.windows.first(where: { $0.isVisible && $0.contentView != nil && $0.frame.width > 600 }) else { continue }
+            window.orderFrontRegardless()
             // An app may capture its own windows without the screen-recording
             // permission that capturing other apps' windows needs.
             guard let image = CGWindowListCreateImage(

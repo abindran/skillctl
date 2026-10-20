@@ -171,8 +171,10 @@ struct ArtifactDetail: View {
     @State private var validating: String?
     @State private var findings: [Finding]?
     @State private var confirmRemoveHook: HookEntry?
+    @State private var confirmDelete: String?
 
     private var isHook: Bool { kind.id == "hook" }
+    private var pinnedVersions: [Artifact] { entry.versions.filter { !$0.pinned_by.isEmpty } }
     private var version: Artifact? {
         entry.versions.first { $0.id == selectedVersion } ?? entry.latest
     }
@@ -219,6 +221,18 @@ struct ArtifactDetail: View {
         } message: { hook in
             Text("Unpins \(hook.name), removes its link and its own settings entries. The stored version is kept; settings.json is backed up first.")
         }
+        .confirmationDialog(
+            "Delete \(confirmDelete ?? "") from the store?",
+            isPresented: Binding(get: { confirmDelete != nil }, set: { if !$0 { confirmDelete = nil } }),
+            presenting: confirmDelete
+        ) { target in
+            Button("Delete", role: .destructive) { Task { await state.uninstall(target) } }
+            Button("Cancel", role: .cancel) {}
+        } message: { target in
+            Text(target.contains("@")
+                 ? "Removes this version's folder from ~/.skills/store. Pinned versions are refused by skillctl; reinstall brings it back. Drafts are untouched."
+                 : "Removes every stored version of \(target). skillctl refuses while any version is pinned; reinstall brings them back. A draft, if any, is untouched.")
+        }
     }
 
     private var header: some View {
@@ -228,6 +242,20 @@ struct ArtifactDetail: View {
                 Text(entry.name).font(.title2.bold())
                 SeverityBadge(text: kind.id)
                 if entry.draft != nil { SeverityBadge(text: "draft") }
+                Spacer()
+                if !entry.versions.isEmpty {
+                    Menu {
+                        Button("Delete all \(entry.versions.count) version(s)…", role: .destructive) { confirmDelete = entry.name }
+                            .disabled(!pinnedVersions.isEmpty)
+                        if !pinnedVersions.isEmpty {
+                            Text("Pinned: \(pinnedVersions.map { "v\($0.version) by \($0.pinned_by.joined(separator: ", "))" }.joined(separator: "; ")). Unpin first.")
+                        }
+                    } label: {
+                        Label("More", systemImage: "ellipsis.circle")
+                    }
+                    .menuStyle(.borderlessButton)
+                    .fixedSize()
+                }
             }
             Text(entry.description ?? "No description in \(kind.document) yet.")
                 .font(.callout)
@@ -342,6 +370,11 @@ struct ArtifactDetail: View {
                                 .disabled(state.projects.isEmpty)
                         }
                         Spacer()
+                        Button("Delete version…", role: .destructive) { confirmDelete = version.reference }
+                            .disabled(!version.pinned_by.isEmpty)
+                            .help(version.pinned_by.isEmpty
+                                  ? "skillctl uninstall \(version.reference)"
+                                  : "Pinned by \(version.pinned_by.joined(separator: ", ")); unpin first")
                     }
                     .controlSize(.small)
                 }

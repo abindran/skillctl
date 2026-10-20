@@ -13,6 +13,9 @@ heading when cutting a release.
 
 ### Added
 
+- `uninstall <name>[@<version>]`: deletes one store version or every version
+  of an artifact, refusing pinned ones with the pins named; `--dry-run`
+  previews. The macOS app's delete actions use it.
 - `drafts`: lists the writable drafts with their detected kind, description
   and path, read-only; the macOS app's authoring screens use it. `artifacts`
   rows carry the root document's `description` too.
@@ -21,7 +24,9 @@ heading when cutting a release.
   scripts, hooks) laid out as a searchable list of artifacts and a detail
   pane (description, draft, versions, hook registration) with the authoring
   actions new, validate, seal, edit, pin, register and agent derive, a
-  needs-attention section on the dashboard, a Store screen with one
+  needs-attention section on the dashboard, delete actions for a version or
+  a whole artifact (through `uninstall`), findings shown as a summary plus
+  cards grouped by severity, a Store screen with one
   expandable row per artifact, kind chips, an inspector and a cleanup flow
   that previews `gc --dry-run` before deleting, and a snapshot mode
   (`SKILLCTL_APP_SNAPSHOT=<folder>`) that renders every screen to PNG,

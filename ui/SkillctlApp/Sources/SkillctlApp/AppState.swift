@@ -259,6 +259,12 @@ final class AppState {
         return (try? JSONDecoder().decode(GcReport.self, from: Data(run.stdout.utf8)))?.deleted
     }
 
+    /// Delete one store version (`name@version`) or every version of an
+    /// artifact (`name`); the CLI refuses pinned ones and names the pins.
+    func uninstall(_ target: String) async {
+        await perform(["uninstall", target]) { await self.loadArtifacts(); await self.loadDrafts(); await self.loadHooks() }
+    }
+
     func collectGarbage(keep: Int) async {
         await perform(["gc", "--keep", String(keep)]) { await self.loadArtifacts() }
     }

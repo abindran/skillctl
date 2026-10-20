@@ -26,14 +26,31 @@ struct QualityView: View {
             if tab == 0 { validate } else { lint }
         }
         .navigationTitle("Quality")
+        .task {
+            // Snapshot mode only: show a real validation so the layout can be reviewed.
+            guard ContentView.snapshotFolder != nil, ProcessInfo.processInfo.environment["SKILLCTL_APP_SNAPSHOT_VALIDATE"] == "1", validateFindings == nil else { return }
+            let candidates = state.artifacts.filter { $0.kind == "skill" && $0.version.hasSuffix(".0") } + state.artifacts
+            if let artifact = candidates.first {
+                reference = artifact.id
+                validateFindings = await state.validate(artifact.id) ?? []
+            }
+        }
     }
 
     private var validate: some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack {
-                Picker("Artifact", selection: $reference) {
-                    Text("Choose…").tag(Artifact.ID?.none)
-                    ForEach(state.artifacts) { Text("\($0.reference) (\($0.kind))").tag(Artifact.ID?.some($0.id)) }
+                Menu(reference ?? "Choose an artifact…") {
+                    ForEach(ArtifactKind.all) { kind in
+                        let items = state.artifacts.filter { $0.kind == kind.id }
+                        if !items.isEmpty {
+                            SwiftUI.Section(kind.title) {
+                                ForEach(items) { artifact in
+                                    Button(artifact.reference) { reference = artifact.id; validateFindings = nil }
+                                }
+                            }
+                        }
+                    }
                 }
                 .frame(maxWidth: 420)
                 Button("Validate") {
@@ -48,6 +65,7 @@ struct QualityView: View {
                 if running { ProgressView().controlSize(.small) }
                 Spacer()
             }
+            .frame(maxWidth: .infinity, alignment: .leading)
             .padding(.horizontal, 12)
             Text("Skills get S and O rules (including the directive-description rules O140–O145), hooks K1xx, rules K2xx, commands K3xx, agents H22x, scripts K5xx. Nothing is written.")
                 .font(.caption).foregroundStyle(.secondary).padding(.horizontal, 12)
@@ -83,6 +101,7 @@ struct QualityView: View {
                 if running { ProgressView().controlSize(.small) }
                 Spacer()
             }
+            .frame(maxWidth: .infinity, alignment: .leading)
             .padding(.horizontal, 12)
             Text("Read-only checks I301–I306, I308 and I309 on AGENTS.md, CLAUDE.md, CLAUDE.local.md and .cursor/rules; each finding carries the suggested fix. The files are team-owned and changed through review, never by skillctl.")
                 .font(.caption).foregroundStyle(.secondary).padding(.horizontal, 12)
