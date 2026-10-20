@@ -11,6 +11,8 @@ pub struct Draft {
     pub name: SkillName,
     /// `None` when the folder has no recognised root document yet.
     pub kind: Option<Kind>,
+    /// The root document's `description`, when it parses.
+    pub description: Option<String>,
     pub path: PathBuf,
 }
 
@@ -38,8 +40,16 @@ pub fn list(context: &Context<'_>) -> Result<Vec<Draft>, Error> {
         {
             continue;
         }
+        let kind = Kind::detect(fs, &entry)?;
+        let description = match kind {
+            Some(kind) => crate::skill::Skill::load_kind(fs, &entry, kind)
+                .ok()
+                .and_then(|skill| skill.frontmatter.description.value().cloned()),
+            None => None,
+        };
         drafts.push(Draft {
-            kind: Kind::detect(fs, &entry)?,
+            kind,
+            description,
             path: entry,
             name,
         });

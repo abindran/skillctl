@@ -132,6 +132,12 @@ fn artifacts_lists_pins_and_usage_and_unused_filters() {
     );
     assert_eq!(rows[2]["last_used"], "2026-10-05T09:00:00Z");
     assert!(
+        rows[2]["description"].as_str().unwrap_or("").len() > 10,
+        "the root document's description travels with the row: {}",
+        rows[2]
+    );
+    assert!(rows[0]["description"].is_string(), "hooks have one too");
+    assert!(
         rows[3]["reason"]
             .as_str()
             .unwrap()

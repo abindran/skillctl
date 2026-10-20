@@ -266,6 +266,11 @@ fn drafts_are_listed_with_their_kind_until_sealed() {
         ]
     );
     assert!(rows[3]["path"].as_str().unwrap().ends_with("drafts/review"));
+    assert!(rows[3]["description"].is_string());
+    assert!(
+        rows[0]["description"].is_null(),
+        "no root document, no description"
+    );
     let out = ok(&home, &["drafts"]);
     let text = String::from_utf8_lossy(&out.stdout);
     assert!(text.contains("review (skill) "), "{text}");

@@ -49,6 +49,11 @@ struct ContentView: View {
     @Environment(AppState.self) private var state
     @State private var screen: Screen? = .dashboard
 
+    /// Developer aid: with `SKILLCTL_APP_SNAPSHOT=<folder>` in the environment
+    /// the app renders every screen into `<folder>/<screen>.png` from inside
+    /// the process (no screen-recording permission involved) and quits.
+    static let snapshotFolder = ProcessInfo.processInfo.environment["SKILLCTL_APP_SNAPSHOT"]
+
     var body: some View {
         @Bindable var state = state
         NavigationSplitView {
@@ -115,6 +120,38 @@ struct ContentView: View {
         } message: {
             Text(state.lastError ?? "")
         }
+        .task {
+            guard let folder = Self.snapshotFolder else { return }
+            await snapshotEveryScreen(into: URL(fileURLWithPath: folder))
+        }
+    }
+
+    @MainActor
+    private func snapshotEveryScreen(into folder: URL) async {
+        try? FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        try? await Task.sleep(for: .seconds(1))
+        if let window = NSApp.windows.first(where: { $0.isVisible }) {
+            window.setContentSize(NSSize(width: 1280, height: 820))
+            window.makeKeyAndOrderFront(nil)
+        }
+        await state.refreshAll()
+        await state.runDoctor(fix: false)
+        for item in [Screen.dashboard] + Screen.library + [.projects] + Screen.health {
+            screen = item
+            try? await Task.sleep(for: .seconds(1.2))
+            guard let window = NSApp.windows.first(where: { $0.isVisible }) else { continue }
+            // An app may capture its own windows without the screen-recording
+            // permission that capturing other apps' windows needs.
+            guard let image = CGWindowListCreateImage(
+                .null, .optionIncludingWindow, CGWindowID(window.windowNumber),
+                [.boundsIgnoreFraming, .bestResolution]) else { continue }
+            let rep = NSBitmapImageRep(cgImage: image)
+            let name = item.id.replacingOccurrences(of: ":", with: "-")
+            if let data = rep.representation(using: .png, properties: [:]) {
+                try? data.write(to: folder.appendingPathComponent("\(name).png"))
+            }
+        }
+        NSApp.terminate(nil)
     }
 
     /// One sidebar row. The explicit tag is what makes selection work: the

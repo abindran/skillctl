@@ -28,6 +28,8 @@ struct Artifact: Decodable, Hashable, Identifiable {
     let name: String
     let version: String
     let kind: String
+    /// The root document's description, when it parses.
+    let description: String?
     let pinned_by: [String]
     let uses: Int?
     let last_used: String?
@@ -43,6 +45,7 @@ struct Draft: Decodable, Hashable, Identifiable {
     let name: String
     /// Detected from the root document; nil while the folder has none.
     let kind: String?
+    let description: String?
     let path: String
 
     var id: String { name }

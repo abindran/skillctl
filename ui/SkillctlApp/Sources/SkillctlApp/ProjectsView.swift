@@ -19,7 +19,8 @@ struct ProjectsView: View {
                 }
                 .tag(project.id)
             }
-            .frame(minWidth: 200, idealWidth: 240, maxWidth: 320)
+            .frame(minWidth: 200, idealWidth: 240, maxWidth: 280)
+            .listStyle(.inset)
             .overlay {
                 if state.projects.isEmpty {
                     ContentUnavailableView("No projects", systemImage: "folder",
@@ -56,6 +57,11 @@ struct ProjectDetail: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 18) {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(project.name).font(.title2.bold())
+                    Text("\(project.skills.count) pin(s) linked into \(project.instances.count) folder(s). Pins are per project; every attached folder of the project receives the same links.")
+                        .font(.callout).foregroundStyle(.secondary)
+                }
                 GroupBox("Attached folders") {
                     if project.instances.isEmpty {
                         Text("None. Attach a folder to this project to link its pins.")

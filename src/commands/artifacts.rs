@@ -23,6 +23,8 @@ pub struct Row {
     pub name: SkillName,
     pub version: Version,
     pub kind: Kind,
+    /// The root document's `description`, when it parses.
+    pub description: Option<String>,
     /// Project names pinning this version, plus `global` or `hook`.
     pub pinned_by: Vec<String>,
     /// Recorded uses: skill activations (`PostToolUse` of `Skill`) or
@@ -101,6 +103,10 @@ pub fn rows(context: &Context<'_>, registry: &Registry) -> Result<Vec<Row>, Erro
             )
             .map(|meta| meta.kind)
             .unwrap_or_default();
+            let dir = context.home.store_dir(&name, &version);
+            let description = crate::skill::Skill::load_kind(fs, &dir, kind)
+                .ok()
+                .and_then(|skill| skill.frontmatter.description.value().cloned());
             let pinned = pinned_by(registry, &name, &version);
             let seen = match kind {
                 Kind::Skill => Some(usage.skills.get(&name.as_str().to_lowercase())),
@@ -129,6 +135,7 @@ pub fn rows(context: &Context<'_>, registry: &Registry) -> Result<Vec<Row>, Erro
                 name: name.clone(),
                 version,
                 kind,
+                description,
                 pinned_by: pinned,
                 uses,
                 last_used,

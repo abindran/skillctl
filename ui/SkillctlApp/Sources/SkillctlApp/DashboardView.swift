@@ -19,6 +19,27 @@ struct DashboardView: View {
                     }
                 }
 
+                Text("Needs attention").font(.title2.bold())
+                GroupBox {
+                    let items = attention
+                    if items.isEmpty {
+                        Label("Nothing needs attention.", systemImage: "checkmark.circle.fill")
+                            .foregroundStyle(.green)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                    } else {
+                        VStack(alignment: .leading, spacing: 8) {
+                            ForEach(items, id: \.text) { item in
+                                HStack {
+                                    SeverityBadge(text: item.severity)
+                                    Text(item.text)
+                                    Spacer()
+                                    Button(item.action) { select(item.screen) }
+                                }
+                            }
+                        }
+                    }
+                }
+
                 Text("Overview").font(.title2.bold())
                 LazyVGrid(columns: [GridItem(.adaptive(minimum: 180), spacing: 12)], spacing: 12) {
                     Button { select(.projects) } label: {
@@ -40,6 +61,20 @@ struct DashboardView: View {
                                  value: state.doctor.map { $0.remaining == 0 ? "OK" : "\($0.remaining)" } ?? "—",
                                  detail: state.doctor == nil ? "not run yet" : "problem(s) remaining",
                                  tint: (state.doctor?.remaining ?? 0) == 0 ? .green : .red)
+                    }
+                }
+                .buttonStyle(.plain)
+
+                Text("Library").font(.title2.bold())
+                LazyVGrid(columns: [GridItem(.adaptive(minimum: 150), spacing: 12)], spacing: 12) {
+                    ForEach(ArtifactKind.all) { kind in
+                        let names = Set(state.artifacts.filter { $0.kind == kind.id }.map(\.name))
+                        let drafts = state.drafts.filter { $0.kind == kind.id }.count
+                        Button { select(.kind(kind.id)) } label: {
+                            StatTile(title: kind.title, value: "\(names.count)",
+                                     detail: drafts > 0 ? "\(drafts) draft(s) in progress" : kind.id == "hook" ? "\(state.hooks.count) registered" : "\(state.artifacts.filter { $0.kind == kind.id && !$0.pinned_by.isEmpty }.count) version(s) pinned",
+                                     tint: names.isEmpty && drafts == 0 ? .secondary : .accentColor)
+                        }
                     }
                 }
                 .buttonStyle(.plain)
@@ -81,5 +116,36 @@ struct DashboardView: View {
             .frame(maxWidth: .infinity, alignment: .leading)
         }
         .navigationTitle("Dashboard")
+    }
+
+    private struct Attention {
+        let severity: String
+        let text: String
+        let action: String
+        let screen: Screen
+    }
+
+    private var attention: [Attention] {
+        var items: [Attention] = []
+        if let remaining = state.doctor?.remaining, remaining > 0 {
+            items.append(Attention(severity: "error", text: "Doctor reports \(remaining) problem(s)", action: "Open Doctor", screen: .doctor))
+        }
+        let unhealthy = state.hooks.filter { !$0.healthy }
+        if !unhealthy.isEmpty {
+            items.append(Attention(severity: "error", text: "\(unhealthy.count) hook(s) with a broken link or unregistered events", action: "Open Hooks", screen: .kind("hook")))
+        }
+        let warnings = state.summary?.alerts.filter { $0.severity == "warning" } ?? []
+        if !warnings.isEmpty {
+            items.append(Attention(severity: "warning", text: warnings.map(\.message).joined(separator: "; "), action: "Open Log", screen: .log))
+        }
+        let unused = state.artifacts.filter(\.unused).count
+        if unused > 0 {
+            items.append(Attention(severity: "info", text: "\(unused) store version(s) nothing pins or uses; garbage collection would remove the superseded ones", action: "Review in Store", screen: .store))
+        }
+        if !state.drafts.isEmpty {
+            let kind = state.drafts.first?.kind ?? "skill"
+            items.append(Attention(severity: "info", text: "\(state.drafts.count) draft(s) waiting to be sealed: \(state.drafts.map(\.name).joined(separator: ", "))", action: "Open \(ArtifactKind.named(kind).title)", screen: .kind(kind)))
+        }
+        return items
     }
 }
