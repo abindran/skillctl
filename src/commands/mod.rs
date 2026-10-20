@@ -13,6 +13,7 @@ pub mod hook;
 pub mod init;
 pub mod install;
 pub mod lint;
+pub mod log;
 pub mod mcp;
 pub mod new;
 pub mod pins;
@@ -22,6 +23,7 @@ pub mod skills;
 pub mod status;
 pub mod telemetry;
 pub mod validate;
+pub mod versions;
 
 use crate::{
     context::Context,

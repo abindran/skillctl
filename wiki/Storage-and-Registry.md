@@ -12,6 +12,8 @@ flowchart TD
     H --> S["store/"]
     H --> D["drafts/<skill>/ — writable copies for authoring"]
     H --> T["templates/default/SKILL.md — scaffold for new"]
+    H --> LG["log/events.jsonl — the skillctl-logger hook's event log, read through eventlog.rs"]
+    H --> HV["harness-versions.json — the harness versions doctor has seen"]
     H --> TH["templates/hook/ — HOOK.md and hook.py, scaffold for new --kind hook"]
     S --> N["store/org-code-review/"]
     N --> ST[".staging-<random>/ — in-progress version, never visible to callers"]
@@ -174,6 +176,14 @@ The clone happens before the exclusive registry lock is taken; everything select
 `gc` deletes versions that no project pin, global skill pin or global hook pin references and that are not among a skill's newest `--keep` versions. It restores write permission (`restore_write_mode`), removes the version folder, and removes the skill folder when it becomes empty. `doctor` recomputes every stored version's content hash against `meta.json`, walks each version for entries that gained write permission (`--fix` restores `0444`/`0555`), and reports pins whose folders are missing.
 
 `doctor` also runs two advisory checks that are deliberately not problems. `commands/mcp.rs` reads the MCP server configuration of both harnesses (`~/.claude.json` user and per-project `mcpServers` plus `disabledMcpjsonServers`, `.mcp.json`, `~/.cursor/mcp.json`, `.cursor/mcp.json`), scores each server by the `PostToolUse` events the logger recorded for `mcp__<server>__*` tools, and reports `mcp-unused` (warning, after `UNUSED_AFTER_DAYS` of log history) or `mcp-unmeasured` (info) with a CLI alternative where one is known; the result is the `mcp` object of the JSON report. `commands/telemetry.rs` is the observability check: it reads the Claude Code OpenTelemetry variables and probes `PATH` for `ccusage` through injected closures (so the logic is unit-tested without process state), produces `Problem` values with severities `warning` and `info`, and returns them in a separate `telemetry` object. They are rendered above the problem list and never counted in `remaining`, so a machine without telemetry is reported as unmeasured, not broken.
+
+## Event log
+
+`log/events.jsonl` is written by the bundled hook, one JSON object per harness event, and read only through `eventlog::read`, which deserialises each line into `Event` and drops anything without a `ts` string (a hook killed mid-write leaves a partial last line). Three commands read it: `artifacts` (uses per skill and agent name, span of the log), `doctor` (Cursor import evidence, MCP usage) and `log summary`.
+
+`commands/log.rs` builds two `Window`s, `[until − days, until)` and the `days` before it, from one pass over the events: events per tool, distinct sessions, prompts, tool calls, skill activations (per lowercase skill name and per 100 prompts), real subagent runs (events with an `agent`), compactions (per session), MCP calls per server and raw against wrapped test commands. `until` defaults to now and is a flag so reports are reproducible. Alerts are thresholds, not statistics: `activation-drop` needs `MIN_PROMPTS` (20) prompts in both windows and a fall of more than `DROP_RATIO` (30%) in activations per 100 prompts; `compaction-rise` needs `MIN_SESSIONS` (5) sessions in both, at least two compactions now and a rise of more than `RISE_RATIO` (50%); `log-silent` is an empty current window after a non-empty previous one; `raw-test-commands` is info. `--strict` maps a warning to `Error::Doctor` (exit 1) so a cron job can page on it. What the log cannot hold — cache-hit rate and cost — is named in every summary rather than approximated.
+
+`harness-versions.json` beside the registry is `commands/versions.rs`'s memory: `{ "<harness>": [ { "version", "seen" }, … ] }`, appended whenever `claude --version` (run with no stdin and a three-second timeout) or the latest Cursor event's `harness_version` in the log shows something new; Cursor's `cursor` shell command is an application launcher and is never run from doctor, which a hung test run proved. `doctor` writes it on every run that saw a change (not in `--dry-run`), which is deliberate: the upgrade warning fires exactly once, the history stays auditable, and the file is a cache that can be deleted at any time.
 
 ## Artifact review
 

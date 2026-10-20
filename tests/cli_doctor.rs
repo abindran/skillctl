@@ -356,3 +356,102 @@ fn doctor_audits_mcp_servers_from_both_harnesses_against_the_log() {
     );
     assert!(text.contains("jira [claude-mcpjson] disabled"), "{text}");
 }
+
+#[cfg(unix)]
+#[test]
+fn doctor_records_harness_versions_and_reports_an_upgrade_once() {
+    use std::os::unix::fs::PermissionsExt;
+    let e = env();
+    let bin = e.root.join("bin");
+    fs::create_dir_all(&bin).unwrap();
+    let fake = |version: &str| {
+        fs::write(
+            bin.join("claude"),
+            format!("#!/bin/sh\necho \"{version} (Claude Code)\"\n"),
+        )
+        .unwrap();
+        fs::set_permissions(bin.join("claude"), fs::Permissions::from_mode(0o755)).unwrap();
+    };
+    let doctor = |e: &Env| {
+        let path = format!(
+            "{}:{}",
+            bin.display(),
+            std::env::var("PATH").unwrap_or_default()
+        );
+        let out = Command::new(env!("CARGO_BIN_EXE_skillctl"))
+            .env("SKILLCTL_HOME", &e.home)
+            .env("HOME", &e.user_home)
+            .env("PATH", path)
+            .current_dir(&e.root)
+            .args(["--json", "doctor"])
+            .stdin(std::process::Stdio::null())
+            .output()
+            .unwrap();
+        let report: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
+        let checks: Vec<String> = report["harnesses"]["findings"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|f| f["check"].as_str().unwrap().to_owned())
+            .collect();
+        (out.status.code(), report, checks)
+    };
+    ok(&e, &e.root, &["init"]);
+    fs::create_dir_all(e.home.join("log")).unwrap();
+    fs::write(
+        e.home.join("log/events.jsonl"),
+        r#"{"ts":"2026-10-19T10:00:00Z","tool":"cursor","event":"Stop","harness_version":"3.25.9"}"#,
+    )
+    .unwrap();
+    fake("1.0.0");
+    let (code, report, checks) = doctor(&e);
+    assert_eq!(code, Some(0));
+    assert_eq!(report["harnesses"]["detected"]["claude_code"], "1.0.0");
+    assert_eq!(report["harnesses"]["detected"]["cursor"], "3.25.9");
+    assert!(
+        checks.contains(&"harness-recorded".to_owned()),
+        "{checks:?}"
+    );
+    assert!(e.home.join("harness-versions.json").is_file());
+    let (_, _, checks) = doctor(&e);
+    assert!(
+        !checks.contains(&"harness-recorded".to_owned()),
+        "{checks:?}"
+    );
+    assert!(
+        !checks.contains(&"harness-upgraded".to_owned()),
+        "{checks:?}"
+    );
+    fake("1.1.0");
+    let (code, report, checks) = doctor(&e);
+    assert_eq!(code, Some(0), "advisory: never changes the exit status");
+    assert!(
+        checks.contains(&"harness-upgraded".to_owned()),
+        "{checks:?}"
+    );
+    let upgraded = report["harnesses"]["findings"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|f| f["check"] == "harness-upgraded")
+        .unwrap();
+    assert_eq!(upgraded["severity"], "warning");
+    assert!(
+        upgraded["message"]
+            .as_str()
+            .unwrap()
+            .contains("Claude Code upgraded 1.0.0 → 1.1.0")
+    );
+    assert_eq!(
+        report["harnesses"]["history"]["claude_code"]
+            .as_array()
+            .unwrap()
+            .len(),
+        2
+    );
+    let (_, _, checks) = doctor(&e);
+    assert!(
+        !checks.contains(&"harness-upgraded".to_owned()),
+        "reported once"
+    );
+}

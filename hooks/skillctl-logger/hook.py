@@ -89,10 +89,23 @@ def log_path():
     return os.path.join(home, "log", "events.jsonl")
 
 
+# Cursor's own event names for the events it maps from Claude Code hooks;
+# the rest only differ by their first letter's case.
+CURSOR_EVENTS = {
+    "beforeSubmitPrompt": "UserPromptSubmit",
+    "beforeShellExecution": "PreToolUse",
+    "afterShellExecution": "PostToolUse",
+    "beforeMCPExecution": "PreToolUse",
+    "afterMCPExecution": "PostToolUse",
+}
+
+
 def normalise(event_name):
     """Claude Code spells events in PascalCase, Cursor in camelCase."""
     if not isinstance(event_name, str) or not event_name:
         return "unknown"
+    if event_name in CURSOR_EVENTS:
+        return CURSOR_EVENTS[event_name]
     return event_name[0].upper() + event_name[1:]
 
 
@@ -119,6 +132,8 @@ def record_for(event):
     }
     if event.get("transcript_path"):
         record["transcript"] = event["transcript_path"]
+    if isinstance(event.get("cursor_version"), str):
+        record["harness_version"] = event["cursor_version"]
     if event.get("agent_type"):
         record["agent"] = event["agent_type"]
     if event.get("agent_id"):
@@ -135,6 +150,11 @@ def record_for(event):
             # Claude Code names MCP tools mcp__<server>__<tool>.
             record["server"] = tool_name[len("mcp__"):].split("__", 1)[0]
         tool_input = event.get("tool_input")
+        if not isinstance(tool_input, dict) and isinstance(event.get("command"), str):
+            # Cursor's native shell events carry the command at the top level.
+            tool_input = {"command": event["command"]}
+            tool_name = tool_name or "Shell"
+            record["tool_name"] = tool_name
         if isinstance(tool_input, dict) and tool_name == "Skill":
             skill = tool_input.get("skill") or tool_input.get("name")
             if isinstance(skill, str):

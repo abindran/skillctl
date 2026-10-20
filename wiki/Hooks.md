@@ -102,6 +102,8 @@ The log path is `$SKILLCTL_HOME/log/events.jsonl`, falling back to `~/.skills/lo
 - Claude Code fires `SubagentStop` for its own auxiliary agents (for example the one that titles the session after each turn), a few seconds after each `Stop`, with an `agent_id` but **no `agent_type`**. The logger therefore writes no `agent` field for them. Delegation metrics must filter on `agent` being present, or they will count one phantom subagent per turn.
 - The documented `PreCompact` payload carries `trigger` (and `custom_instructions`, which is dropped) but no token count; context size at compaction has to be derived from the transcript, whose path is logged.
 
+- Cursor passes its **own** event names to imported hooks (`beforeSubmitPrompt` was observed in the log where `UserPromptSubmit` was expected), so the logger maps the names that differ by more than their first letter (`CURSOR_EVENTS` in `hook.py`, 1.2.1) and reads the top-level `command` of Cursor's shell events for `test_command`. Cursor's `cursor_version` is kept as `harness_version`; Claude Code's payload has no version field, which is why `doctor` asks the binary.
+
 ## The `skill-forced-eval` hook
 
 `hooks/skill-forced-eval/` is the activation hook (strategy W13/W14): `events: [UserPromptSubmit]`, `timeout: 10`, Python `hook.py`. Its stdout becomes additional context for the agent (Claude Code adds a `UserPromptSubmit` hook's stdout to the conversation on exit 0), which is the only injection path a prompt hook has; Cursor's `beforeSubmitPrompt` can only allow or block, so the script exits before reading anything when `CURSOR_VERSION` is set and Cursor is served by an always-apply rule instead.
@@ -131,7 +133,7 @@ Decisions:
 2. **One classifier, two copies.** `classify` in the hook and `classify_test_command` in the logger are the same table (`TEST_COMMANDS`, `RUN_SCRIPTS`, the `COMPOUND` regex); hooks are standalone bundles, so the code is duplicated rather than shared, and the comment in each names the other. Leading `VAR=value` tokens are skipped, `shlex` handles quoting, and any shell operator makes the line compound and untouched because the wrapper takes one simple command.
 3. **The wrapper is found, never assumed.** `.claude/scripts/test-quiet/test-quiet.sh` is looked up from `cwd` upward; the wrapped command uses the relative path when `cwd` is the project root and the absolute path from subfolders. No wrapper means the project did not pin the bundle and the hook has nothing to redirect to.
 4. **Silent in Cursor.** Cursor routes shell commands through its own `beforeShellExecution` hook, so an imported `PreToolUse` hook would not see them; the script exits on `CURSOR_VERSION` or `cursor_version` like the forced-eval hook.
-5. **Conditional rollout.** The logger (1.2.0, matcher `Skill|Bash|mcp__.*`) writes `test_command: raw|wrapped` for Bash calls so the condition in the strategy, "only if agents bypass the wrappers", can be read from the log before the hook is registered.
+5. **Conditional rollout.** The logger (1.2.1, matcher `Skill|Bash|mcp__.*`) writes `test_command: raw|wrapped` for Bash calls so the condition in the strategy, "only if agents bypass the wrappers", can be read from the log before the hook is registered.
 
 ## doctor
 
@@ -146,3 +148,5 @@ With at least one hook pinned, `doctor` adds to its usual checks:
 | `hook-duplicate` | warning | the hook's command appears more than once under an event, or also in `~/.cursor/hooks.json` | remove the extra entries |
 
 `gc` counts `global.hooks` as pins, so a registered hook version is never collected.
+
+Independently of hooks, `doctor` reports harness version drift (strategy W28) in an advisory **Harness versions** section from `commands/versions.rs`: `harness-recorded` (info) the first time a version is seen (Claude Code from `claude --version`, Cursor from the `harness_version` the logger keeps), `harness-upgraded` (warning) once when the version differs from the last sighting in `~/.skills/harness-versions.json`, `harness-missing` (info) while a version is unknown. The JSON report carries it under `harnesses`; see [Storage and Registry](Storage-and-Registry#event-log).

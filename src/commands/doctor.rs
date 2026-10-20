@@ -57,6 +57,7 @@ pub fn run(context: &mut Context<'_>, fix: bool) -> Result<(), Error> {
         super::init::ensure_home(context)?;
         super::read_locked(context, || diagnose(context, false))?
     };
+    let events = crate::eventlog::read(&context.home.home().join("log/events.jsonl"));
     // Cursor's import of the registered hooks is only observable through the
     // log: a "tool": "cursor" line proves Third-Party Imports is on.
     let cursor = {
@@ -67,18 +68,15 @@ pub fn run(context: &mut Context<'_>, fix: bool) -> Result<(), Error> {
             hooks_registered,
             ..Default::default()
         };
-        if let Ok(text) = std::fs::read_to_string(context.home.home().join("log/events.jsonl")) {
-            for line in text.lines() {
-                let Ok(event) = serde_json::from_str::<serde_json::Value>(line) else {
-                    continue;
-                };
-                if event.get("tool").and_then(serde_json::Value::as_str) == Some("cursor") {
-                    evidence.events += 1;
-                    if let Some(ts) = event.get("ts").and_then(serde_json::Value::as_str) {
-                        if evidence.last_event.as_deref().is_none_or(|last| ts > last) {
-                            evidence.last_event = Some(ts.to_owned());
-                        }
-                    }
+        for event in &events {
+            if event.tool == "cursor" {
+                evidence.events += 1;
+                if evidence
+                    .last_event
+                    .as_deref()
+                    .is_none_or(|last| event.ts.as_str() > last)
+                {
+                    evidence.last_event = Some(event.ts.clone());
                 }
             }
         }
@@ -89,6 +87,34 @@ pub fn run(context: &mut Context<'_>, fix: bool) -> Result<(), Error> {
         let settings = crate::harness::claude::load(fs_for_settings(), &settings_path)
             .unwrap_or(serde_json::json!({}));
         super::telemetry::ModelDefaults::from_settings(&settings, |name| std::env::var(name).ok())
+    };
+    // Harness versions: remembered across runs so an upgrade is reported once.
+    // Claude Code is asked directly; Cursor's version comes from its hook
+    // payloads in the log, never from its `cursor` launcher.
+    let harnesses = {
+        let path = context.home.home().join(super::versions::STATE_FILE);
+        let detected = [
+            (
+                "claude_code",
+                "Claude Code",
+                super::versions::detect("claude"),
+            ),
+            (
+                "cursor",
+                "Cursor",
+                super::versions::from_log(&events, "cursor"),
+            ),
+        ];
+        let today = chrono::DateTime::<chrono::Utc>::from(std::time::SystemTime::now())
+            .format("%Y-%m-%d")
+            .to_string();
+        let report =
+            super::versions::inspect(&detected, super::versions::load_history(&path), &today);
+        if report.changed && !context.flags.dry_run {
+            // A failed write only means the upgrade is reported again next time.
+            let _ = super::versions::save_history(&path, &report.history);
+        }
+        report
     };
     let telemetry = super::telemetry::inspect_full(
         |name| std::env::var(name).ok(),
@@ -138,11 +164,16 @@ pub fn run(context: &mut Context<'_>, fix: bool) -> Result<(), Error> {
         ));
         lines.join("\n")
     };
-    let text = [telemetry.text(), mcp.text(), problems_text]
-        .into_iter()
-        .filter(|part| !part.is_empty())
-        .collect::<Vec<_>>()
-        .join("\n");
+    let text = [
+        telemetry.text(),
+        harnesses.text(),
+        mcp.text(),
+        problems_text,
+    ]
+    .into_iter()
+    .filter(|part| !part.is_empty())
+    .collect::<Vec<_>>()
+    .join("\n");
     context
         .output
         .result(
@@ -151,6 +182,7 @@ pub fn run(context: &mut Context<'_>, fix: bool) -> Result<(), Error> {
                 "fixed": fixed,
                 "remaining": remaining,
                 "telemetry": telemetry,
+                "harnesses": harnesses,
                 "mcp": mcp,
                 "dry_run": context.flags.dry_run,
             }),

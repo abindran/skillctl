@@ -13,13 +13,29 @@ heading when cutting a release.
 
 ### Added
 
+- `log summary [--days <n>] [--until <time>] [--strict]` (strategy work
+  item W29): the event log over two windows with per-skill, per-agent,
+  per-server and test-command counts, and the alerts `log-silent`,
+  `activation-drop`, `compaction-rise` and `raw-test-commands`; `--strict`
+  exits 1 on a warning-level alert. Cache-hit and cost alerts are pointed at
+  `ccusage` and the OpenTelemetry backend, which hold that data.
+- `doctor` records the Claude Code and Cursor versions it sees in
+  `~/.skills/harness-versions.json` and reports `harness-upgraded` once
+  after each upgrade (strategy work item W28), the cue to re-run the
+  regression eval; `harness-recorded` and `harness-missing` are info.
+- `eventlog` module: one reader for `log/events.jsonl` shared by
+  `artifacts`, `doctor` and `log summary`.
+- `skillctl-logger` 1.2.1 maps Cursor's own event names
+  (`beforeSubmitPrompt`, `afterShellExecution`, …) onto Claude Code's,
+  reads the command of Cursor's native shell events for `test_command`, and
+  records `harness_version` from `cursor_version`.
 - `hooks/quiet-commands` (strategy work item W24): a `PreToolUse` hook on
   Claude Code's Bash tool that blocks bare test and build commands in
   projects linking the `test-quiet` wrapper and hands the agent the wrapped
   command; `SKILLCTL_QUIET_REWRITE=1` rewrites in place instead (which
   Claude Code only allows together with auto-approval). Silent in Cursor and
   wherever there is nothing to redirect.
-- `skillctl-logger` 1.2.0 records `test_command: raw|wrapped` for Bash
+- `skillctl-logger` 1.2.0 (now 1.2.1) records `test_command: raw|wrapped` for Bash
   calls that run a recognised test or build command (the matcher now
   includes `Bash`); the command text is still never logged. Raw next to
   wrapped is the signal that the `quiet-commands` hook is needed.

@@ -2,6 +2,7 @@
 //! pinned, and what the event log says about its use, for the periodic bloat
 //! review. `--unused` keeps only versions nothing pins, and pinned skills or
 //! agents with no recorded use after a week of logging.
+use crate::eventlog;
 use crate::{
     artifact::Kind,
     context::Context,
@@ -10,10 +11,8 @@ use crate::{
     registry::{Pin, Registry},
     store::{self, meta::Metadata},
 };
-use chrono::{DateTime, Utc};
 use semver::Version;
 use serde::Serialize;
-use serde_json::Value;
 use std::collections::BTreeMap;
 
 /// Days of log history before "no recorded use" counts as unused.
@@ -43,49 +42,31 @@ struct Usage {
 }
 
 fn usage(log: &std::path::Path) -> Usage {
-    let mut usage = Usage::default();
-    let Ok(text) = std::fs::read_to_string(log) else {
-        return usage;
+    let events = eventlog::read(log);
+    let mut usage = Usage {
+        span_days: eventlog::span_days(&events),
+        ..Default::default()
     };
-    let (mut from, mut to): (Option<String>, Option<String>) = (None, None);
-    for line in text.lines() {
-        let Ok(event) = serde_json::from_str::<Value>(line) else {
-            continue;
-        };
-        let Some(ts) = event.get("ts").and_then(Value::as_str) else {
-            continue;
-        };
-        if from.as_deref().is_none_or(|f| ts < f) {
-            from = Some(ts.to_owned());
+    let bump = |map: &mut BTreeMap<String, (usize, String)>, key: String, ts: &str| {
+        let entry = map.entry(key).or_insert((0, ts.to_owned()));
+        entry.0 += 1;
+        if ts > entry.1.as_str() {
+            entry.1 = ts.to_owned();
         }
-        if to.as_deref().is_none_or(|t| ts > t) {
-            to = Some(ts.to_owned());
-        }
-        let bump = |map: &mut BTreeMap<String, (usize, String)>, key: String| {
-            let entry = map.entry(key).or_insert((0, ts.to_owned()));
-            entry.0 += 1;
-            if ts > entry.1.as_str() {
-                entry.1 = ts.to_owned();
-            }
-        };
-        match event.get("event").and_then(Value::as_str) {
-            Some("PostToolUse") => {
-                if let Some(skill) = event.get("skill").and_then(Value::as_str) {
-                    bump(&mut usage.skills, skill.to_lowercase());
+    };
+    for event in &events {
+        match event.event.as_str() {
+            "PostToolUse" => {
+                if let Some(skill) = &event.skill {
+                    bump(&mut usage.skills, skill.to_lowercase(), &event.ts);
                 }
             }
-            Some("SubagentStop") => {
-                if let Some(agent) = event.get("agent").and_then(Value::as_str) {
-                    bump(&mut usage.agents, agent.to_lowercase());
+            "SubagentStop" => {
+                if let Some(agent) = &event.agent {
+                    bump(&mut usage.agents, agent.to_lowercase(), &event.ts);
                 }
             }
             _ => {}
-        }
-    }
-    if let (Some(from), Some(to)) = (from, to) {
-        let parse = |t: &str| DateTime::parse_from_rfc3339(t).map(|t| t.with_timezone(&Utc));
-        if let (Ok(from), Ok(to)) = (parse(&from), parse(&to)) {
-            usage.span_days = (to - from).num_days();
         }
     }
     usage

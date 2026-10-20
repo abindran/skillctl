@@ -144,6 +144,13 @@ pub enum Command {
         command: HookCommand,
     },
 
+    /// Read the event log written by the skillctl-logger hook.
+    Log {
+        /// The log operation to execute.
+        #[command(subcommand)]
+        command: LogCommand,
+    },
+
     /// List projects.
     Projects,
 
@@ -338,6 +345,27 @@ pub enum HookCommand {
 
     /// List pinned hooks with their link and registration state.
     List,
+}
+
+/// Event log operations.
+#[derive(Debug, Subcommand)]
+pub enum LogCommand {
+    /// Sessions, prompts, skill activations, subagent runs, compactions, MCP
+    /// calls and test commands for the last N days against the N days before,
+    /// with alerts for activation drops, compaction rises and a silent log.
+    Summary {
+        /// Length of each window in days.
+        #[arg(long, default_value_t = 7)]
+        days: u32,
+
+        /// End of the current window (RFC 3339 or YYYY-MM-DD; default: now).
+        #[arg(long)]
+        until: Option<String>,
+
+        /// Exit 1 when a warning-level alert fires.
+        #[arg(long)]
+        strict: bool,
+    },
 }
 
 /// Configuration operations.

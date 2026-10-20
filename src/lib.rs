@@ -3,6 +3,7 @@ pub mod cli;
 pub mod commands;
 pub mod context;
 pub mod error;
+pub mod eventlog;
 pub mod harness;
 pub mod linker;
 pub mod names;
@@ -51,6 +52,7 @@ pub fn run(command: Command, context: &mut Context<'_>) -> Result<(), Error> {
         }
         Command::Global { command } => commands::global::run(context, command),
         Command::Hook { command } => commands::hook::run(context, command),
+        Command::Log { command } => commands::log::run(context, command),
         Command::Agent { command } => commands::agent::run(context, command),
         Command::Projects => commands::projects::run(context),
         Command::Skills => commands::skills::run(context),

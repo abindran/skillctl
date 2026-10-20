@@ -68,7 +68,7 @@ fn logger_hook_validates_and_installs() {
     let out = Command::new(env!("CARGO_BIN_EXE_skillctl"))
         .env("SKILLCTL_HOME", &home)
         .env("HOME", temp.path())
-        .args(["validate", "skillctl-logger@1.2.0"])
+        .args(["validate", "skillctl-logger@1.2.1"])
         .output()
         .unwrap();
     assert!(
@@ -165,6 +165,23 @@ fn logger_records_claude_code_and_cursor_events_and_never_fails() {
         &json!({"session_id": "s2", "cwd": "/work/api", "hook_event_name": "Stop", "stop_hook_active": true}),
         true,
     );
+    // Cursor's own event names and its shell payload shape.
+    run_hook(
+        &home,
+        &json!({
+            "conversation_id": "c7", "hook_event_name": "beforeSubmitPrompt",
+            "cursor_version": "3.25.9", "workspace_roots": ["/work/api"], "prompt": "hi there"
+        }),
+        false,
+    );
+    run_hook(
+        &home,
+        &json!({
+            "conversation_id": "c7", "hook_event_name": "afterShellExecution",
+            "cursor_version": "3.25.9", "workspace_roots": ["/work/api"], "command": "cargo test", "output": "..."
+        }),
+        false,
+    );
     // Garbage and non-object input exit 0 and write nothing.
     let mut child = Command::new(hook_dir().join("hook.py"))
         .env("SKILLCTL_HOME", &home)
@@ -177,7 +194,7 @@ fn logger_records_claude_code_and_cursor_events_and_never_fails() {
     assert!(out.status.success());
 
     let records = lines(&home);
-    assert_eq!(records.len(), 11);
+    assert_eq!(records.len(), 13);
     let first = &records[0];
     assert_eq!(first["tool"], "claude-code");
     assert_eq!(first["event"], "PreCompact");
@@ -224,4 +241,12 @@ fn logger_records_claude_code_and_cursor_events_and_never_fails() {
     assert_eq!(records[10]["tool"], "cursor");
     assert_eq!(records[10]["event"], "Stop");
     assert_eq!(records[10]["stop_hook_active"], true);
+    assert_eq!(records[9]["harness_version"], "1.2.3");
+    assert_eq!(records[11]["event"], "UserPromptSubmit");
+    assert_eq!(records[11]["prompt_chars"], 8);
+    assert_eq!(records[11]["harness_version"], "3.25.9");
+    assert_eq!(records[12]["event"], "PostToolUse");
+    assert_eq!(records[12]["tool_name"], "Shell");
+    assert_eq!(records[12]["test_command"], "raw");
+    assert!(records[12].get("command").is_none());
 }
