@@ -303,6 +303,20 @@ final class EndToEndTests: XCTestCase {
         XCTAssertEqual(written?["env"] as? [String: String], ["KEEP": "me"])
     }
 
+    /// The Quality screen's "What is linted" card decodes `lint --files`.
+    func testLintFilesListsWhatLintReads() async throws {
+        let listed = await state.lintFiles(folder: repo)
+        let empty = try XCTUnwrap(listed)
+        XCTAssertFalse(empty.contains(where: \.present))
+        try "# Facts\nOne.\n".write(to: repo.appendingPathComponent("AGENTS.md"), atomically: true, encoding: .utf8)
+        let relisted = await state.lintFiles(folder: repo)
+        let files = try XCTUnwrap(relisted)
+        let agents = try XCTUnwrap(files.first { $0.name == "AGENTS.md" })
+        XCTAssertTrue(agents.present)
+        XCTAssertEqual(agents.lines, 2)
+        XCTAssertTrue(agents.rules.contains("I301"))
+    }
+
     func testAnOutdatedBinaryIsReportedInsteadOfUsed() async throws {
         let fake = temp.appendingPathComponent("old-skillctl")
         try """

@@ -65,6 +65,18 @@ enum Scope: String {
 }
 
 /// The root document of a version or draft, with the files beside it (`skillctl show`).
+/// `lint --files`: one instruction file lint reads, present or not.
+struct InspectedFile: Decodable, Hashable, Identifiable {
+    let name: String
+    let path: String
+    let present: Bool
+    let lines: Int?
+    let link: Bool
+    let loads: String
+    let rules: [String]
+    var id: String { path }
+}
+
 struct ShownDocument: Decodable, Hashable {
     struct Entry: Decodable, Hashable, Identifiable {
         let path: String

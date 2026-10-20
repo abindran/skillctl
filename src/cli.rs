@@ -286,6 +286,11 @@ pub enum Command {
         /// Treat warnings as failures.
         #[arg(long)]
         strict: bool,
+
+        /// List the instruction files lint reads here instead: present or
+        /// absent, size, when the harnesses load each, and the rules on it.
+        #[arg(long, conflicts_with_all = ["format", "strict"])]
+        files: bool,
     },
 
     /// Diagnose the skillctl environment.

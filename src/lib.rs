@@ -91,8 +91,14 @@ pub fn run(command: Command, context: &mut Context<'_>) -> Result<(), Error> {
         } => commands::validate::run(context, target.as_deref(), format, strict, with_reference),
         Command::Lint {
             folder,
+            files: true,
+            ..
+        } => commands::lint::files(context, folder.as_deref()),
+        Command::Lint {
+            folder,
             format,
             strict,
+            files: false,
         } => commands::lint::run(context, folder.as_deref(), format, strict),
         Command::Doctor { fix } => commands::doctor::run(context, fix),
         Command::Gc { keep } => commands::gc::run(context, keep),

@@ -196,6 +196,11 @@ final class AppState {
         await load("validate", [Finding].self, ["validate", reference], allowExit: 3)
     }
 
+    /// The instruction files `lint` reads in `folder`, present or absent.
+    func lintFiles(folder: URL) async -> [InspectedFile]? {
+        await load("lint-files", [InspectedFile].self, ["lint", "--files", folder.path])
+    }
+
     func lint(folder: URL) async -> [Finding]? {
         await load("lint", [Finding].self, ["lint", folder.path], allowExit: 3)
     }

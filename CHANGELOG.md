@@ -25,6 +25,12 @@ heading when cutting a release.
   wrote. `report [--days <n>]` breaks cost and tokens down by model,
   skill, agent and source from the API request events, with tool runs and
   failures, slash commands and active time.
+- `lint --files` lists the instruction files lint reads in a folder, each
+  present or absent with its line count, whether it is a link, when the
+  harnesses load it and the rules on it, so a folder with nothing to lint
+  is told apart from a clean one. The app's Quality screen shows it under
+  the lint findings as "What is linted", and the chosen version's kind,
+  rule families and files as "What is validated".
 - The app's sidebar footer shows only the skillctl version, and a warning
   that opens Settings when the binary is missing or outdated; the binary's
   path and build commit stay in Settings.

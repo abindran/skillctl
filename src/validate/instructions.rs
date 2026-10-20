@@ -375,6 +375,142 @@ pub fn check(
     Ok(findings)
 }
 
+/// One file `check` reads, or would read if it existed: what `lint --files`
+/// reports so a clean result can be told apart from a folder with nothing to
+/// check.
+#[derive(Debug, Clone, serde::Serialize, PartialEq, Eq)]
+pub struct Inspected {
+    /// Relative to the linted folder (`AGENTS.md`, `.cursor/rules/x.mdc`,
+    /// `../CLAUDE.md`); patterns for folders that do not exist.
+    pub name: String,
+    pub path: PathBuf,
+    pub present: bool,
+    pub lines: Option<usize>,
+    /// A symlink, for example a rule skillctl links from the store.
+    pub link: bool,
+    /// When the harnesses load it.
+    pub loads: String,
+    /// The rules that read it.
+    pub rules: Vec<&'static str>,
+}
+
+/// Every instruction file `check` considers for `folder`, present or not.
+pub fn inventory(
+    fs: &dyn Fs,
+    folder: &Path,
+    repo_root: Option<&Path>,
+) -> Result<Vec<Inspected>, Error> {
+    let entry =
+        |name: String, path: PathBuf, text: Option<&str>, loads: &str, rules: &[&'static str]| {
+            let link = fs
+                .symlink_metadata(&path)
+                .is_ok_and(|info| info.file_type().is_symlink());
+            Inspected {
+                name,
+                present: text.is_some(),
+                lines: text.map(|text| text.lines().count()),
+                link,
+                path,
+                loads: loads.to_owned(),
+                rules: rules.to_vec(),
+            }
+        };
+    let mut files = Vec::new();
+    for (name, loads, rules) in [
+        (
+            "AGENTS.md",
+            "Every turn in Cursor; in Claude Code only through an @AGENTS.md import or when no CLAUDE.md exists",
+            &["I301", "I303", "I304", "I305", "I306", "I308", "I309"][..],
+        ),
+        (
+            "CLAUDE.md",
+            "Every turn in Claude Code",
+            &["I304", "I305", "I308"][..],
+        ),
+        (
+            ".claude/CLAUDE.md",
+            "Every turn in Claude Code",
+            &["I304", "I305", "I308"][..],
+        ),
+        (
+            "CLAUDE.local.md",
+            "Every turn in Claude Code; personal and usually not committed",
+            &["I305", "I309"][..],
+        ),
+    ] {
+        let path = folder.join(name);
+        let text = read_if_file(fs, &path)?;
+        files.push(entry(name.to_owned(), path, text.as_deref(), loads, rules));
+    }
+    let relative = |path: &Path| {
+        path.strip_prefix(folder)
+            .map(|path| path.display().to_string())
+            .unwrap_or_else(|_| path.display().to_string())
+    };
+    let rules = claude_rules(fs, folder)?;
+    if rules.is_empty() {
+        files.push(entry(
+            ".claude/rules/*.md".into(),
+            folder.join(".claude/rules"),
+            None,
+            "Every session in Claude Code unless path-scoped",
+            &["I305"],
+        ));
+    }
+    for (path, text) in &rules {
+        files.push(entry(
+            relative(path),
+            path.clone(),
+            Some(text),
+            "Every session in Claude Code unless path-scoped",
+            &["I305"],
+        ));
+    }
+    let rules = cursor_rules(fs, folder)?;
+    if rules.is_empty() {
+        files.push(entry(
+            ".cursor/rules/*.mdc".into(),
+            folder.join(".cursor/rules"),
+            None,
+            "In Cursor: every turn with alwaysApply, otherwise when its globs or description match",
+            &["I302", "I305"],
+        ));
+    }
+    for (path, text) in &rules {
+        let loads = if always_apply(text) {
+            "Every turn in Cursor (alwaysApply)"
+        } else {
+            "In Cursor when its globs or description match"
+        };
+        files.push(entry(
+            relative(path),
+            path.clone(),
+            Some(text),
+            loads,
+            &["I302", "I305"],
+        ));
+    }
+    for path in shadowing_ancestors(fs, folder, repo_root)? {
+        let text = read_if_file(fs, &path)?;
+        let depth = folder
+            .ancestors()
+            .position(|dir| path.starts_with(dir) && dir != folder)
+            .unwrap_or(1);
+        let tail = path
+            .strip_prefix(folder.ancestors().nth(depth).unwrap_or(folder))
+            .map(|tail| tail.display().to_string())
+            .unwrap_or_else(|_| path.display().to_string());
+        files.push(entry(
+            format!("{}{tail}", "../".repeat(depth)),
+            path,
+            text.as_deref(),
+            "Loaded by Claude Code from a parent folder; makes it ignore AGENTS.md here",
+            &["I309"],
+        ));
+    }
+    Ok(files)
+}
+
 /// A heading-delimited part of a Markdown file. The text before the first
 /// heading is a section with an empty title at line 1.
 struct Section {
@@ -840,5 +976,39 @@ mod tests {
         fs::write(dir.join("CLAUDE.md"), "root notes\n").unwrap();
         assert_eq!(ids(&nested, Some(dir)), ["I309"]);
         assert_eq!(ids(&nested, Some(&nested)), Vec::<String>::new());
+    }
+
+    #[test]
+    fn inventory_lists_present_and_absent_files() {
+        let temp = tempfile::tempdir().unwrap();
+        let root = temp.path();
+        let nested = root.join("app");
+        std::fs::create_dir_all(nested.join(".cursor/rules")).unwrap();
+        std::fs::write(nested.join("AGENTS.md"), "# Facts\nline\n").unwrap();
+        std::fs::write(
+            nested.join(".cursor/rules/style.mdc"),
+            "---\nalwaysApply: true\n---\nbody\n",
+        )
+        .unwrap();
+        std::fs::write(root.join("CLAUDE.md"), "parent\n").unwrap();
+        let files = inventory(&crate::services::fs::RealFs, &nested, Some(root)).unwrap();
+        let names: Vec<(&str, bool)> = files
+            .iter()
+            .map(|file| (file.name.as_str(), file.present))
+            .collect();
+        assert_eq!(
+            names,
+            [
+                ("AGENTS.md", true),
+                ("CLAUDE.md", false),
+                (".claude/CLAUDE.md", false),
+                ("CLAUDE.local.md", false),
+                (".claude/rules/*.md", false),
+                (".cursor/rules/style.mdc", true),
+                ("../CLAUDE.md", true),
+            ]
+        );
+        assert_eq!(files[0].lines, Some(2));
+        assert_eq!(files[5].loads, "Every turn in Cursor (alwaysApply)");
     }
 }

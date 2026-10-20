@@ -209,3 +209,37 @@ fn lint_reports_budget_and_procedure_rules_as_warnings() {
     let out = run(&home, &project, &["lint", "--strict"]);
     assert_eq!(out.status.code(), Some(3));
 }
+
+#[test]
+fn lint_files_lists_what_lint_reads_present_or_not() {
+    let temp = tempfile::tempdir().unwrap();
+    let home = temp.path().join("skills");
+    let project = temp.path().join("project");
+    repo(&project);
+
+    let out = run(&home, &project, &["--json", "lint", "--files"]);
+    assert!(
+        out.status.success(),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let files: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
+    let files = files.as_array().unwrap();
+    assert!(files.iter().all(|file| file["present"] == false));
+    assert_eq!(files[0]["name"], "AGENTS.md");
+    let out = run(&home, &project, &["lint", "--files"]);
+    assert!(String::from_utf8_lossy(&out.stdout).contains("Nothing to lint here"));
+
+    fs::write(project.join("AGENTS.md"), "# Facts\nOne.\n").unwrap();
+    let out = run(&home, &project, &["--json", "lint", "--files"]);
+    let files: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
+    assert_eq!(files[0]["present"], true);
+    assert_eq!(files[0]["lines"], 2);
+    assert!(
+        files[0]["rules"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|rule| rule == "I301")
+    );
+}
