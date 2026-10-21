@@ -421,3 +421,65 @@ extension Double {
         self == rounded() ? String(Int(self)) : String(self)
     }
 }
+
+/// One row of a tool results table.
+struct ToolResultRow: Identifiable, Hashable {
+    let name: String
+    var detail: String? = nil
+    let calls: Int
+    let failed: Int
+    var avgMs: Double? = nil
+    var errors: [String: Int] = [:]
+    var id: String { name }
+    var rate: Double { calls > 0 ? Double(failed) / Double(calls) : 0 }
+}
+
+/// Calls, failures, failure rate and (when known) average time and error
+/// types per tool, worst first. Rates of 10% or more are shown in red.
+struct ToolResultsTable: View {
+    let rows: [ToolResultRow]
+    var limit = 15
+    var showTiming = false
+
+    private var sorted: [ToolResultRow] {
+        rows.sorted { ($0.failed, $0.calls, $1.name) > ($1.failed, $1.calls, $0.name) }
+    }
+
+    var body: some View {
+        Grid(alignment: .leading, horizontalSpacing: Metrics.gap, verticalSpacing: Metrics.tight) {
+            GridRow {
+                Text("Tool")
+                Text("Calls").gridColumnAlignment(.trailing)
+                Text("Failed").gridColumnAlignment(.trailing)
+                Text("Rate").gridColumnAlignment(.trailing)
+                if showTiming { Text("Avg time").gridColumnAlignment(.trailing) }
+                Text("Errors")
+            }
+            .font(.caption).foregroundStyle(.secondary)
+            Divider()
+            ForEach(sorted.prefix(limit)) { row in
+                GridRow {
+                    HStack(spacing: Metrics.tight) {
+                        Text(row.name).font(.system(.callout, design: .monospaced)).lineLimit(1)
+                        if let detail = row.detail { Text(detail).font(.caption2).foregroundStyle(.tertiary) }
+                    }
+                    Text("\(row.calls)").monospacedDigit()
+                    Text("\(row.failed)").monospacedDigit()
+                        .foregroundStyle(row.failed > 0 ? Color.primary : Color.secondary)
+                    Text(String(format: "%.1f%%", row.rate * 100)).monospacedDigit()
+                        .foregroundStyle(row.rate >= 0.1 ? Color.red : (row.failed > 0 ? Color.orange : Color.secondary))
+                    if showTiming {
+                        Text(row.avgMs.map { $0 >= 1000 ? String(format: "%.1f s", $0 / 1000) : "\(Int($0)) ms" } ?? "—")
+                            .monospacedDigit().foregroundStyle(.secondary)
+                    }
+                    Text(row.errors.sorted { $0.value > $1.value }.map { "\($0.key) \($0.value)" }.joined(separator: ", "))
+                        .font(.caption).foregroundStyle(.secondary).lineLimit(1)
+                }
+                .font(.callout)
+            }
+            if rows.count > limit {
+                Text("\(rows.count - limit) more").font(.caption).foregroundStyle(.tertiary)
+            }
+        }
+    }
+}

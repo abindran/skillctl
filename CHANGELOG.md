@@ -13,6 +13,15 @@ heading when cutting a release.
 
 ### Added
 
+- Success and failure per tool, from two sources. `telemetry report`
+  breaks tool results down by tool, MCP calls by `<server>/<tool>`, with the
+  failure rate, average duration and failures by `error_type`, and adds
+  `mcp_servers`. `skillctl-logger` 1.2.5 also listens to
+  `PostToolUseFailure` (`failed: true`, `interrupted`; never the error
+  text), so `log summary` reports `tool_failures` and `tool_results` per
+  tool, with the server behind a gateway. The app shows both as tables:
+  "Tool results" in the collector card and "Tool results (hooks)" on the
+  Log screen.
 - `skillctl-logger` 1.2.4 looks through MCP gateways: a `call_tool` (or
   `invoke_tool`, `run_tool`, `execute_tool`, `call`) whose input names
   `<server>__<tool>` is recorded under that server and tool with `via` set

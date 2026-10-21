@@ -345,7 +345,7 @@ Claude Code exports metrics and events over OpenTelemetry when told where to sen
 | `skillctl telemetry enable [--port <n>] [--no-service]` | anywhere | Merges six variables into the `env` block of `~/.claude/settings.json`, keeping a `.bak` of the previous file: `CLAUDE_CODE_ENABLE_TELEMETRY=1`, `OTEL_METRICS_EXPORTER=otlp`, `OTEL_LOGS_EXPORTER=otlp`, `OTEL_EXPORTER_OTLP_PROTOCOL=http/json`, `OTEL_EXPORTER_OTLP_ENDPOINT=http://127.0.0.1:4318` and `OTEL_LOG_TOOL_DETAILS=1`. The last one keeps skill and agent names from being exported as `custom`. On macOS it also writes `~/Library/LaunchAgents/dev.abindran.skillctl.collector.plist` and loads it, so `<this binary> telemetry serve` starts at login and restarts if it stops; its output goes to `~/.skills/telemetry/collector.log`. Run it again after moving the binary or the app. Only Claude Code sessions started afterwards export. |
 | `skillctl telemetry disable [--port <n>]` | anywhere | Removes the variables `enable` wrote; a variable set to any other value is kept and reported. Then unloads and deletes the LaunchAgent. Recorded data stays. |
 | `skillctl telemetry status [--port <n>]` | anywhere | Reports whether Claude Code exports to the collector (any variables missing), whether the service is installed and loaded and which binary it runs, whether the collector answers (`running`, `port-taken` or `stopped`), and today's record count with the time of the last record. Read-only. |
-| `skillctl telemetry report [--days <n>]` | anywhere | Reports cost, requests, input, output and cache tokens by model, skill (`(none)` outside any skill), agent (`main` for the main conversation) and source (`main`, `subagent`, `auxiliary`), plus per-day totals, tool runs with failures (Skill and Task runs under the skill or subagent name), slash commands, API errors and active time. It reads the `api_request` events, or the cost and token counters when the logs exporter is off. |
+| `skillctl telemetry report [--days <n>]` | anywhere | Reports cost, requests, input, output and cache tokens by model, skill (`(none)` outside any skill), agent (`main` for the main conversation) and source (`main`, `subagent`, `auxiliary`), plus per-day totals, tool results (runs, failures, failure rate, average duration and failures by `error_type` such as `ShellError` or `McpToolCallError`, with Skill and Task runs under the skill or subagent name and MCP calls as `<server>/<tool>`), the same per MCP server (`mcp_servers`), slash commands, API errors and active time. It reads the `api_request` events, or the cost and token counters when the logs exporter is off. |
 | `skillctl telemetry serve [--port <n>]` | anywhere | Runs the collector in the foreground on 127.0.0.1: `POST /v1/logs` and `/v1/metrics` with OTLP JSON bodies, and `GET /health`. Protobuf and compressed bodies are refused with 415. `--port 0` picks a free port and prints it. |
 
 ### Quality and maintenance
@@ -558,7 +558,7 @@ skillctl-logger@1.0.0
   events: SessionStart, SessionEnd, UserPromptSubmit, PostToolUse, Stop, SubagentStart, SubagentStop, PreCompact, PostCompact (all registered)
 ```
 
-(`skillctl-logger@1.2.4` at the time of writing; the version follows the hook's `metadata.version`.)
+(`skillctl-logger@1.2.5` at the time of writing; the version follows the hook's `metadata.version`.)
 
 Then send one prompt in Claude Code (or Cursor) and watch the log:
 
@@ -589,6 +589,8 @@ tail -f ~/.skills/log/events.jsonl
 | `server` | `PostToolUse` on an MCP tool | The server name from `mcp__<server>__<tool>`; `doctor` uses it to tell which configured servers are actually used. For a gateway's `call_tool` (such as mcpgw), the server the call was forwarded to, read from the input's `name` (`<server>__<tool>`) (1.2.4+) |
 | `mcp_tool` | `PostToolUse` on an MCP tool | The tool name, or for a gateway call the forwarded tool (1.2.4+). Arguments are never recorded |
 | `via` | `PostToolUse` on a forwarded gateway call | The gateway the call went through, for example `mcpgw` (1.2.4+). `log summary` prints the server as `zrepo 45 (via mcpgw)` and adds `mcp_via` and `mcp_tools` (`server/tool` counts) to its JSON; `doctor` counts the call for the gateway and lists the server under it as `zrepo [via mcpgw]` |
+| `failed` | `PostToolUseFailure` | `true` (1.2.5+). Claude Code fires `PostToolUse` only when a call succeeds and `PostToolUseFailure` when it fails; the logger listens to both with the same matcher, so `log summary` reports `tool_failures` and `tool_results` (succeeded and failed per tool, MCP calls by server) and a "tool failures" row such as `zrepo 2 of 47 (via mcpgw)`. The error text is never recorded |
+| `interrupted` | `PostToolUseFailure` when `is_interrupt` is true | The user stopped the call (1.2.5+) |
 | `agent`, `agent_id` | subagent events | The subagent type and id. `agent` is absent for the harness's own auxiliary agents (for example the one that titles the session after each turn), which also fire `SubagentStop`; count only lines with `agent` when measuring delegation |
 | `trigger` | `PreCompact`, `PostCompact` | `auto` or `manual` |
 | `source`, `reason`, `stop_hook_active` | `SessionStart`, `SessionEnd`, `Stop`/`SubagentStop` | Copied from the event when present |

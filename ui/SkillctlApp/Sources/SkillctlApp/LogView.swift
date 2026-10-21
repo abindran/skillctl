@@ -38,6 +38,7 @@ struct LogView: View {
                         Spacer().frame(maxWidth: .infinity)
                         Spacer().frame(maxWidth: .infinity)
                     }
+                    toolResults(summary.current)
                     Text(summary.note).font(.caption).foregroundStyle(.tertiary)
                 }
                 .pageLayout()
@@ -52,6 +53,38 @@ struct LogView: View {
         .task {
             if state.telemetry == nil { await state.loadTelemetry() }
             if state.usage == nil { await state.loadUsage() }
+        }
+    }
+
+    // MARK: Tool results (hooks)
+
+    /// Successes and failures per tool from the logger, MCP calls by the
+    /// server they reached (the one behind a gateway when known).
+    private func toolResults(_ window: LogWindow) -> some View {
+        let results = window.tool_results ?? [:]
+        let via = window.mcp_via ?? [:]
+        return GroupBox {
+            if results.isEmpty {
+                Text("Nothing recorded in this window.").font(.caption).foregroundStyle(.secondary)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            } else {
+                VStack(alignment: .leading, spacing: Metrics.header) {
+                    ToolResultsTable(rows: results.map { name, outcome in
+                        ToolResultRow(name: name, detail: via[name].map { "via \($0)" },
+                                      calls: outcome.succeeded + outcome.failed, failed: outcome.failed,
+                                      errors: outcome.interrupted > 0 ? ["interrupted": outcome.interrupted] : [:])
+                    })
+                    Text("From the skillctl-logger hook: Skill, slash commands, Bash and MCP calls. Failures are recorded from skillctl-logger 1.2.5 on; an MCP tool that returns an error result can still count as a success here, so the collector card's table is the fuller source for MCP errors.")
+                        .font(.caption2).foregroundStyle(.tertiary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+        } label: {
+            HStack {
+                Label("Tool results (hooks)", systemImage: "checkmark.circle.trianglebadge.exclamationmark")
+                Spacer()
+                Text("\(window.tool_failures ?? 0) failed").font(.caption).foregroundStyle(.secondary)
+            }
         }
     }
 

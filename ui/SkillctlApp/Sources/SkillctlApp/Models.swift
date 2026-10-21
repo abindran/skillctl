@@ -288,6 +288,10 @@ struct LogWindow: Decodable, Hashable {
     let mcp_calls: [String: Int]
     /// Servers reached through a gateway, with the gateway: ["zrepo": "mcpgw"].
     let mcp_via: [String: String]?
+    /// Failed tool calls from `PostToolUseFailure` (logger 1.2.5+).
+    let tool_failures: Int?
+    /// Successes and failures by tool, MCP calls by server.
+    let tool_results: [String: ToolOutcome]?
     /// Slash commands run, by name.
     let commands: [String: Int]
     let test_commands_raw: Int
@@ -377,7 +381,22 @@ struct TelemetryReport: Decodable, Hashable {
     let by_agent: [Bucket]
     let by_source: [Bucket]
     let daily: [Bucket]
-    let tools: [Tally]
+    /// One tool's results; MCP calls are keyed `<server>/<tool>`.
+    struct ToolStat: Decodable, Hashable, Identifiable {
+        let key: String
+        let tool: String
+        let server: String?
+        let count: Int
+        let failures: Int
+        let failure_rate: Double?
+        let avg_ms: Double?
+        /// Failures by error type (`ShellError`, `McpToolCallError`, …).
+        let errors: [String: Int]
+        var id: String { key }
+    }
+    let tools: [ToolStat]
+    /// MCP results per server.
+    let mcp_servers: [ToolStat]?
     let commands: [Tally]
     let api_errors: Int
     let active_seconds: [String: Double]
@@ -477,4 +496,11 @@ struct Count: Identifiable, Hashable {
         }
             .sorted { $0.value == $1.value ? $0.name < $1.name : $0.value > $1.value }
     }
+}
+
+/// One tool's logged results (`log summary`'s `tool_results`).
+struct ToolOutcome: Decodable, Hashable {
+    let succeeded: Int
+    let failed: Int
+    let interrupted: Int
 }

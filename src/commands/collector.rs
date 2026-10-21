@@ -718,6 +718,60 @@ pub struct Count {
     pub failures: u64,
 }
 
+/// Results of one tool (or one MCP server's tool, or one MCP server).
+#[derive(Debug, Clone, Default, Serialize, PartialEq)]
+pub struct ToolStat {
+    /// `Bash`, `Skill:<skill>`, `Agent:<type>`, `<server>/<tool>` for MCP
+    /// calls, or the server alone in `mcp_servers`.
+    pub key: String,
+    /// The exported tool name (`mcp_tool` for every MCP call).
+    pub tool: String,
+    pub server: Option<String>,
+    pub count: u64,
+    pub failures: u64,
+    pub failure_rate: Option<f64>,
+    pub avg_ms: Option<f64>,
+    /// Failures by `error_type` (`ShellError`, `McpToolCallError`, …); the
+    /// error text itself is never stored.
+    pub errors: BTreeMap<String, u64>,
+    #[serde(skip)]
+    total_ms: f64,
+    #[serde(skip)]
+    timed: u64,
+}
+
+impl ToolStat {
+    fn add(&mut self, failed: bool, error: Option<String>, ms: Option<f64>) {
+        self.count += 1;
+        if failed {
+            self.failures += 1;
+            *self
+                .errors
+                .entry(error.unwrap_or_else(|| "unknown".into()))
+                .or_default() += 1;
+        }
+        if let Some(ms) = ms {
+            self.total_ms += ms;
+            self.timed += 1;
+        }
+    }
+}
+
+fn tool_stats(map: BTreeMap<String, ToolStat>) -> Vec<ToolStat> {
+    let mut stats: Vec<ToolStat> = map
+        .into_iter()
+        .map(|(key, mut stat)| {
+            stat.key = key;
+            stat.failure_rate =
+                (stat.count > 0).then(|| round(stat.failures as f64 / stat.count as f64, 3));
+            stat.avg_ms = (stat.timed > 0).then(|| round(stat.total_ms / stat.timed as f64, 0));
+            stat
+        })
+        .collect();
+    stats.sort_by(|left, right| right.count.cmp(&left.count).then(left.key.cmp(&right.key)));
+    stats
+}
+
 #[derive(Debug, Clone, Serialize, PartialEq)]
 pub struct Report {
     pub from: String,
@@ -736,7 +790,12 @@ pub struct Report {
     /// `main`, `subagent` or `auxiliary`.
     pub by_source: Vec<Bucket>,
     pub daily: Vec<Bucket>,
-    pub tools: Vec<Count>,
+    /// Tool results: runs, failures, error types and average duration; MCP
+    /// calls are split by server and tool.
+    pub tools: Vec<ToolStat>,
+    /// MCP results per server. A gateway (mcpgw) appears as itself: the
+    /// exported event does not name the server behind it.
+    pub mcp_servers: Vec<ToolStat>,
     pub commands: Vec<Count>,
     pub api_errors: u64,
     /// Seconds from `claude_code.active_time.total`, by `type` (user, cli).
@@ -881,7 +940,8 @@ pub fn summarize(records: &[Record], from: NaiveDate, to: NaiveDate) -> Report {
         }
         if any { "metrics" } else { "none" }
     };
-    let mut tools = BTreeMap::<String, Count>::new();
+    let mut tools = BTreeMap::<String, ToolStat>::new();
+    let mut mcp_servers = BTreeMap::<String, ToolStat>::new();
     let mut commands = BTreeMap::<String, Count>::new();
     let mut api_errors = 0;
     let mut active_seconds = BTreeMap::<String, f64>::new();
@@ -892,20 +952,40 @@ pub fn summarize(records: &[Record], from: NaiveDate, to: NaiveDate) -> Report {
                 let Some(tool) = text(attrs, "tool_name") else {
                     continue;
                 };
-                // A skill or subagent run is reported under its own name.
-                let key = match (text(attrs, "skill_name"), text(attrs, "subagent_type")) {
-                    (Some(skill), _) => format!("{tool}:{skill}"),
-                    (_, Some(agent)) => format!("{tool}:{agent}"),
-                    _ => tool,
+                let server = text(attrs, "mcp_server_name");
+                // A skill or subagent run is reported under its own name, an
+                // MCP call under its server and tool.
+                let key = match (
+                    text(attrs, "skill_name"),
+                    text(attrs, "subagent_type"),
+                    &server,
+                ) {
+                    (Some(skill), _, _) => format!("{tool}:{skill}"),
+                    (_, Some(agent), _) => format!("{tool}:{agent}"),
+                    (_, _, Some(server)) => format!(
+                        "{server}/{}",
+                        text(attrs, "mcp_tool_name").unwrap_or_else(|| "?".into())
+                    ),
+                    _ => tool.clone(),
                 };
-                let count = tools.entry(key).or_default();
-                count.count += 1;
                 let failed = match attrs.get("success") {
                     Some(Value::Bool(success)) => !success,
                     Some(Value::String(success)) => success == "false",
                     _ => false,
                 };
-                count.failures += u64::from(failed);
+                let error = text(attrs, "error_type");
+                let ms = Some(number(attrs, "duration_ms"))
+                    .filter(|_| attrs.contains_key("duration_ms"));
+                let stat = tools.entry(key).or_default();
+                stat.tool = tool.clone();
+                stat.server = server.clone();
+                stat.add(failed, error.clone(), ms);
+                if let Some(server) = server {
+                    let stat = mcp_servers.entry(server.clone()).or_default();
+                    stat.tool = tool;
+                    stat.server = Some(server);
+                    stat.add(failed, error, ms);
+                }
             }
             ("log", "user_prompt") => {
                 if let Some(command) = text(&record.attrs, "command_name") {
@@ -942,7 +1022,8 @@ pub fn summarize(records: &[Record], from: NaiveDate, to: NaiveDate) -> Report {
         by_agent: sorted(by_agent),
         by_source: sorted(by_source),
         daily,
-        tools: counts(tools),
+        tools: tool_stats(tools),
+        mcp_servers: tool_stats(mcp_servers),
         commands: counts(commands),
         api_errors,
         active_seconds,
@@ -1010,11 +1091,25 @@ fn report_text(report: &Report) -> String {
     }
     if !report.tools.is_empty() {
         lines.push(String::new());
-        lines.push("Tools (runs, failures)".into());
-        for tool in report.tools.iter().take(15) {
+        lines.push(format!(
+            "{:<34} {:>6} {:>6} {:>7} {:>8}  errors",
+            "Tools", "runs", "failed", "rate", "avg ms"
+        ));
+        for tool in report.tools.iter().take(20) {
             lines.push(format!(
-                "  {:<32} {:>6} {:>6}",
-                tool.key, tool.count, tool.failures
+                "  {:<32} {:>6} {:>6} {:>7} {:>8}  {}",
+                tool.key,
+                tool.count,
+                tool.failures,
+                tool.failure_rate
+                    .map(|rate| format!("{:.1}%", rate * 100.0))
+                    .unwrap_or_default(),
+                tool.avg_ms.map(|ms| format!("{ms:.0}")).unwrap_or_default(),
+                tool.errors
+                    .iter()
+                    .map(|(kind, count)| format!("{kind} {count}"))
+                    .collect::<Vec<_>>()
+                    .join(", ")
             ));
         }
     }
@@ -1719,5 +1814,71 @@ mod tests {
         assert!(text.contains("<string>/Apps/Skillctl.app/Contents/Helpers/skillctl</string>\n    <string>--home</string>\n    <string>/Users/me/.skills</string>\n    <string>telemetry</string>\n    <string>serve</string>\n    <string>--port</string>\n    <string>4318</string>"));
         assert!(text.contains("/Users/me/.skills/telemetry/collector.log"));
         assert_eq!(xml_escape("a&b<c>"), "a&amp;b&lt;c&gt;");
+    }
+
+    #[test]
+    fn tool_results_split_mcp_calls_by_server_and_count_error_types() {
+        let result = |tool: &str,
+                      server: Option<&str>,
+                      mcp_tool: Option<&str>,
+                      ok: bool,
+                      error: Option<&str>,
+                      ms: &str| {
+            let mut attrs = vec![
+                kv("event.name", json!({"stringValue": "tool_result"})),
+                kv("tool_name", json!({"stringValue": tool})),
+                kv(
+                    "success",
+                    json!({"stringValue": if ok { "true" } else { "false" }}),
+                ),
+                kv("duration_ms", json!({"stringValue": ms})),
+            ];
+            if let Some(server) = server {
+                attrs.push(kv("mcp_server_name", json!({"stringValue": server})));
+            }
+            if let Some(mcp_tool) = mcp_tool {
+                attrs.push(kv("mcp_tool_name", json!({"stringValue": mcp_tool})));
+            }
+            if let Some(error) = error {
+                attrs.push(kv("error_type", json!({"stringValue": error})));
+            }
+            json!({"timeUnixNano": "1792483200000000000", "attributes": attrs})
+        };
+        let body = json!({"resourceLogs": [{"scopeLogs": [{"logRecords": [
+            result("Bash", None, None, true, None, "100"),
+            result("Bash", None, None, false, Some("ShellError"), "300"),
+            result("mcp_tool", Some("mcpgw"), Some("call_tool"), false, Some("McpToolCallError"), "50"),
+            result("mcp_tool", Some("mcpgw"), Some("call_tool"), true, None, "150"),
+            result("mcp_tool", Some("mcpgw"), Some("search_tools"), true, None, "10"),
+        ]}]}]});
+        let records = parse_logs(&body, "2026-10-20T00:00:00.000Z");
+        let day = NaiveDate::from_ymd_opt(2026, 10, 20).unwrap();
+        let report = summarize(&records, day, day);
+        let bash = report.tools.iter().find(|tool| tool.key == "Bash").unwrap();
+        assert_eq!((bash.count, bash.failures), (2, 1));
+        assert_eq!(bash.failure_rate, Some(0.5));
+        assert_eq!(bash.avg_ms, Some(200.0));
+        assert_eq!(bash.errors["ShellError"], 1);
+        let call = report
+            .tools
+            .iter()
+            .find(|tool| tool.key == "mcpgw/call_tool")
+            .unwrap();
+        assert_eq!((call.count, call.failures), (2, 1));
+        assert_eq!(call.server.as_deref(), Some("mcpgw"));
+        assert_eq!(call.tool, "mcp_tool");
+        assert_eq!(report.mcp_servers.len(), 1);
+        assert_eq!(report.mcp_servers[0].key, "mcpgw");
+        assert_eq!(
+            (report.mcp_servers[0].count, report.mcp_servers[0].failures),
+            (3, 1)
+        );
+        assert_eq!(report.mcp_servers[0].errors["McpToolCallError"], 1);
+        let api = summarize(&parse_logs(&logs(), "2026-10-20T00:00:00.000Z"), day, day);
+        let rendered = report_text(&Report {
+            source: "logs".into(),
+            ..api
+        });
+        assert!(rendered.contains("failed"), "{rendered}");
     }
 }

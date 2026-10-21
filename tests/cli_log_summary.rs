@@ -90,6 +90,11 @@ fn summary_compares_windows_and_alerts() {
         "PostToolUse",
         r#""tool_name":"mcp__mcpgw__call_tool","server":"zrepo","mcp_tool":"compare","via":"mcpgw""#,
     );
+    log += &line(
+        "2026-10-15T06:45:00Z",
+        "PostToolUseFailure",
+        r#""tool_name":"mcp__mcpgw__call_tool","server":"zrepo","mcp_tool":"cherry_pick","via":"mcpgw","failed":true"#,
+    );
     log += "garbage line\n";
     fs::write(home.join("log/events.jsonl"), log).unwrap();
 
@@ -117,9 +122,16 @@ fn summary_compares_windows_and_alerts() {
     assert_eq!(summary["current"]["mcp_calls"]["zrepo"], 1);
     assert_eq!(summary["current"]["mcp_via"]["zrepo"], "mcpgw");
     assert_eq!(summary["current"]["mcp_tools"]["zrepo/compare"], 1);
+    assert_eq!(summary["current"]["tool_failures"], 1);
+    assert_eq!(summary["current"]["tool_results"]["zrepo"]["succeeded"], 1);
+    assert_eq!(summary["current"]["tool_results"]["zrepo"]["failed"], 1);
+    assert_eq!(
+        summary["current"]["mcp_calls"]["zrepo"], 1,
+        "failures are not calls that returned"
+    );
     assert_eq!(summary["current"]["test_commands_raw"], 2);
     assert_eq!(summary["current"]["test_commands_wrapped"], 1);
-    assert_eq!(summary["current"]["sessions"], 24 + 7);
+    assert_eq!(summary["current"]["sessions"], 24 + 8);
     assert_eq!(summary["current"]["daily"].as_array().unwrap().len(), 7);
     assert_eq!(summary["current"]["daily"][0]["day"], "2026-10-13");
     assert_eq!(

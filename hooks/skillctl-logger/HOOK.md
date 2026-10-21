@@ -2,10 +2,11 @@
 name: skillctl-logger
 description: Appends one JSON line per harness lifecycle event to ~/.skills/log/events.jsonl, tagged with the tool that fired it, so sessions, prompts, compactions, subagent runs, skill activations, MCP tool calls and raw versus wrapped test commands can be counted and compared between Claude Code and Cursor.
 metadata:
-  version: "1.2.4"
-events: [SessionStart, SessionEnd, UserPromptSubmit, PostToolUse, Stop, SubagentStart, SubagentStop, PreCompact, PostCompact]
+  version: "1.2.5"
+events: [SessionStart, SessionEnd, UserPromptSubmit, PostToolUse, PostToolUseFailure, Stop, SubagentStart, SubagentStop, PreCompact, PostCompact]
 matchers:
   PostToolUse: "Skill|SlashCommand|Bash|mcp__.*"
+  PostToolUseFailure: "Skill|SlashCommand|Bash|mcp__.*"
 timeout: 10
 entry: hook.py
 ---
@@ -50,6 +51,8 @@ One line per event, appended to `$SKILLCTL_HOME/log/events.jsonl`
 | `server` | on MCP tool events (`mcp__<server>__<tool>`): the server name, so `doctor` can tell which configured servers are actually used. For a gateway's `call_tool` (1.2.4+), the server the call was forwarded to, read from the input's `name` (`<server>__<tool>`) |
 | `mcp_tool` | on MCP tool events (1.2.4+): the tool name, or the forwarded tool for a gateway call; never the arguments |
 | `via` | on a forwarded gateway call (1.2.4+): the gateway server it went through, for example `mcpgw` |
+| `failed` | on `PostToolUseFailure` (1.2.5+): `true`. Claude Code fires `PostToolUse` only for calls that succeed and `PostToolUseFailure` for calls that fail, both with the same matcher, so the two give a failure rate per tool. The error text is never recorded |
+| `interrupted` | on `PostToolUseFailure` when the payload's `is_interrupt` is true: the user stopped the call, which is not the tool's fault |
 
 The script never blocks the harness: every path exits 0, and malformed input or
 an unwritable log are ignored.

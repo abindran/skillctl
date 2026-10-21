@@ -43,6 +43,10 @@ pub struct Event {
     pub mcp_tool: Option<String>,
     /// The gateway server a forwarded MCP call went through (`mcpgw`).
     pub via: Option<String>,
+    /// On `PostToolUseFailure`: the call failed (logger 1.2.5+).
+    pub failed: Option<bool>,
+    /// The user interrupted the failed call.
+    pub interrupted: Option<bool>,
 }
 
 impl Event {

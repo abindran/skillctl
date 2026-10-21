@@ -24,6 +24,15 @@ pub const RISE_RATIO: f64 = 0.5;
 /// What the log cannot answer, printed under every summary.
 pub const NOT_IN_LOG: &str = "Cache-hit rate and cost are not in the event log: `skillctl log usage` reads them from ccusage (Claude Code only); the OpenTelemetry backend has them per skill and agent (see `skillctl doctor`).";
 
+/// Logged results of one tool, or of one MCP server's tools.
+#[derive(Debug, Clone, Default, Serialize, PartialEq)]
+pub struct ToolOutcome {
+    pub succeeded: usize,
+    pub failed: usize,
+    /// Failures the user caused by interrupting the call.
+    pub interrupted: usize,
+}
+
 #[derive(Debug, Clone, Default, Serialize, PartialEq)]
 pub struct Window {
     pub from: String,
@@ -46,6 +55,12 @@ pub struct Window {
     pub mcp_via: BTreeMap<String, String>,
     /// MCP calls by `server/tool` (logger 1.2.4+).
     pub mcp_tools: BTreeMap<String, usize>,
+    /// Failed tool calls (`PostToolUseFailure`, logger 1.2.5+).
+    pub tool_failures: usize,
+    /// Successes and failures by tool, MCP calls by server (the one behind a
+    /// gateway when the logger resolved it). Only the tools the logger's
+    /// matcher covers: Skill, SlashCommand, Bash and MCP.
+    pub tool_results: BTreeMap<String, ToolOutcome>,
     /// Slash commands run, by name (logger 1.2.2+).
     pub commands: BTreeMap<String, usize>,
     pub test_commands_raw: usize,
@@ -167,8 +182,35 @@ fn window(events: &[Event], from: DateTime<Utc>, to: DateTime<Utc>) -> Window {
                         .collect(),
                 ));
             }
+            "PostToolUseFailure" => {
+                window.tool_failures += 1;
+                let key = event
+                    .server
+                    .clone()
+                    .or_else(|| event.tool_name.clone())
+                    .unwrap_or_else(|| "unknown".into());
+                if let (Some(server), Some(gateway)) = (&event.server, &event.via) {
+                    window.mcp_via.insert(server.clone(), gateway.clone());
+                }
+                let outcome = window.tool_results.entry(key).or_default();
+                outcome.failed += 1;
+                if event.interrupted == Some(true) {
+                    outcome.interrupted += 1;
+                }
+            }
             "PostToolUse" => {
                 window.tool_calls += 1;
+                window
+                    .tool_results
+                    .entry(
+                        event
+                            .server
+                            .clone()
+                            .or_else(|| event.tool_name.clone())
+                            .unwrap_or_else(|| "unknown".into()),
+                    )
+                    .or_default()
+                    .succeeded += 1;
                 if let Some(skill) = &event.skill {
                     window.activations += 1;
                     counts.activations += 1;
@@ -416,6 +458,38 @@ pub fn text(summary: &Summary) -> String {
         .collect::<Vec<_>>()
         .join(", ");
     lines.push(row("MCP tool calls", mcp_now, mcp_before, mcp_detail));
+    // "zrepo 2 of 47 (via mcpgw)": only tools that failed, worst first.
+    let mut failing: Vec<(&String, &ToolOutcome)> = cur
+        .tool_results
+        .iter()
+        .filter(|(_, outcome)| outcome.failed > 0)
+        .collect();
+    failing.sort_by(|left, right| right.1.failed.cmp(&left.1.failed).then(left.0.cmp(right.0)));
+    lines.push(row(
+        "tool failures",
+        cur.tool_failures,
+        prev.tool_failures,
+        failing
+            .iter()
+            .map(|(name, outcome)| {
+                format!(
+                    "{name} {} of {}{}{}",
+                    outcome.failed,
+                    outcome.failed + outcome.succeeded,
+                    cur.mcp_via
+                        .get(*name)
+                        .map(|gateway| format!(" (via {gateway})"))
+                        .unwrap_or_default(),
+                    if outcome.interrupted > 0 {
+                        format!(", {} interrupted", outcome.interrupted)
+                    } else {
+                        String::new()
+                    }
+                )
+            })
+            .collect::<Vec<_>>()
+            .join(", "),
+    ));
     let commands_now: usize = cur.commands.values().sum();
     let commands_before: usize = prev.commands.values().sum();
     lines.push(row(

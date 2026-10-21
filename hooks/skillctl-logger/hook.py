@@ -160,7 +160,12 @@ def record_for(event):
         command = slash_command(event["prompt"])
         if command:
             record["command"] = command
-    if name in ("PreToolUse", "PostToolUse"):
+    if name == "PostToolUseFailure":
+        # Only that it failed; the error text can hold secrets and is never kept.
+        record["failed"] = True
+        if event.get("is_interrupt") is True:
+            record["interrupted"] = True
+    if name in ("PreToolUse", "PostToolUse", "PostToolUseFailure"):
         tool_name = event.get("tool_name")
         record["tool_name"] = tool_name
         tool_input = event.get("tool_input")

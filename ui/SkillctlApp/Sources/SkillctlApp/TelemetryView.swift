@@ -149,15 +149,23 @@ struct TelemetrySection: View {
                 costChart("By model", report.by_model)
             }
             if !report.tools.isEmpty {
-                GroupBox("Tool runs") {
-                    Chart(report.tools.prefix(10)) { tool in
-                        BarMark(x: .value("Runs", tool.count), y: .value("Tool", tool.key))
-                            .annotation(position: .trailing) {
-                                Text(tool.failures > 0 ? "\(tool.count) (\(tool.failures) failed)" : "\(tool.count)").font(.caption2)
-                            }
+                GroupBox {
+                    ToolResultsTable(
+                        rows: report.tools.map {
+                            ToolResultRow(name: $0.key, calls: $0.count, failed: $0.failures,
+                                          avgMs: $0.avg_ms, errors: $0.errors)
+                        },
+                        showTiming: true)
+                    Text("From Claude Code's exported tool results; MCP calls are listed as server/tool. A gateway such as mcpgw appears as itself here; the Log screen's hook-based table names the server behind it.")
+                        .font(.caption2).foregroundStyle(.tertiary).padding(.top, Metrics.header)
+                } label: {
+                    HStack {
+                        Text("Tool results")
+                        Spacer()
+                        let failed = report.tools.reduce(0) { $0 + $1.failures }
+                        let total = report.tools.reduce(0) { $0 + $1.count }
+                        Text("\(failed) of \(total) failed").font(.caption).foregroundStyle(.secondary)
                     }
-                    .chartXAxis(.hidden)
-                    .frame(height: CGFloat(min(report.tools.count, 10)) * 24 + 20)
                 }
             }
             Text(footer(report)).font(.caption2).foregroundStyle(.tertiary)
