@@ -39,6 +39,10 @@ pub struct Event {
     /// The slash command a prompt started with, or the one the model ran
     /// through `SlashCommand`: the name only, lowercase.
     pub command: Option<String>,
+    /// The MCP tool, or for a gateway's `call_tool` the tool it forwarded to.
+    pub mcp_tool: Option<String>,
+    /// The gateway server a forwarded MCP call went through (`mcpgw`).
+    pub via: Option<String>,
 }
 
 impl Event {

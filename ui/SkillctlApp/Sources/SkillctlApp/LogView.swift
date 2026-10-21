@@ -31,7 +31,7 @@ struct LogView: View {
                     HStack(alignment: .top, spacing: Metrics.gap) {
                         chart("Skill activations", Count.from(summary.current.skills), empty: "No skill activations in this window.")
                         chart("Subagent runs", Count.from(summary.current.agents), empty: "No subagent runs in this window.")
-                        chart("MCP tool calls", Count.from(summary.current.mcp_calls), empty: "No MCP tool calls in this window.")
+                        chart("MCP tool calls", Count.from(summary.current.mcp_calls, via: summary.current.mcp_via ?? [:]), empty: "No MCP tool calls in this window.")
                     }
                     HStack(alignment: .top, spacing: Metrics.gap) {
                         chart("Slash commands", Count.from(summary.current.commands), empty: "No slash commands recorded (skillctl-logger 1.2.2 records them).")

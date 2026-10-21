@@ -68,7 +68,7 @@ fn logger_hook_validates_and_installs() {
     let out = Command::new(env!("CARGO_BIN_EXE_skillctl"))
         .env("SKILLCTL_HOME", &home)
         .env("HOME", temp.path())
-        .args(["validate", "skillctl-logger@1.2.3"])
+        .args(["validate", "skillctl-logger@1.2.4"])
         .output()
         .unwrap();
     assert!(
@@ -295,4 +295,49 @@ fn logger_records_slash_command_names_and_nothing_else_of_the_prompt() {
     assert!(records[3].get("command").is_none());
     assert_eq!(records[4]["tool_name"], "SlashCommand");
     assert_eq!(records[4]["command"], "triage");
+}
+
+#[test]
+fn gateway_calls_are_filed_under_the_server_they_forward_to() {
+    if python().is_none() {
+        eprintln!("python3 not on PATH; skipping");
+        return;
+    }
+    let temp = tempfile::tempdir().unwrap();
+    let home = temp.path().join("skills");
+    let call = |tool: &str, input: Value| {
+        run_hook(
+            &home,
+            &json!({
+                "session_id": "s", "cwd": "/work", "hook_event_name": "PostToolUse",
+                "tool_name": tool, "tool_input": input
+            }),
+            false,
+        )
+    };
+    call(
+        "mcp__mcpgw__call_tool",
+        json!({"name": "zrepo__mr_activity", "arguments": {"secret": "never logged"}}),
+    );
+    call(
+        "mcp__mcpgw__search_tools",
+        json!({"query": "merge request"}),
+    );
+    call("mcp__mcpgw__call_tool", json!({"name": "not-a-target"}));
+    call("mcp__github__list_pull_requests", json!({"name": "x__y"}));
+    let records = lines(&home);
+    assert_eq!(records[0]["server"], "zrepo");
+    assert_eq!(records[0]["mcp_tool"], "mr_activity");
+    assert_eq!(records[0]["via"], "mcpgw");
+    assert!(!records[0].to_string().contains("never logged"));
+    // The gateway's own tools stay under the gateway.
+    assert_eq!(records[1]["server"], "mcpgw");
+    assert_eq!(records[1]["mcp_tool"], "search_tools");
+    assert!(records[1].get("via").is_none());
+    // No <server>__<tool> target: filed under the gateway.
+    assert_eq!(records[2]["server"], "mcpgw");
+    assert!(records[2].get("via").is_none());
+    // Only gateway call tools are looked into.
+    assert_eq!(records[3]["server"], "github");
+    assert_eq!(records[3]["mcp_tool"], "list_pull_requests");
 }

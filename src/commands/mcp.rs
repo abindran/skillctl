@@ -30,9 +30,22 @@ pub struct Server {
     pub last_used: Option<String>,
 }
 
+/// A server the log saw only through a gateway (`call_tool` forwarding to
+/// `<server>__<tool>`): it is configured inside the gateway, not in any file
+/// doctor reads.
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+pub struct BehindGateway {
+    pub name: String,
+    pub gateway: String,
+    pub uses: usize,
+    pub last_used: String,
+}
+
 #[derive(Debug, Clone, Serialize)]
 pub struct Audit {
     pub servers: Vec<Server>,
+    /// Servers reached through a gateway, from the log (logger 1.2.4+).
+    pub behind_gateways: Vec<BehindGateway>,
     pub log_events: usize,
     pub log_from: Option<String>,
     pub log_to: Option<String>,
@@ -41,7 +54,7 @@ pub struct Audit {
 
 impl Audit {
     pub fn text(&self) -> String {
-        if self.servers.is_empty() && self.findings.is_empty() {
+        if self.servers.is_empty() && self.findings.is_empty() && self.behind_gateways.is_empty() {
             return String::new();
         }
         let mut lines = vec![format!(
@@ -58,6 +71,12 @@ impl Audit {
                     (Some(last), uses) => format!("; {uses} tool call(s), last {last}"),
                     (None, _) => "; no tool call in the log".to_owned(),
                 }
+            ));
+        }
+        for server in &self.behind_gateways {
+            lines.push(format!(
+                "  {} [via {}]: {} tool call(s), last {}",
+                server.name, server.gateway, server.uses, server.last_used
             ));
         }
         for item in &self.findings {
@@ -196,6 +215,7 @@ pub fn audit(user_home: &Path, folder: Option<&Path>, log: &Path) -> Result<Audi
 
     // Usage from the logger: PostToolUse events whose tool is mcp__<server>__<tool>.
     let mut uses: BTreeMap<String, (usize, String)> = BTreeMap::new();
+    let mut behind: BTreeMap<(String, String), (usize, String)> = BTreeMap::new();
     let mut log_events = 0;
     let mut log_from: Option<String> = None;
     let mut log_to: Option<String> = None;
@@ -224,12 +244,24 @@ pub fn audit(user_home: &Path, folder: Option<&Path>, log: &Path) -> Result<Audi
                             .and_then(|rest| rest.split("__").next())
                             .map(str::to_owned)
                     });
-                if let Some(server) = server {
-                    let entry = uses.entry(server).or_insert((0, ts.to_owned()));
+                let count = |entry: &mut (usize, String)| {
                     entry.0 += 1;
                     if ts > entry.1.as_str() {
                         entry.1 = ts.to_owned();
                     }
+                };
+                // A forwarded call uses the gateway too: it is what is loaded
+                // every turn, so it must not look unused.
+                let via = event.get("via").and_then(Value::as_str);
+                if let (Some(server), Some(via)) = (&server, via) {
+                    count(
+                        behind
+                            .entry((server.clone(), via.to_owned()))
+                            .or_insert((0, ts.to_owned())),
+                    );
+                    count(uses.entry(via.to_owned()).or_insert((0, ts.to_owned())));
+                } else if let Some(server) = server {
+                    count(uses.entry(server).or_insert((0, ts.to_owned())));
                 }
             }
         }
@@ -299,8 +331,18 @@ pub fn audit(user_home: &Path, folder: Option<&Path>, log: &Path) -> Result<Audi
             });
         }
     }
+    let behind_gateways = behind
+        .into_iter()
+        .map(|((name, gateway), (uses, last_used))| BehindGateway {
+            name,
+            gateway,
+            uses,
+            last_used,
+        })
+        .collect();
     Ok(Audit {
         servers,
+        behind_gateways,
         log_events,
         log_from,
         log_to,
@@ -423,5 +465,48 @@ mod tests {
         assert!(report.servers.is_empty());
         assert!(report.findings.is_empty());
         assert_eq!(report.text(), "");
+    }
+
+    #[test]
+    fn calls_through_a_gateway_count_for_it_and_list_the_server_behind() {
+        let temp = tempfile::tempdir().unwrap();
+        let home = temp.path().join("home");
+        std::fs::create_dir_all(&home).unwrap();
+        std::fs::write(
+            home.join(".claude.json"),
+            r#"{"mcpServers": {"mcpgw": {"command": "mcpgw", "args": ["connect"]}}}"#,
+        )
+        .unwrap();
+        let log = temp.path().join("events.jsonl");
+        std::fs::write(
+            &log,
+            concat!(
+                r#"{"ts":"2026-10-21T10:00:00Z","event":"PostToolUse","tool_name":"mcp__mcpgw__call_tool","server":"zrepo","mcp_tool":"compare","via":"mcpgw"}"#,
+                "\n",
+                r#"{"ts":"2026-10-21T11:00:00Z","event":"PostToolUse","tool_name":"mcp__mcpgw__call_tool","server":"zrepo","mcp_tool":"get_mr","via":"mcpgw"}"#,
+                "\n",
+                r#"{"ts":"2026-10-21T12:00:00Z","event":"PostToolUse","tool_name":"mcp__mcpgw__search_tools","server":"mcpgw","mcp_tool":"search_tools"}"#,
+                "\n",
+            ),
+        )
+        .unwrap();
+        let report = audit(&home, None, &log).unwrap();
+        assert_eq!(report.servers[0].name, "mcpgw");
+        assert_eq!(report.servers[0].uses, 3, "forwarded calls use the gateway");
+        assert_eq!(
+            report.behind_gateways,
+            [BehindGateway {
+                name: "zrepo".into(),
+                gateway: "mcpgw".into(),
+                uses: 2,
+                last_used: "2026-10-21T11:00:00Z".into(),
+            }]
+        );
+        assert!(report.findings.is_empty());
+        assert!(
+            report
+                .text()
+                .contains("zrepo [via mcpgw]: 2 tool call(s), last 2026-10-21T11:00:00Z")
+        );
     }
 }

@@ -22,6 +22,8 @@ struct DoctorView: View {
                     ForEach(report.advisory, id: \.title) { advisory in
                         if advisory.title == "Harness versions", let harnesses = report.harnesses {
                             harnessCard(advisory.findings, harnesses)
+                        } else if advisory.title == "MCP servers", let mcp = report.mcp, !(mcp.servers ?? []).isEmpty {
+                            mcpCard(mcp)
                         } else {
                             section(title: advisory.title, symbol: advisory.title == "Telemetry" ? "antenna.radiowaves.left.and.right" : "server.rack",
                                     problems: advisory.findings, footer: nil, advisory: true)
@@ -154,6 +156,73 @@ struct DoctorView: View {
             .help("Copy the suggested fix to the clipboard")
         }
         .padding(.vertical, Metrics.gap)
+    }
+
+    /// Every configured MCP server with its logged use, the servers reached
+    /// through each gateway indented under it, then the findings.
+    private func mcpCard(_ mcp: MCPAudit) -> some View {
+        let servers = mcp.servers ?? []
+        let behind = mcp.behind_gateways ?? []
+        return GroupBox {
+            VStack(alignment: .leading, spacing: 0) {
+                ForEach(Array(servers.enumerated()), id: \.element.id) { index, server in
+                    mcpRow(name: server.name, badge: server.scope, detail: server.transport,
+                           uses: server.uses, last: server.last_used, disabled: server.disabled)
+                    ForEach(behind.filter { $0.gateway == server.name }) { item in
+                        mcpRow(name: item.name, badge: "via \(item.gateway)", detail: nil,
+                               uses: item.uses, last: item.last_used, disabled: false, indent: true)
+                    }
+                    if index < servers.count - 1 { Divider() }
+                }
+                // A gateway seen in the log but configured nowhere doctor reads.
+                ForEach(behind.filter { item in !servers.contains { $0.name == item.gateway } }) { item in
+                    Divider()
+                    mcpRow(name: item.name, badge: "via \(item.gateway)", detail: nil,
+                           uses: item.uses, last: item.last_used, disabled: false)
+                }
+                if !mcp.findings.isEmpty {
+                    Divider()
+                    ForEach(mcp.findings) { problemRow($0) }
+                }
+                Divider()
+                Text("Every connected server's tool definitions load on every turn. Calls through a gateway count for the gateway and are listed under it by the server they reached.")
+                    .font(.caption).foregroundStyle(.secondary).padding(.top, Metrics.header)
+            }
+        } label: {
+            HStack {
+                Label("MCP servers", systemImage: "server.rack")
+                Text("advisory").font(.caption2).foregroundStyle(.tertiary)
+                Spacer()
+                Text("\(servers.filter { $0.uses > 0 }.count) of \(servers.count) used")
+                    .font(.caption).foregroundStyle(.secondary)
+            }
+        }
+    }
+
+    private func mcpRow(name: String, badge: String, detail: String?, uses: Int, last: String?,
+                        disabled: Bool, indent: Bool = false) -> some View {
+        HStack(alignment: .firstTextBaseline, spacing: Metrics.gap) {
+            if indent {
+                Image(systemName: "arrow.turn.down.right").font(.caption).foregroundStyle(.tertiary)
+            }
+            Text(name).fontWeight(indent ? .regular : .semibold)
+            SeverityBadge(text: badge)
+            if disabled { SeverityBadge(text: "disabled") }
+            if let detail {
+                // "mcpgw connect" rather than the binary's full path, which is on hover.
+                let parts = detail.split(separator: " ", maxSplits: 1).map(String.init)
+                let short = ([(parts.first.map { ($0 as NSString).lastPathComponent }) ?? ""] + parts.dropFirst()).joined(separator: " ")
+                Text(short).font(.system(.caption, design: .monospaced)).foregroundStyle(.tertiary)
+                    .lineLimit(1).truncationMode(.middle)
+                    .help(detail)
+            }
+            Spacer(minLength: Metrics.gap)
+            Text(uses > 0 ? "\(uses) call(s)" + (last.map { " · last \(String($0.prefix(16)).replacingOccurrences(of: "T", with: " "))" } ?? "") : "no calls logged")
+                .font(.caption).foregroundStyle(uses > 0 ? .secondary : .tertiary)
+                .monospacedDigit()
+        }
+        .padding(.leading, indent ? Metrics.section : 0)
+        .padding(.vertical, Metrics.tight)
     }
 
     private func harnessCard(_ findings: [Problem], _ harnesses: Harnesses) -> some View {

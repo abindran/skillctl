@@ -2,7 +2,7 @@
 name: skillctl-logger
 description: Appends one JSON line per harness lifecycle event to ~/.skills/log/events.jsonl, tagged with the tool that fired it, so sessions, prompts, compactions, subagent runs, skill activations, MCP tool calls and raw versus wrapped test commands can be counted and compared between Claude Code and Cursor.
 metadata:
-  version: "1.2.3"
+  version: "1.2.4"
 events: [SessionStart, SessionEnd, UserPromptSubmit, PostToolUse, Stop, SubagentStart, SubagentStop, PreCompact, PostCompact]
 matchers:
   PostToolUse: "Skill|SlashCommand|Bash|mcp__.*"
@@ -47,7 +47,9 @@ One line per event, appended to `$SKILLCTL_HOME/log/events.jsonl`
 | `trigger`, `reason`, `source`, `stop_hook_active` | copied from the event when present |
 | `prompt_chars` | length of the prompt on `UserPromptSubmit`; the text is never recorded |
 | `tool_name`, `skill` | on tool events: the tool, and `tool_input.skill` when the tool is `Skill` |
-| `server` | on MCP tool events (`mcp__<server>__<tool>`): the server name, so `doctor` can tell which configured servers are actually used |
+| `server` | on MCP tool events (`mcp__<server>__<tool>`): the server name, so `doctor` can tell which configured servers are actually used. For a gateway's `call_tool` (1.2.4+), the server the call was forwarded to, read from the input's `name` (`<server>__<tool>`) |
+| `mcp_tool` | on MCP tool events (1.2.4+): the tool name, or the forwarded tool for a gateway call; never the arguments |
+| `via` | on a forwarded gateway call (1.2.4+): the gateway server it went through, for example `mcpgw` |
 
 The script never blocks the harness: every path exits 0, and malformed input or
 an unwritable log are ignored.

@@ -163,10 +163,19 @@ def record_for(event):
     if name in ("PreToolUse", "PostToolUse"):
         tool_name = event.get("tool_name")
         record["tool_name"] = tool_name
+        tool_input = event.get("tool_input")
         if isinstance(tool_name, str) and tool_name.startswith("mcp__"):
             # Claude Code names MCP tools mcp__<server>__<tool>.
-            record["server"] = tool_name[len("mcp__"):].split("__", 1)[0]
-        tool_input = event.get("tool_input")
+            server, _, mcp_tool = tool_name[len("mcp__"):].partition("__")
+            record["server"] = server
+            if mcp_tool:
+                record["mcp_tool"] = mcp_tool
+            behind = gateway_target(mcp_tool, tool_input)
+            if behind:
+                # A gateway's call_tool names the real <server>__<tool> in its
+                # input; record that server, and the gateway it went through.
+                record["server"], record["mcp_tool"] = behind
+                record["via"] = server
         if not isinstance(tool_input, dict) and isinstance(event.get("command"), str):
             # Cursor's native shell events carry the command at the top level.
             tool_input = {"command": event["command"]}
@@ -186,6 +195,26 @@ def record_for(event):
             if kind:
                 record["test_command"] = kind
     return record
+
+
+# Tools through which an MCP gateway forwards a call to another server; the
+# target is named <server>__<tool> in the input's name (or tool) field.
+GATEWAY_CALLS = {"call_tool", "invoke_tool", "run_tool", "execute_tool", "call"}
+GATEWAY_TARGET = re.compile(r"^([A-Za-z0-9][A-Za-z0-9_.-]*?)__([A-Za-z0-9_.-]+)$")
+
+
+def gateway_target(mcp_tool, tool_input):
+    """(server, tool) a gateway call forwarded to, or None. Only the names are
+    looked at, and the arguments are never recorded."""
+    if mcp_tool not in GATEWAY_CALLS or not isinstance(tool_input, dict):
+        return None
+    for key in ("name", "tool", "tool_name"):
+        value = tool_input.get(key)
+        if isinstance(value, str):
+            match = GATEWAY_TARGET.match(value)
+            if match:
+                return match.group(1), match.group(2)
+    return None
 
 
 def main():

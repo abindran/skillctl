@@ -41,6 +41,11 @@ pub struct Window {
     pub compactions: usize,
     pub compactions_per_session: Option<f64>,
     pub mcp_calls: BTreeMap<String, usize>,
+    /// Servers reached through a gateway, with the gateway (logger 1.2.4+):
+    /// `{"zrepo": "mcpgw"}`. Their calls count under the server, not the gateway.
+    pub mcp_via: BTreeMap<String, String>,
+    /// MCP calls by `server/tool` (logger 1.2.4+).
+    pub mcp_tools: BTreeMap<String, usize>,
     /// Slash commands run, by name (logger 1.2.2+).
     pub commands: BTreeMap<String, usize>,
     pub test_commands_raw: usize,
@@ -176,6 +181,15 @@ fn window(events: &[Event], from: DateTime<Utc>, to: DateTime<Utc>) -> Window {
                 }
                 if let Some(server) = &event.server {
                     *window.mcp_calls.entry(server.clone()).or_default() += 1;
+                    if let Some(gateway) = &event.via {
+                        window.mcp_via.insert(server.clone(), gateway.clone());
+                    }
+                    if let Some(tool) = &event.mcp_tool {
+                        *window
+                            .mcp_tools
+                            .entry(format!("{server}/{tool}"))
+                            .or_default() += 1;
+                    }
                 }
                 match event.test_command.as_deref() {
                     Some("raw") => window.test_commands_raw += 1,
@@ -391,12 +405,17 @@ pub fn text(summary: &Summary) -> String {
     ));
     let mcp_now: usize = cur.mcp_calls.values().sum();
     let mcp_before: usize = prev.mcp_calls.values().sum();
-    lines.push(row(
-        "MCP tool calls",
-        mcp_now,
-        mcp_before,
-        counts(&cur.mcp_calls),
-    ));
+    // A server reached through a gateway is named with it: "zrepo 45 (via mcpgw)".
+    let mcp_detail = cur
+        .mcp_calls
+        .iter()
+        .map(|(server, count)| match cur.mcp_via.get(server) {
+            Some(gateway) => format!("{server} {count} (via {gateway})"),
+            None => format!("{server} {count}"),
+        })
+        .collect::<Vec<_>>()
+        .join(", ");
+    lines.push(row("MCP tool calls", mcp_now, mcp_before, mcp_detail));
     let commands_now: usize = cur.commands.values().sum();
     let commands_before: usize = prev.commands.values().sum();
     lines.push(row(

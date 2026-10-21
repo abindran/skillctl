@@ -13,6 +13,18 @@ heading when cutting a release.
 
 ### Added
 
+- `skillctl-logger` 1.2.4 looks through MCP gateways: a `call_tool` (or
+  `invoke_tool`, `run_tool`, `execute_tool`, `call`) whose input names
+  `<server>__<tool>` is recorded under that server and tool with `via` set
+  to the gateway, so calls through mcpgw show as `zrepo` instead of as
+  `mcpgw`. Every MCP record also carries `mcp_tool`. Names only, never
+  arguments. `log summary` prints `zrepo 45 (via mcpgw)` and adds
+  `mcp_via` and `mcp_tools`; `doctor` credits the gateway and lists the
+  servers behind it (`behind_gateways`).
+- The app's Doctor screen lists every configured MCP server with its scope,
+  command and logged calls, with gateway-backed servers indented under
+  their gateway; before, only MCP findings were shown, so a server in use
+  never appeared. The Log screen's MCP chart names them "zrepo (via mcpgw)".
 - `skillctl telemetry serve|enable|disable|status|report`: a local
   OpenTelemetry collector for Claude Code. `serve` receives OTLP over
   HTTP/JSON on 127.0.0.1 (default port 4318) and writes one JSON line per

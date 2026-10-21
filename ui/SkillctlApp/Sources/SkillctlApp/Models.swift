@@ -229,6 +229,26 @@ struct Harnesses: Decodable, Hashable {
 }
 
 struct MCPAudit: Decodable, Hashable {
+    /// One configured server per harness scope, with its logged use.
+    struct Server: Decodable, Hashable, Identifiable {
+        let name: String
+        let scope: String
+        let transport: String?
+        let disabled: Bool
+        let uses: Int
+        let last_used: String?
+        var id: String { "\(name)|\(scope)" }
+    }
+    /// A server reached only through a gateway such as mcpgw (logger 1.2.4+).
+    struct Behind: Decodable, Hashable, Identifiable {
+        let name: String
+        let gateway: String
+        let uses: Int
+        let last_used: String
+        var id: String { "\(gateway)/\(name)" }
+    }
+    let servers: [Server]?
+    let behind_gateways: [Behind]?
     let findings: [Problem]
 }
 
@@ -266,6 +286,8 @@ struct LogWindow: Decodable, Hashable {
     let compactions: Int
     let compactions_per_session: Double?
     let mcp_calls: [String: Int]
+    /// Servers reached through a gateway, with the gateway: ["zrepo": "mcpgw"].
+    let mcp_via: [String: String]?
     /// Slash commands run, by name.
     let commands: [String: Int]
     let test_commands_raw: Int
@@ -447,8 +469,12 @@ struct Count: Identifiable, Hashable {
     let value: Int
     var id: String { name }
 
-    static func from(_ map: [String: Int]) -> [Count] {
-        map.map { Count(name: $0.key, value: $0.value) }
+    /// `via` names the gateway a server was reached through: "zrepo (via mcpgw)".
+    static func from(_ map: [String: Int], via: [String: String] = [:]) -> [Count] {
+        map.map { entry -> Count in
+            let name = via[entry.key].map { gateway in "\(entry.key) (via \(gateway))" } ?? entry.key
+            return Count(name: name, value: entry.value)
+        }
             .sorted { $0.value == $1.value ? $0.name < $1.name : $0.value > $1.value }
     }
 }
