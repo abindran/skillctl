@@ -11,6 +11,8 @@ heading when cutting a release.
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-10-24
+
 ### Added
 
 - The macOS app installs the command line tool itself, so the app is the
@@ -416,5 +418,6 @@ with a prebuilt universal macOS tarball attached to the GitHub release.
 - `-v/--verbose` has no effect yet, and `--dry-run` prints a summary rather than
   the full recorded action plan.
 
-[Unreleased]: https://github.com/abindran/skillctl/compare/v0.1.0...HEAD
+[Unreleased]: https://github.com/abindran/skillctl/compare/v0.2.0...HEAD
+[0.2.0]: https://github.com/abindran/skillctl/releases/tag/v0.2.0
 [0.1.0]: https://github.com/abindran/skillctl/releases/tag/v0.1.0

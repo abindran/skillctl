@@ -107,7 +107,7 @@ skillctl --version
 ```
 
 ```
-skillctl 0.1.0 (commit 7e88fa5422b0, registry schema 1)
+skillctl 0.2.0 (commit 163dd34ae72a, registry schema 1)
 ```
 
 ```bash
@@ -929,7 +929,7 @@ Optional repository configuration:
 Without the signing secrets the release is unsigned, which is fine for `cargo install`; only binaries downloaded through a browser hit Gatekeeper quarantine. Without the crates.io token the GitHub release is still created and the crate job logs a warning; re-run the workflow for the tag after adding the token:
 
 ```bash
-gh workflow run release.yml --ref v0.1.0
+gh workflow run release.yml --ref v0.2.0
 ```
 
 Publishing by hand works too: `cargo login` once, then `cargo publish --locked` from the tagged commit.
@@ -937,7 +937,7 @@ Publishing by hand works too: `cargo login` once, then `cargo publish --locked` 
 The same steps run locally:
 
 ```bash
-scripts/release/build-universal.sh && scripts/release/package.sh 0.1.0 && scripts/release/smoke.sh dist/skillctl
+scripts/release/build-universal.sh && scripts/release/package.sh 0.2.0 && scripts/release/smoke.sh dist/skillctl
 ```
 
 ## Implementation status
