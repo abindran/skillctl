@@ -13,6 +13,12 @@ heading when cutting a release.
 
 ## [0.2.0] - 2026-10-24
 
+### Fixed
+
+- The release smoke scenario fills in the scaffold's directive description
+  before validating with `--strict`; O144 rejected the `[placeholders]` and
+  failed the clean-runner verification of the first 0.2.0 build.
+
 ### Added
 
 - The macOS app installs the command line tool itself, so the app is the

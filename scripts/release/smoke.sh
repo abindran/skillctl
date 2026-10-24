@@ -20,6 +20,11 @@ fail() { echo "smoke: $*" >&2; exit 1; }
 "$bin" --version | grep -q "registry schema" || fail "--version lacks the registry schema"
 "$bin" init
 "$bin" new demo
+# The scaffold's description is a directive template with [placeholders], which
+# O144 rejects until they are filled in, as a user does before sealing.
+draft="$SKILLCTL_HOME/drafts/demo/SKILL.md"
+description='ALWAYS invoke this skill when the user asks to run the release smoke demo, including indirect phrasing like "try the demo skill" or "exercise the smoke scenario". Do not run the demo directly without this skill.'
+awk -v d="$description" '/^description:/ { print "description: " d; next } { print }' "$draft" > "$draft.tmp" && mv "$draft.tmp" "$draft"
 "$bin" validate demo@draft --strict
 "$bin" seal demo
 test -f "$SKILLCTL_HOME/store/demo/0.1.0/meta.json" || fail "seal did not publish meta.json"
