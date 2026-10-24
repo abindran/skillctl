@@ -3,7 +3,7 @@
 # the installed binary is still called skillctl.
 name = "skillctl-cli"
 edition = "2024"
-version = "0.2.0"
+version = "0.2.1"
 authors = ["Abindran <abindranr@gmail.com>"]
 description = "Store Agent Skills once and symlink them into projects for Claude Code, Cursor and ZohoCode"
 repository = "https://github.com/abindran/skillctl"

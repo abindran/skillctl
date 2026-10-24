@@ -37,25 +37,25 @@ git -C "$repo" -c user.name=smoke -c user.email=smoke@example.test add README.md
 git -C "$repo" -c user.name=smoke -c user.email=smoke@example.test commit -q -m "initial"
 
 (cd "$repo" && "$bin" attach --new web --skills demo)
-test -L "$repo/.agents/skills/demo" || fail "missing .agents link"
 test -L "$repo/.claude/skills/demo" || fail "missing .claude link"
+test ! -e "$repo/.agents" || fail "default attach created .agents"
 test -z "$(git -C "$repo" status --porcelain)" || fail "attach left git status dirty"
 grep -q "^# >>> skillctl " "$repo/.git/info/exclude" || fail "exclude block missing"
 
 copy="$work/web-copy"
 mkdir "$copy" && git -C "$copy" init -q
 (cd "$copy" && "$bin" attach --project web)
-test -L "$copy/.agents/skills/demo" || fail "second clone did not receive the link"
+test -L "$copy/.claude/skills/demo" || fail "second clone did not receive the link"
 
 "$bin" edit demo
 "$bin" seal demo
 (cd "$copy" && "$bin" add demo@0.1.1)
-[ "$(readlink "$repo/.agents/skills/demo")" = "$SKILLCTL_HOME/store/demo/0.1.1/demo" ] || fail "add did not update every instance"
+[ "$(readlink "$repo/.claude/skills/demo")" = "$SKILLCTL_HOME/store/demo/0.1.1/demo" ] || fail "add did not update every instance"
 
 git -C "$repo" clean -fdxq
-test ! -e "$repo/.agents/skills/demo" || fail "git clean should have removed the links"
+test ! -e "$repo/.claude/skills/demo" || fail "git clean should have removed the links"
 (cd "$repo" && "$bin" relink)
-test -L "$repo/.agents/skills/demo" || fail "relink did not restore the links"
+test -L "$repo/.claude/skills/demo" || fail "relink did not restore the links"
 
 (cd "$repo" && "$bin" status)
 "$bin" doctor
@@ -65,7 +65,6 @@ test -L "$repo/.agents/skills/demo" || fail "relink did not restore the links"
 "$bin" projects
 
 (cd "$repo" && "$bin" detach)
-test ! -e "$repo/.agents" || fail "detach left .agents behind"
 test ! -e "$repo/.claude" || fail "detach left .claude behind"
 test -z "$(git -C "$repo" status --porcelain)" || fail "detach left git status dirty"
 test -f "$repo/README.md" || fail "detach touched committed content"

@@ -48,14 +48,11 @@ fn config_get_and_set_cover_every_key_and_relink_cleans_dropped_targets() {
     ok(&home, &root, &["init"]);
     assert_eq!(
         text(&ok(&home, &root, &["config", "get", "link_targets"])),
-        ".agents/skills,.claude/skills"
+        ".claude/skills"
     );
     let out = ok(&home, &root, &["config", "get", "link_targets", "--json"]);
     let value: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
-    assert_eq!(
-        value["value"],
-        serde_json::json!([".agents/skills", ".claude/skills"])
-    );
+    assert_eq!(value["value"], serde_json::json!([".claude/skills"]));
     assert_eq!(
         run(&home, &root, &["config", "get", "nope"]).status.code(),
         Some(2)
@@ -68,12 +65,25 @@ fn config_get_and_set_cover_every_key_and_relink_cleans_dropped_targets() {
     );
     ok(&home, &root, &["new", "demo"]);
     ok(&home, &root, &["seal", "demo"]);
+    // Opt into a second folder so dropping it is observable. The default is one.
+    ok(
+        &home,
+        &root,
+        &[
+            "--yes",
+            "config",
+            "set",
+            "link_targets",
+            ".agents/skills,.claude/skills",
+        ],
+    );
     ok(
         &home,
         &root,
         &["attach", "--new", "web", "--skills", "demo"],
     );
     assert!(root.join(".agents/skills/demo").is_symlink());
+    assert!(root.join(".claude/skills/demo").is_symlink());
 
     // Without a terminal and without --yes the setting changes but links stay.
     let out = ok(

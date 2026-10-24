@@ -145,7 +145,19 @@ fn add_reports_description_warnings_and_the_budget_on_stderr_and_in_json() {
     assert!(text.contains("review@1.0.0:"), "{text}");
     assert!(text.contains("migrate@1.0.0:"), "{text}");
     assert!(text.contains("/ 2000 tokens"), "{text}");
-    // The default targets are both read by Cursor, which lists each skill twice.
+    // Two Cursor-visible folders list each skill twice. The default is one.
+    ok(
+        &e,
+        &[
+            "--yes",
+            "config",
+            "set",
+            "link_targets",
+            ".agents/skills,.claude/skills",
+        ],
+    );
+    let out = ok(&e, &["status", "--budget"]);
+    let text = String::from_utf8_lossy(&out.stdout);
     assert!(
         text.contains("Cursor reads .agents/skills and .claude/skills (2 folders), so it lists each skill 2 times"),
         "{text}"

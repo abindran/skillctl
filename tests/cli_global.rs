@@ -50,7 +50,7 @@ fn globals_link_into_isolated_target_clashes_are_refused_both_ways_and_remove_cl
     assert!(!personal.exists());
     ok(&home, &root, &["global", "add", "demo"]);
     assert!(personal.join("demo").is_symlink());
-    assert!(root.join(".agents/skills/demo").is_symlink());
+    assert!(root.join(".claude/skills/demo").is_symlink());
     assert_eq!(run(&home, &root, &["add", "demo"]).status.code(), Some(2));
     assert_eq!(
         run(&home, &root, &["global", "add", "other"]).status.code(),
@@ -64,7 +64,7 @@ fn globals_link_into_isolated_target_clashes_are_refused_both_ways_and_remove_cl
     assert!(personal.join("demo").is_symlink());
     ok(&home, &root, &["global", "remove", "demo"]);
     assert!(!personal.join("demo").exists());
-    assert!(!root.join(".agents/skills/demo").exists());
+    assert!(!root.join(".claude/skills/demo").exists());
 }
 #[test]
 fn personal_data_is_a_conflict_not_overwritten() {

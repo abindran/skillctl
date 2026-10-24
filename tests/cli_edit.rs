@@ -107,7 +107,7 @@ fn edited_draft_can_be_linked_with_add_draft_and_sealed_as_the_next_version() {
     );
     ok(&home, &project, &["edit", "demo"]);
     ok(&home, &project, &["add", "demo", "--draft"]);
-    let link = project.join(".agents/skills/demo");
+    let link = project.join(".claude/skills/demo");
     assert_eq!(fs::read_link(&link).unwrap(), home.join("drafts/demo"));
     let out = ok(&home, &project, &["status"]);
     assert!(String::from_utf8_lossy(&out.stdout).contains("demo@draft"));

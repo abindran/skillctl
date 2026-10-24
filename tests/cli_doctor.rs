@@ -82,7 +82,7 @@ fn doctor_reports_and_fixes_link_drift_missing_instances_and_store_permissions()
     assert!(String::from_utf8_lossy(&out.stdout).contains("No problems found."));
 
     // A deleted link is reported, exits 1, and --fix restores it.
-    let link = e.root.join(".agents/skills/demo");
+    let link = e.root.join(".claude/skills/demo");
     fs::remove_file(&link).unwrap();
     let (code, all, _) = checks(&e, &e.root, &["doctor"]);
     assert_eq!(code, Some(1));

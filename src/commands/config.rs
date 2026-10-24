@@ -96,7 +96,7 @@ pub fn set(context: &mut Context<'_>, key: &str, value: &str) -> Result<(), Erro
                     .collect::<Result<Vec<_>, _>>()?;
                 if targets.is_empty() {
                     return Err(super::attach::usage(
-                        "link_targets needs at least one folder, for example .agents/skills,.claude/skills",
+                        "link_targets needs at least one folder, for example .claude/skills",
                     ));
                 }
                 // Remember dropped targets so relink --all can clean their managed links.

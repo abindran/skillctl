@@ -127,7 +127,6 @@ fn rules_and_commands_are_scaffolded_sealed_and_linked_by_kind() {
     assert_eq!(
         sorted,
         [
-            ".agents/skills/demo",
             ".claude/commands/checkpoint.md",
             ".claude/skills/demo",
             ".cursor/commands/checkpoint.md",

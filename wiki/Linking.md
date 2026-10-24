@@ -7,14 +7,11 @@ Linking is where correctness matters most: skillctl must create and delete symli
 ```mermaid
 flowchart LR
     subgraph Project["~/work/crm-web (instance)"]
-        A[".agents/skills/org-code-review"]
         C[".claude/skills/org-code-review"]
         X[".git/info/exclude"]
     end
     ST["~/.skills/store/org-code-review/1.4.0/org-code-review"]
-    A -- "absolute symlink" --> ST
     C -- "absolute symlink" --> ST
-    X -. "hides, one line per link" .-> A
     X -. "hides, one line per link" .-> C
 ```
 
@@ -22,8 +19,8 @@ Links are absolute and point straight at the store (or at a draft folder), never
 
 | Link target | Read by | Default |
 |---|---|---|
-| `.agents/skills/` | Cursor, ZohoCode | on |
-| `.claude/skills/` | Claude Code, Cursor (compatibility scan) | on |
+| `.claude/skills/` | Claude Code and Cursor | on |
+| `.agents/skills/` | Cursor, ZohoCode | off |
 | `.zcode/skills/` | ZohoCode | off |
 | `.cursor/skills/` | Cursor | off |
 

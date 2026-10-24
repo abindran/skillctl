@@ -42,7 +42,15 @@ impl Fixture {
                 created_dirs: vec![],
             },
             project,
-            settings: Settings::default(),
+            // Two targets, so these tests keep covering reconcile across
+            // folders. The product default is `.claude/skills` only.
+            settings: Settings {
+                link_targets: [".agents/skills", ".claude/skills"]
+                    .into_iter()
+                    .map(|path| path.parse().unwrap())
+                    .collect(),
+                ..Settings::default()
+            },
         }
     }
 

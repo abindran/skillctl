@@ -123,7 +123,10 @@ pub struct Settings {
 impl Default for Settings {
     fn default() -> Self {
         Self {
-            link_targets: [".agents/skills", ".claude/skills"]
+            // Claude Code and Cursor both read `.claude/skills`. A second
+            // Cursor folder (`.agents/skills`, `.cursor/skills`) lists every
+            // skill twice. ZohoCode's `.zcode/skills` is opt-in the same way.
+            link_targets: [".claude/skills"]
                 .into_iter()
                 .map(|path| path.parse().expect("valid default target"))
                 .collect(),

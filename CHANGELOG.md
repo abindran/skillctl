@@ -11,6 +11,17 @@ heading when cutting a release.
 
 ## [Unreleased]
 
+## [0.2.1] - 2026-10-25
+
+### Changed
+
+- New homes link skills into `.claude/skills` only. Claude Code and Cursor
+  both read that folder, so the previous default (`.agents/skills` and
+  `.claude/skills`) listed every skill twice in Cursor. An existing
+  `registry.yml` is left as it is; drop the extra folder with
+  `skillctl --yes config set link_targets .claude/skills`. Add
+  `.agents/skills` or `.zcode/skills` the same way when a harness needs it.
+
 ## [0.2.0] - 2026-10-24
 
 ### Fixed

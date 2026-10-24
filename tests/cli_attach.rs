@@ -77,7 +77,7 @@ fn missing_answer_nesting_missing_versions_and_conflicts() {
         .code(),
         Some(1)
     );
-    fs::create_dir_all(root.join(".agents/skills/demo")).unwrap();
+    fs::create_dir_all(root.join(".claude/skills/demo")).unwrap();
     assert_eq!(
         cli(
             &home,
@@ -88,7 +88,7 @@ fn missing_answer_nesting_missing_versions_and_conflicts() {
         .code(),
         Some(4)
     );
-    assert!(root.join(".agents/skills/demo").is_dir());
+    assert!(root.join(".claude/skills/demo").is_dir());
     let nested = root.join("nested");
     fs::create_dir(&nested).unwrap();
     // --yes chooses the Git root, so this is a move to an existing instance.
@@ -109,7 +109,7 @@ fn dry_run_does_not_change_registry_or_links_and_unattached_status_is_success() 
         &["--dry-run", "attach", "--new", "web", "--skills", "demo"],
     );
     assert_eq!(before, fs::read(home.join("registry.yml")).unwrap());
-    assert!(!root.join(".agents").exists());
+    assert!(!root.join(".claude").exists());
     let o = ok(&home, &root, &["status"]);
     assert!(String::from_utf8_lossy(&o.stdout).contains("Not attached"));
 }
@@ -141,7 +141,7 @@ fn subfolder_attach_is_answered_by_flags_and_nesting_is_a_usage_error() {
         registry.projects["web"].instances[0].path,
         nested.canonicalize().unwrap()
     );
-    assert!(nested.join(".agents/skills/demo").is_symlink());
+    assert!(nested.join(".claude/skills/demo").is_symlink());
     // The repository root would now contain an instance: a usage error, not a corrupt registry.
     let out = cli(&home, &root, &["attach", "--new", "api"]);
     assert_eq!(out.status.code(), Some(2));
@@ -163,7 +163,7 @@ fn subfolder_attach_is_answered_by_flags_and_nesting_is_a_usage_error() {
 #[test]
 fn json_conflict_output_is_a_single_stdout_document() {
     let (_tmp, home, root) = fixture();
-    fs::create_dir_all(root.join(".agents/skills/demo")).unwrap();
+    fs::create_dir_all(root.join(".claude/skills/demo")).unwrap();
     let out = cli(
         &home,
         &root,
@@ -175,5 +175,5 @@ fn json_conflict_output_is_a_single_stdout_document() {
     let error: serde_json::Value = serde_json::from_slice(&out.stderr).unwrap();
     assert_eq!(error["exit_code"], 4);
     let out = ok(&home, &root, &["status"]);
-    assert!(String::from_utf8_lossy(&out.stdout).contains(".agents/skills: conflict"));
+    assert!(String::from_utf8_lossy(&out.stdout).contains(".claude/skills: conflict"));
 }

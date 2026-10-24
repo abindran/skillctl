@@ -74,7 +74,7 @@ fn defaults_apply_to_missing_sections_and_individual_settings() {
             .iter()
             .map(ToString::to_string)
             .collect::<Vec<_>>(),
-        [".agents/skills", ".claude/skills"]
+        [".claude/skills"]
     );
     assert_eq!(
         settings.global_link_targets[0].to_string(),

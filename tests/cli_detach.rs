@@ -35,18 +35,19 @@ fn detach_removes_only_managed_paths_and_keeps_project_and_committed_content() {
         &root,
         &["attach", "--new", "web", "--skills", "demo"],
     );
-    fs::write(root.join(".agents/skills/own"), "project data").unwrap();
+    fs::write(root.join(".claude/skills/own"), "project data").unwrap();
     let before = fs::read(home.join("registry.yml")).unwrap();
     ok(&home, &root, &["--dry-run", "detach"]);
     assert_eq!(before, fs::read(home.join("registry.yml")).unwrap());
     assert!(root.join(".claude/skills/demo").is_symlink());
     ok(&home, &root, &["detach"]);
     assert_eq!(
-        fs::read_to_string(root.join(".agents/skills/own")).unwrap(),
+        fs::read_to_string(root.join(".claude/skills/own")).unwrap(),
         "project data"
     );
-    assert!(!root.join(".agents/skills/demo").exists());
-    assert!(!root.join(".claude").exists());
+    assert!(!root.join(".claude/skills/demo").exists());
+    assert!(root.join(".claude/skills").is_dir());
+    assert!(!root.join(".agents").exists());
     assert!(
         !fs::read_to_string(root.join(".git/info/exclude"))
             .unwrap()
@@ -74,7 +75,7 @@ fn keep_links_and_delete_last_project() {
         &root,
         &["detach", "--keep-links", "--delete-project"],
     );
-    assert!(root.join(".agents/skills/demo").is_symlink());
+    assert!(root.join(".claude/skills/demo").is_symlink());
     let r = skillctl::registry::Registry::from_yaml(&fs::read(home.join("registry.yml")).unwrap())
         .unwrap();
     assert!(r.projects.is_empty());

@@ -32,7 +32,7 @@ The technical architecture lives in the [project wiki](https://github.com/abindr
 
 | Need | How skillctl covers it |
 |---|---|
-| **Write a skill once, use it in every harness.** | `attach` links the project's skills into both `.agents/skills/` (Cursor, ZohoCode) and `.claude/skills/` (Claude Code, Cursor). The link targets are a setting, so a new harness folder is a config change, not a rewrite. |
+| **Write a skill once, use it in every harness.** | `attach` links the project's skills into `.claude/skills/`, which Claude Code and Cursor both read. `.agents/skills/` and `.zcode/skills/` are off unless you add them. The link targets are a setting, so a new harness folder is a config change, not a rewrite. |
 | **Do not keep duplicate copies per harness or per clone.** | Each skill version exists exactly once in `~/.skills/store/`. Projects and harness folders only hold symlinks to it. |
 | **Project-specific skills that follow the project to every clone.** | A project is a registry entry with pinned skill versions. Attach any number of folders to it; `add` and `remove` reconcile all of them, and `relink` restores links after `git clean -fdx` or a fresh checkout. |
 | **Keep project repositories clean.** | Links are listed individually in `.git/info/exclude`, so `git status` stays empty and project-owned skills in the same folder remain visible to Git. |
@@ -50,9 +50,8 @@ The technical architecture lives in the [project wiki](https://github.com/abindr
 ~/.skills/store/org-code-review/1.4.0/org-code-review   (read-only, hashed)
         ▲                       ▲
         │ symlink               │ symlink
-~/work/crm-web/.agents/skills/org-code-review
 ~/work/crm-web/.claude/skills/org-code-review
-~/work/crm-web/.git/info/exclude   ← managed block hides both links
+~/work/crm-web/.git/info/exclude   ← managed block hides the link
 ```
 
 1. `init` creates `~/.skills/` with a `registry.yml`, an empty store, a drafts folder, a `SKILL.md` template and a hook template.
@@ -184,7 +183,6 @@ cd ~/work/crm-web && skillctl attach --new web --skills demo
 
 ```
 Attached /Users/me/work/crm-web to web
-  Linked /Users/me/work/crm-web/.agents/skills/demo
   Linked /Users/me/work/crm-web/.claude/skills/demo
 ```
 
@@ -199,7 +197,6 @@ skillctl status
 ```
 Project: web
 Instance: /Users/me/work/crm-web
-  demo@0.1.0 .agents/skills: ok
   demo@0.1.0 .claude/skills: ok
 ```
 
@@ -804,7 +801,7 @@ All settings live in `~/.skills/registry.yml`. Read or change them with `config 
 ```yaml
 schema: 1
 settings:
-  link_targets: [".agents/skills", ".claude/skills"]   # folders linked inside every instance
+  link_targets: [".claude/skills"]                     # folders linked inside every instance
   git_exclude: true                                     # write the managed block into .git/info/exclude
   global_link_targets: ["~/.claude/skills"]             # user-level folders for global skills
   global_in_instances: false                            # also link global skills into every instance
@@ -817,12 +814,12 @@ projects: {}
 
 | Link target | Read by | Default |
 |---|---|---|
-| `.agents/skills/` | Cursor, ZohoCode | on |
-| `.claude/skills/` | Claude Code, and Cursor for compatibility | on |
+| `.claude/skills/` | Claude Code and Cursor | on |
+| `.agents/skills/` | Cursor, ZohoCode | off |
 | `.zcode/skills/` | ZohoCode | off |
 | `.cursor/skills/` | Cursor | off |
 
-Cursor reads `.agents/skills`, `.cursor/skills`, `.claude/skills` and `.codex/skills`, and lists a skill once for every one of them it finds it in. With the default targets every skill's name and description is in Cursor's listing twice (only the listing; the body still loads once). `status --budget` says so with the token cost. If you use Claude Code and Cursor, `.claude/skills` alone serves both. If a harness lists a skill twice for this or any other reason, drop one target and let `config set` relink:
+Cursor reads `.agents/skills`, `.cursor/skills`, `.claude/skills` and `.codex/skills`, and lists a skill once for every one of them it finds it in. The default is `.claude/skills` alone, so Claude Code and Cursor share one listing. Add another folder only when a harness needs it; `status --budget` reports the token cost when more than one of those folders is configured. `config set` offers to relink:
 
 ```bash
 skillctl --yes config set link_targets .claude/skills,.zcode/skills
@@ -967,7 +964,7 @@ scripts/release/build-universal.sh && scripts/release/package.sh 0.2.0 && script
 | Subagent telemetry: the logger records `SubagentStart`/`SubagentStop` with the agent type (Cursor maps only `SubagentStop`) | Implemented by the logger (W21) |
 | `install` from Git and local folders, `edit`, `doctor --fix`, `gc`, `config`, `completions` | Implemented |
 | Release pipeline: universal build, optional signing and notarization, clean-runner verification, GitHub release, crates.io publish and verification | Implemented (GitHub Actions) |
-| Manual harness compatibility matrix (Claude Code, Cursor, ZohoCode) | Not run; default link targets are provisional |
+| Manual harness compatibility matrix (Claude Code, Cursor, ZohoCode) | Not run. The default link target is `.claude/skills` (Claude Code and Cursor). `.agents/skills` and `.zcode/skills` are opt-in |
 
 ## License
 

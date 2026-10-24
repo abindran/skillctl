@@ -114,12 +114,12 @@ fn full_git_clean_repair_and_detach_workflow_with_zero_write_dry_runs() {
         assert_eq!(before, snapshot(tmp.path()), "{args:?}");
     }
     run(&home, &a, &["add", "other"]);
-    assert!(b.join(".agents/skills/other").is_symlink());
+    assert!(b.join(".claude/skills/other").is_symlink());
     // Intentional destructive operation confined to this test's temporary repo.
     git(&b, &["clean", "-fdx"]);
     assert!(!b.join(".agents").exists());
     run(&home, &b, &["relink"]);
-    assert!(b.join(".agents/skills/demo").is_symlink());
+    assert!(b.join(".claude/skills/demo").is_symlink());
     for root in [&a, &b] {
         run(&home, root, &["detach"]);
         assert!(!root.join(".agents").exists());

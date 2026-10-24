@@ -143,7 +143,7 @@ struct ArtifactKind: Identifiable, Hashable {
 
     static let all: [ArtifactKind] = [
         ArtifactKind(id: "skill", title: "Skills", document: "SKILL.md",
-                     linksTo: ".claude/skills/<name>, .agents/skills/<name> (and ~/.claude/skills for global pins)",
+                     linksTo: ".claude/skills/<name> (and ~/.claude/skills for global pins). Add .agents/skills or .zcode/skills with config set link_targets when a harness needs them",
                      summary: "Agent Skills: a SKILL.md with an activating description plus optional scripts and references. Validated with the S, O and directive-description rules.",
                      symbol: "sparkles"),
         ArtifactKind(id: "command", title: "Commands", document: "COMMAND.md",

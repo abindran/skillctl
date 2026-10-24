@@ -38,17 +38,17 @@ fn pins_propagate_to_all_instances_remove_and_repair() {
     let before = fs::read(home.join("registry.yml")).unwrap();
     ok(&home, &a, &["--dry-run", "add", "other"]);
     assert_eq!(before, fs::read(home.join("registry.yml")).unwrap());
-    assert!(!b.join(".agents/skills/other").exists());
+    assert!(!b.join(".claude/skills/other").exists());
     ok(&home, &a, &["add", "other"]);
     for root in [&a, &b] {
-        assert!(root.join(".agents/skills/other").is_symlink());
+        assert!(root.join(".claude/skills/other").is_symlink());
     }
-    fs::remove_file(b.join(".agents/skills/demo")).unwrap();
+    fs::remove_file(b.join(".claude/skills/demo")).unwrap();
     ok(&home, &b, &["relink"]);
-    assert!(b.join(".agents/skills/demo").is_symlink());
+    assert!(b.join(".claude/skills/demo").is_symlink());
     ok(&home, &a, &["remove", "other"]);
     for root in [&a, &b] {
-        assert!(!root.join(".agents/skills/other").exists());
+        assert!(!root.join(".claude/skills/other").exists());
     }
     ok(&home, tmp.path(), &["relink", "--all"]);
     assert_eq!(

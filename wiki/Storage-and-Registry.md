@@ -44,7 +44,7 @@ erDiagram
 ```yaml
 schema: 1
 settings:
-  link_targets: [".agents/skills", ".claude/skills"]   # RelPath, linked inside every instance
+  link_targets: [".claude/skills"]                     # RelPath, linked inside every instance
   git_exclude: true
   global_link_targets: ["~/.claude/skills"]             # HomePath, expanded at use
   global_in_instances: false
@@ -64,7 +64,7 @@ projects:
     instances:
       - path: /Users/me/work/crm-web
         attached_at: 2026-10-18T09:12:00Z
-        created_dirs: [".agents", ".agents/skills"]
+        created_dirs: [".claude", ".claude/skills"]
 ```
 
 | Type | Fields | Notes |
