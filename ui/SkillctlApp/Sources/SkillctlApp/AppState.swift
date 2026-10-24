@@ -83,6 +83,138 @@ final class AppState {
     var bundledBinary: URL? { CLI.bundled }
     var usesBundledBinary: Bool { cli != nil && cli?.binary == CLI.bundled }
 
+    // MARK: Command line tool
+
+    /// What became of the CLI shipped inside the app on this launch.
+    enum CommandLineStatus: Equatable {
+        /// This build carries no CLI (a `swift run` or test process).
+        case notBundled
+        /// macOS runs the app from a temporary read-only copy because it was
+        /// opened straight from a download; a link into the bundle would die
+        /// with that copy, so nothing was linked.
+        case translocated
+        /// `~/.local/bin/skillctl` points at the bundled CLI. `onPath` says
+        /// whether a new terminal will find it; nil when the shell could not
+        /// be asked.
+        case linked(link: String, onPath: Bool?)
+        /// Linking failed; the message says why.
+        case failed(String)
+    }
+    private(set) var commandLine: CommandLineStatus = .notBundled
+    private var commandLineChecked = false
+
+    /// `HOME` as the CLI sees it (tests redirect it), else the user's home.
+    var userHome: URL {
+        if let home = environment["HOME"], !home.isEmpty { return URL(fileURLWithPath: home) }
+        return FileManager.default.homeDirectoryForCurrentUser
+    }
+    /// Where the command line tool is linked: `~/.local/bin`, which needs no
+    /// administrator rights and is the conventional user-level bin folder.
+    var localBin: URL { userHome.appendingPathComponent(".local/bin") }
+    private var loginShell: String {
+        environment["SHELL"] ?? ProcessInfo.processInfo.environment["SHELL"] ?? "/bin/zsh"
+    }
+
+    /// Gatekeeper's app translocation runs a quarantined app from a random
+    /// folder under `/private/var/folders/…/AppTranslocation/`. The user's
+    /// move of the app into Applications (through Finder) ends it.
+    static func isTranslocated(_ url: URL) -> Bool {
+        url.path.contains("/AppTranslocation/")
+    }
+
+    /// Install the bundled CLI for the terminal: link it into `~/.local/bin`
+    /// and find out whether that folder is on the login shell's `PATH`. Runs
+    /// once per launch (every launch, so a moved app is relinked); `force`
+    /// repeats it. Does nothing in builds without a bundled CLI.
+    func installCommandLineTool(force: Bool = false) async {
+        guard force || !commandLineChecked else { return }
+        commandLineChecked = true
+        guard let bundled = bundledBinary else {
+            commandLine = .notBundled
+            return
+        }
+        if Self.isTranslocated(bundled) {
+            commandLine = .translocated
+            return
+        }
+        let message = linkCommandLineTool(bundled, into: localBin)
+        guard message.hasPrefix("Linked ") else {
+            commandLine = .failed(message)
+            return
+        }
+        let onPath = await pathIncludes(localBin)
+        commandLine = .linked(link: localBin.appendingPathComponent("skillctl").path, onPath: onPath)
+    }
+
+    /// Whether `directory` is on `PATH`: in this process's environment, or
+    /// in what the user's login shell reports. nil when the shell did not
+    /// answer within the timeout.
+    func pathIncludes(_ directory: URL) async -> Bool? {
+        let target = directory.standardizedFileURL.path
+        func contains(_ path: String) -> Bool {
+            path.split(separator: ":").contains { entry in
+                URL(fileURLWithPath: (String(entry) as NSString).expandingTildeInPath).standardizedFileURL.path == target
+            }
+        }
+        if let path = ProcessInfo.processInfo.environment["PATH"], contains(path) {
+            return true
+        }
+        guard let loginPath = await LoginShell.path(shell: loginShell, environment: environment) else {
+            return nil
+        }
+        return contains(loginPath)
+    }
+
+    static let pathMarker = "# Added by Skillctl.app: the skillctl command line tool"
+
+    /// The startup file a new terminal of this shell reads. Login shells
+    /// (Terminal, iTerm and editors' terminals open login shells on macOS)
+    /// read `.zprofile` and `.bash_profile`; fish reads every `conf.d` file.
+    static func profileFile(shell: String, home: URL) -> URL {
+        switch (shell as NSString).lastPathComponent {
+        case "zsh": return home.appendingPathComponent(".zprofile")
+        case "bash": return home.appendingPathComponent(".bash_profile")
+        case "fish": return home.appendingPathComponent(".config/fish/conf.d/skillctl.fish")
+        default: return home.appendingPathComponent(".profile")
+        }
+    }
+
+    /// The lines that put `~/.local/bin` on `PATH` for this shell.
+    static func pathLines(shell: String) -> String {
+        let export = (shell as NSString).lastPathComponent == "fish"
+            ? "fish_add_path --global --prepend $HOME/.local/bin"
+            : "export PATH=\"$HOME/.local/bin:$PATH\""
+        return "\n\(pathMarker)\n\(export)\n"
+    }
+
+    /// Append the `PATH` lines to `profile` unless the marker is already in
+    /// it. Returns whether anything was written. The file is created when
+    /// missing; existing content is never changed.
+    static func addToPath(profile: URL, shell: String) throws -> Bool {
+        let existing = (try? String(contentsOf: profile, encoding: .utf8)) ?? ""
+        if existing.contains(pathMarker) { return false }
+        try FileManager.default.createDirectory(at: profile.deletingLastPathComponent(), withIntermediateDirectories: true)
+        let separator = existing.isEmpty || existing.hasSuffix("\n") ? "" : "\n"
+        try (existing + separator + pathLines(shell: shell)).write(to: profile, atomically: true, encoding: .utf8)
+        return true
+    }
+
+    /// Put `~/.local/bin` on `PATH` through the login shell's startup file,
+    /// then re-check. Returns the message to show.
+    func addLocalBinToPath() async -> String {
+        let profile = Self.profileFile(shell: loginShell, home: userHome)
+        let shown = profile.path.replacingOccurrences(of: userHome.path, with: "~")
+        do {
+            let appended = try Self.addToPath(profile: profile, shell: loginShell)
+            await installCommandLineTool(force: true)
+            return appended
+                ? "Added ~/.local/bin to PATH in \(shown). Open a new terminal window for it to take effect."
+                : "\(shown) already has the Skillctl PATH lines. Open a new terminal window."
+        } catch {
+            return "Could not write \(shown): \(error.localizedDescription)"
+        }
+    }
+
     /// Make a CLI usable from a terminal as `<directory>/skillctl` by linking
     /// to it. Replaces an existing symlink, never a regular file. Returns the
     /// message to show.
@@ -140,6 +272,7 @@ final class AppState {
 
     func refreshAll() async {
         await checkTool()
+        await installCommandLineTool()
         if toolProblem != nil { return }
         async let a: () = loadProjects()
         async let b: () = loadArtifacts()

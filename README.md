@@ -14,7 +14,7 @@ The technical architecture lives in the [project wiki](https://github.com/abindr
 
 - [Use cases](#use-cases)
 - [How it works](#how-it-works)
-- [Building the executable](#building-the-executable)
+- [Building the executable](#building-the-executable) (and [installing the macOS app](#install-the-macos-app))
 - [Quick start](#quick-start)
 - [Command reference](#command-reference)
 - [Global flags and exit codes](#global-flags-and-exit-codes)
@@ -113,6 +113,16 @@ skillctl 0.1.0 (commit 7e88fa5422b0, registry schema 1)
 ```bash
 skillctl --help
 ```
+
+### Install the macOS app
+
+The simplest route for a Mac, and the only download most people need. Every tagged release publishes `Skillctl-<version>-macos.zip` with its SHA-256 on the [releases page](https://github.com/abindran/skillctl/releases). The app carries the universal `skillctl` binary and installs the command line tool itself:
+
+1. Unzip, move **Skillctl.app** into your Applications folder, and open it. For an unsigned build, right-click the app and choose Open the first time; macOS asks once.
+2. On launch the app links its own binary to `~/.local/bin/skillctl` (replacing only an earlier link, never a file of yours) and checks whether that folder is on your shell's `PATH`. If it is not, the Dashboard offers **Add ~/.local/bin to PATH**, which appends two lines to `~/.zprofile` (or `~/.bash_profile`, or a fish `conf.d` file). Open a new terminal window afterwards.
+3. `skillctl --version` in that terminal then prints the same build the app runs; the link is refreshed on every launch, so a moved or updated app never leaves a stale command behind.
+
+Move the app before opening it: an app opened straight from the Downloads folder runs from a temporary copy that macOS makes for quarantined apps, and the app says so and waits instead of linking into that copy. The app and the command line tool are one install, so there is nothing else to update.
 
 ### Install from crates.io
 
@@ -880,7 +890,7 @@ cargo fmt --check && cargo clippy --all-targets --locked -- -D warnings && cargo
 | Log | `log summary` and `log usage` over 7, 14 or 30 days: activity by day (prompts, activations, subagent runs, compactions), metrics against the previous window including activation through the forced-eval hook, alerts, and from ccusage the cost, cost per prompt, output tokens per prompt, cache hit ratio, cost per day and by model with a per-day table; from the local collector (`telemetry status` and `report`), cost by skill, agent and model, the share spent inside skills and in subagents, and tool runs with failures; bar charts of skills, agents and MCP servers | Change the window, reload usage, turn the collector on (`telemetry enable` with the bundled CLI, so the login service runs the copy inside the app) or off |
 | Quality | `validate` of any store version (chosen from a menu grouped by kind) and `lint` of an attached folder or any other folder; findings as a summary line (errors, warnings, notes, the shared folder) and cards grouped by severity, each with the rule, the message, the suggested fix and the file with a Reveal link. Below the findings, a **What is validated** card names the chosen version, its kind and rule families, and lists every file in it with its size (from `show`). A **What is linted** card lists every instruction file lint reads in the folder, present or absent, with line count and when each harness loads it (from `lint --files`), so "nothing to lint" is told apart from a clean result. A **Rules reference** tab lists the catalog from `rules`, grouped and searchable and filterable by kind, with a lock on rules that cannot be allow-listed; "N rules apply" on either scope card opens it filtered ; every file named on the screen has Preview (a sheet with line numbers, the finding's line highlighted), Open and Reveal | Run either |
 
-**The app carries the CLI.** `Scripts/bundle.sh` builds the Rust binary too and places it at `Skillctl.app/Contents/Helpers/skillctl`, so installing the app installs everything: no separate CLI is needed, and the two can never be at different versions. People who want only the command line install the CLI on its own as before (`cargo install skillctl-cli` or the release archive). Settings → Command line → **Link skillctl into ~/.local/bin** makes the bundled binary usable from a terminal as well, through a symlink that is replaced on later builds and never overwrites a regular file.
+**The app carries and installs the CLI.** `Scripts/bundle.sh` builds the Rust binary too and places it at `Skillctl.app/Contents/Helpers/skillctl`, so installing the app installs everything: no separate CLI is needed, and the two can never be at different versions. On every launch the app links that binary to `~/.local/bin/skillctl` (a symlink that replaces only an earlier symlink, never a regular file) and asks the login shell whether `~/.local/bin` is on `PATH`; when it is not, the Dashboard and Settings → Command line offer **Add ~/.local/bin to PATH**, which appends a marked block to the shell's startup file once (`~/.zprofile` for zsh, `~/.bash_profile` for bash, `~/.config/fish/conf.d/skillctl.fish` for fish). An app running from Gatekeeper's translocation folder (opened straight from a download, not yet moved to Applications) is told apart and nothing is linked until it has been moved. People who want only the command line still install the CLI on its own (`cargo install skillctl-cli` or the release archive). See [Install the macOS app](#install-the-macos-app) for the user-facing steps.
 
 Requirements: macOS 14 or later and Xcode 15 or later (the Swift toolchain), plus the Rust toolchain to build the bundled CLI. The app looks for the binary in this order: the path set in Settings (⌘,), the copy bundled in the app, a checkout's `target/debug/skillctl` (found by walking up from the app, so a development build always drives the app built next to it), then `~/.cargo/bin`, Homebrew and `PATH`. It then checks `skillctl --help` for the subcommands it needs; an installed copy that predates the app (for example one without `log` or `artifacts`) is reported on the Dashboard and in the sidebar instead of producing errors screen by screen. Settings also take a `SKILLCTL_HOME` override, which is how a test home can be inspected.
 
@@ -888,7 +898,7 @@ Requirements: macOS 14 or later and Xcode 15 or later (the Swift toolchain), plu
 ui/SkillctlApp/Scripts/bundle.sh && open ui/SkillctlApp/dist/Skillctl.app
 ```
 
-`UNIVERSAL=1` builds the bundled CLI for Apple silicon and Intel (both rustup targets), and `SKILLCTL_CLI=<path>` bundles an already built binary. `SKILLCTL_APP_SNAPSHOT=<folder>` makes the app render every screen to `<folder>/<screen>.png` from inside the process and quit, which is how screens are reviewed without screen-recording permissions. `swift run` inside `ui/SkillctlApp/` starts it without bundling (it then uses the checkout's debug CLI), and opening that folder in Xcode gives the usual editor. `swift test` runs the end-to-end tests in `Tests/SkillctlAppTests`: they drive the checkout's `target/debug/skillctl` through the app's state layer against a temporary home and a redirected `HOME` (init, author a skill and a hook, attach, pin, register the hook, feed a log, summary, doctor, status, validate, lint, a failing command, unpin, unregister, detach), so the Rust JSON and the Swift models are checked together; build the CLI first with `cargo build`. The bundle is unsigned; sign it with `codesign --deep --force --sign "<identity>" ui/SkillctlApp/dist/Skillctl.app` before handing it to someone else. `.github/workflows/swift.yml` builds the app on every change under `ui/` and uploads `Skillctl.app` as a workflow artifact.
+`UNIVERSAL=1` builds the bundled CLI for Apple silicon and Intel (both rustup targets), and `SKILLCTL_CLI=<path>` bundles an already built binary. The bundle's version is read from `Cargo.toml`, and the whole app is code-signed in one go: ad hoc by default, or with `CODESIGN_IDENTITY="Developer ID Application: …"` for other Macs. `Scripts/package.sh` zips the result as `dist/Skillctl-<version>-macos.zip` with a SHA-256 file (`ditto`, so symlinks, executable bits and the signature survive). `SKILLCTL_APP_SNAPSHOT=<folder>` makes the app render every screen to `<folder>/<screen>.png` from inside the process and quit, which is how screens are reviewed without screen-recording permissions. `swift run` inside `ui/SkillctlApp/` starts it without bundling (it then uses the checkout's debug CLI), and opening that folder in Xcode gives the usual editor. `swift test` runs the end-to-end tests in `Tests/SkillctlAppTests`: they drive the checkout's `target/debug/skillctl` through the app's state layer against a temporary home and a redirected `HOME` (init, author a skill and a hook, attach, pin, register the hook, feed a log, summary, doctor, status, validate, lint, a failing command, unpin, unregister, detach), so the Rust JSON and the Swift models are checked together; build the CLI first with `cargo build`. `.github/workflows/swift.yml` builds the app on every change under `ui/` and uploads the zip as a workflow artifact; the release workflow builds it around the universal CLI, signs and notarizes it when the Apple secrets are configured (`scripts/release/sign-and-notarize.sh` handles an `.app` with `--deep` and staples the ticket), and attaches `Skillctl-<version>-macos.zip` to the GitHub release.
 
 ## Releasing
 
@@ -897,9 +907,10 @@ Changes are tracked in [CHANGELOG.md](CHANGELOG.md) (Keep a Changelog format). A
 1. **Checks** on macOS: `cargo fmt --check`, Clippy with `-D warnings`, the locked test suite.
 2. **Build**: refuses a tag without a changelog section; both Apple targets, joined with `lipo` into one universal binary; `--version` records the tagged commit. When signing secrets are present the binary is signed with the Developer ID certificate (`codesign --options runtime --timestamp`) and notarized with `notarytool --wait`.
 3. **Verify** on a separate, clean macOS runner: checksum, unpack, run the end-to-end scenario in `scripts/release/smoke.sh` (init, author, seal, attach two clones, `git clean`, relink, doctor, gc, detach with an unchanged repository).
-4. **Publish** a GitHub release carrying `skillctl-X.Y.Z-macos-universal.tar.gz` and its `.sha256`.
-5. **Publish the crate** `skillctl-cli` to crates.io with `cargo publish --locked`, when the `CARGO_REGISTRY_TOKEN` secret is configured (a dry-run publish is part of the build step regardless).
-6. **Verify the crate** on another clean runner: `cargo install skillctl-cli --locked --version X.Y.Z`, then the same scenario again.
+4. **App**: `Skillctl.app` built around that same universal binary (`SKILLCTL_CLI`), signed and notarized when the secrets are present, zipped as `Skillctl-X.Y.Z-macos.zip` with its `.sha256`.
+5. **Publish** a GitHub release carrying the app zip, `skillctl-X.Y.Z-macos-universal.tar.gz` and both `.sha256` files.
+6. **Publish the crate** `skillctl-cli` to crates.io with `cargo publish --locked`, when the `CARGO_REGISTRY_TOKEN` secret is configured (a dry-run publish is part of the build step regardless).
+7. **Verify the crate** on another clean runner: `cargo install skillctl-cli --locked --version X.Y.Z`, then the same scenario again.
 
 To cut a release, move the **Unreleased** notes in `CHANGELOG.md` under a new `## [0.2.0] - YYYY-MM-DD` heading, then:
 
@@ -951,7 +962,7 @@ scripts/release/build-universal.sh && scripts/release/package.sh 0.1.0 && script
 | `quiet-commands` hook: bare test and build commands redirected through the `test-quiet` wrapper; logger 1.2.1 counts raw against wrapped runs | Implemented, register when the log shows bypasses (W24) |
 | `doctor` records harness versions and warns once after a Claude Code or Cursor upgrade (`harness-upgraded`) | Implemented; the weekly regression eval itself waits for W03–W05 (W28) |
 | `log summary` with `activation-drop`, `compaction-rise`, `log-silent` and `raw-test-commands` alerts; `--strict` for cron | Implemented for what the log holds; cache-hit and cost alerts belong to the OTel backend (W29) |
-| macOS app (`ui/SkillctlApp`, SwiftUI over the CLI's `--json` output): dashboard, a library screen per kind with authoring (new, edit, seal, derive), store, projects, hooks, doctor, log, quality; end-to-end tests against the real binary | Implemented; unsigned bundle via `Scripts/bundle.sh` |
+| macOS app (`ui/SkillctlApp`, SwiftUI over the CLI's `--json` output): dashboard, a library screen per kind with authoring (new, edit, seal, derive), store, projects, hooks, doctor, log, quality; end-to-end tests against the real binary; installs the bundled CLI into `~/.local/bin` and sets up `PATH` | Implemented; `Scripts/bundle.sh` and `package.sh`, zip attached to each release |
 | Local OpenTelemetry collector (`telemetry serve/enable/disable/status/report`), a LaunchAgent on macOS, scrubbed day files, cost by model, skill and agent; `doctor` probes local endpoints | Implemented |
 | Subagent telemetry: the logger records `SubagentStart`/`SubagentStop` with the agent type (Cursor maps only `SubagentStop`) | Implemented by the logger (W21) |
 | `install` from Git and local folders, `edit`, `doctor --fix`, `gc`, `config`, `completions` | Implemented |

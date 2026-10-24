@@ -383,4 +383,54 @@ final class EndToEndTests: XCTestCase {
         XCTAssertTrue(refused.contains("is not a symlink"), refused)
         XCTAssertEqual(try String(contentsOf: link, encoding: .utf8), "#!/bin/sh\n")
     }
+
+    func testTheCommandLineToolIsNotInstalledFromATranslocatedOrUnbundledApp() async throws {
+        XCTAssertTrue(AppState.isTranslocated(URL(fileURLWithPath: "/private/var/folders/x1/T/AppTranslocation/3F2A-9C/d/Skillctl.app/Contents/Helpers/skillctl")))
+        XCTAssertFalse(AppState.isTranslocated(URL(fileURLWithPath: "/Applications/Skillctl.app/Contents/Helpers/skillctl")))
+        // The test process is not the app bundle, so nothing is linked and the
+        // redirected home stays untouched.
+        await state.installCommandLineTool(force: true)
+        XCTAssertEqual(state.commandLine, .notBundled)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: userHome.appendingPathComponent(".local/bin/skillctl").path))
+    }
+
+    func testAddingLocalBinToPathWritesTheShellsStartupFileOnce() throws {
+        XCTAssertEqual(AppState.profileFile(shell: "/bin/zsh", home: userHome).lastPathComponent, ".zprofile")
+        XCTAssertEqual(AppState.profileFile(shell: "/opt/homebrew/bin/bash", home: userHome).lastPathComponent, ".bash_profile")
+        XCTAssertEqual(AppState.profileFile(shell: "/opt/homebrew/bin/fish", home: userHome).path,
+                       userHome.appendingPathComponent(".config/fish/conf.d/skillctl.fish").path)
+        XCTAssertEqual(AppState.profileFile(shell: "/bin/sh", home: userHome).lastPathComponent, ".profile")
+
+        // An existing file without a trailing newline keeps its content and gains the block once.
+        let profile = userHome.appendingPathComponent(".zprofile")
+        try "export EDITOR=vim".write(to: profile, atomically: true, encoding: .utf8)
+        XCTAssertTrue(try AppState.addToPath(profile: profile, shell: "/bin/zsh"))
+        let written = try String(contentsOf: profile, encoding: .utf8)
+        XCTAssertTrue(written.hasPrefix("export EDITOR=vim\n"), written)
+        XCTAssertTrue(written.contains(AppState.pathMarker), written)
+        XCTAssertTrue(written.contains("export PATH=\"$HOME/.local/bin:$PATH\""), written)
+        XCTAssertFalse(try AppState.addToPath(profile: profile, shell: "/bin/zsh"), "a second run writes nothing")
+        XCTAssertEqual(try String(contentsOf: profile, encoding: .utf8), written)
+
+        // A missing fish conf.d folder is created, with fish's own syntax.
+        let fish = AppState.profileFile(shell: "/opt/homebrew/bin/fish", home: userHome)
+        XCTAssertTrue(try AppState.addToPath(profile: fish, shell: "/opt/homebrew/bin/fish"))
+        XCTAssertTrue(try String(contentsOf: fish, encoding: .utf8).contains("fish_add_path --global --prepend $HOME/.local/bin"))
+    }
+
+    func testTheLoginShellReportsItsPath() async throws {
+        // zsh with a redirected HOME that has no startup files: PATH still comes from path_helper.
+        let path = await LoginShell.path(shell: "/bin/zsh", environment: ["HOME": userHome.path])
+        let reported = try XCTUnwrap(path)
+        XCTAssertTrue(reported.split(separator: ":").contains("/usr/bin"), reported)
+        // A startup file that puts ~/.local/bin on PATH is seen through the same probe.
+        XCTAssertTrue(try AppState.addToPath(profile: userHome.appendingPathComponent(".zprofile"), shell: "/bin/zsh"))
+        let state = AppState(defaults: UserDefaults(suiteName: "dev.abindran.skillctl.tests.\(UUID().uuidString)")!,
+                             environment: ["HOME": userHome.path, "SHELL": "/bin/zsh"])
+        let onPath = await state.pathIncludes(userHome.appendingPathComponent(".local/bin"))
+        XCTAssertEqual(onPath, true)
+        // A shell that does not exist yields "unknown", never a wrong answer.
+        let none = await LoginShell.path(shell: temp.appendingPathComponent("nosuchshell").path, environment: [:])
+        XCTAssertNil(none)
+    }
 }

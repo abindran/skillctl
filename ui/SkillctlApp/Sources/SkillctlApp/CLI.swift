@@ -232,3 +232,51 @@ struct CLI {
         return run.stdout.split(separator: "\n").first.map(String.init)
     }
 }
+
+/// Asks the user's login shell a question the app cannot answer from its own
+/// environment: an app opened from Finder inherits only the system `PATH`.
+enum LoginShell {
+    /// `PATH` as a new interactive login shell sets it (`<shell> -lic`), or
+    /// nil when the shell did not answer within `timeout` seconds, for
+    /// example because a startup file waits for input.
+    static func path(shell: String, environment extra: [String: String], timeout: TimeInterval = 5) async -> String? {
+        await withCheckedContinuation { continuation in
+            DispatchQueue.global(qos: .utility).async {
+                continuation.resume(returning: pathBlocking(shell: shell, environment: extra, timeout: timeout))
+            }
+        }
+    }
+
+    private static func pathBlocking(shell: String, environment extra: [String: String], timeout: TimeInterval) -> String? {
+        guard FileManager.default.isExecutableFile(atPath: shell) else { return nil }
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: shell)
+        process.arguments = ["-lic", "printf '%s' \"$PATH\""]
+        var environment = ProcessInfo.processInfo.environment
+        environment.merge(extra) { _, override in override }
+        environment["TERM"] = "dumb"
+        process.environment = environment
+        let out = Pipe()
+        process.standardOutput = out
+        process.standardError = FileHandle.nullDevice
+        process.standardInput = FileHandle.nullDevice
+        do { try process.run() } catch { return nil }
+        let group = DispatchGroup()
+        var data = Data()
+        group.enter()
+        DispatchQueue.global().async {
+            data = out.fileHandleForReading.readDataToEndOfFile()
+            group.leave()
+        }
+        if group.wait(timeout: .now() + timeout) == .timedOut {
+            process.terminate()
+            return nil
+        }
+        process.waitUntilExit()
+        guard process.terminationStatus == 0 else { return nil }
+        // Startup files may print banners; PATH is the last line.
+        return String(decoding: data, as: UTF8.self)
+            .split(separator: "\n", omittingEmptySubsequences: true)
+            .last.map(String.init)
+    }
+}

@@ -1,7 +1,9 @@
 #!/bin/sh
-# Sign a binary with a Developer ID certificate and notarize it.
+# Sign a binary or an app bundle with a Developer ID certificate and notarize
+# it. An .app is signed --deep (the CLI inside it included) and stapled, so it
+# opens on another Mac without a right-click; a bare binary cannot be stapled.
 #
-# Usage: sign-and-notarize.sh <binary>
+# Usage: sign-and-notarize.sh <binary | Skillctl.app>
 # Environment: APPLE_CERTIFICATE_P12 (base64), APPLE_CERTIFICATE_PASSWORD,
 #              APPLE_SIGNING_IDENTITY ("Developer ID Application: …"),
 #              APPLE_ID, APPLE_TEAM_ID, APPLE_APP_PASSWORD.
@@ -27,8 +29,12 @@ security import "$work/certificate.p12" -k "$keychain" -P "$APPLE_CERTIFICATE_PA
 security set-key-partition-list -S apple-tool:,apple: -s -k "$keychain_password" "$keychain" >/dev/null
 security list-keychains -d user -s "$keychain" $(security list-keychains -d user | tr -d '"')
 
-codesign --force --options runtime --timestamp --sign "$APPLE_SIGNING_IDENTITY" "$binary"
-codesign --verify --strict --verbose=2 "$binary"
+case "$binary" in
+  *.app) deep=--deep ;;
+  *) deep= ;;
+esac
+codesign --force $deep --options runtime --timestamp --sign "$APPLE_SIGNING_IDENTITY" "$binary"
+codesign --verify --strict $deep --verbose=2 "$binary"
 
 # notarytool accepts zip archives; a bare Mach-O cannot be stapled, so the
 # notarization ticket is looked up online by Gatekeeper on first launch.
@@ -36,4 +42,7 @@ ditto -c -k --keepParent "$binary" "$work/notarize.zip"
 xcrun notarytool submit "$work/notarize.zip" \
   --apple-id "$APPLE_ID" --team-id "$APPLE_TEAM_ID" --password "$APPLE_APP_PASSWORD" \
   --wait
+case "$binary" in
+  *.app) xcrun stapler staple "$binary" ;;
+esac
 echo "Signed and notarized $binary"

@@ -11,8 +11,13 @@
 #   UNIVERSAL=1 ui/SkillctlApp/Scripts/bundle.sh          # CLI for Apple silicon and Intel (both rustup targets)
 #   SKILLCTL_CLI=/path/to/skillctl ui/SkillctlApp/Scripts/bundle.sh   # use an already built CLI
 #
-# The app is unsigned; `open dist/Skillctl.app` runs it locally. Sign with
-# `codesign --deep --force --sign "<identity>" dist/Skillctl.app` to hand it on.
+#   CODESIGN_IDENTITY="Developer ID Application: …" ui/SkillctlApp/Scripts/bundle.sh   # sign for other Macs
+#
+# The bundle's version comes from Cargo.toml, so app, CLI and release tag
+# always agree. Without CODESIGN_IDENTITY the app is signed ad hoc, which runs
+# on this Mac; another Mac needs a right-click Open on first launch (or a
+# Developer ID signature plus notarization, see scripts/release/sign-and-notarize.sh).
+# Scripts/package.sh then zips the app for the releases page.
 set -eu
 config="${1:-release}"
 here="$(cd "$(dirname "$0")/.." && pwd)"
@@ -42,4 +47,9 @@ cp "$cli" "$app/Contents/Helpers/skillctl"
 chmod 755 "$app/Contents/MacOS/Skillctl" "$app/Contents/Helpers/skillctl"
 cp "$here/Resources/Info.plist" "$app/Contents/Info.plist"
 printf 'APPL????' > "$app/Contents/PkgInfo"
-echo "Built $app with $("$app/Contents/Helpers/skillctl" --version)"
+version="$(sed -n 's/^version = "\(.*\)"/\1/p' "$repo/Cargo.toml" | head -1)"
+build="$(git -C "$repo" rev-list --count HEAD 2>/dev/null || echo 1)"
+/usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString $version" -c "Set :CFBundleVersion $build" "$app/Contents/Info.plist"
+# Sign the whole bundle (the CLI inside it included) in one go.
+codesign --force --deep ${CODESIGN_IDENTITY:+--options runtime --timestamp} --sign "${CODESIGN_IDENTITY:--}" "$app"
+echo "Built $app ($version, build $build) with $("$app/Contents/Helpers/skillctl" --version)"

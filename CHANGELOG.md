@@ -13,6 +13,23 @@ heading when cutting a release.
 
 ### Added
 
+- The macOS app installs the command line tool itself, so the app is the
+  one download a Mac needs. On every launch it links its bundled binary to
+  `~/.local/bin/skillctl` (replacing only an earlier symlink, never a file),
+  asks the login shell whether that folder is on `PATH`, and when it is not
+  the Dashboard and Settings offer **Add ~/.local/bin to PATH**, which
+  appends a marked block once to `~/.zprofile`, `~/.bash_profile` or a fish
+  `conf.d` file. An app still running from Gatekeeper's translocation folder
+  (opened straight from the download) is told apart: nothing is linked and
+  the Dashboard asks for the move to Applications first.
+- `Scripts/bundle.sh` stamps the app with the version from `Cargo.toml` and
+  signs the whole bundle (ad hoc, or `CODESIGN_IDENTITY` for a Developer ID);
+  the new `Scripts/package.sh` zips it with its SHA-256. The release workflow
+  builds `Skillctl-<version>-macos.zip` around the same universal CLI, signs,
+  notarizes and staples it when the Apple secrets are present, and attaches
+  it to the GitHub release next to the CLI tarball. `swift.yml` uploads the
+  zip instead of a bare `.app`, which lost its executable bits.
+
 - Success and failure per tool, from two sources. `telemetry report`
   breaks tool results down by tool, MCP calls by `<server>/<tool>`, with the
   failure rate, average duration and failures by `error_type`, and adds

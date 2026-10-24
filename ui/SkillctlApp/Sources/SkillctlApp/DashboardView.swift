@@ -19,6 +19,8 @@ struct DashboardView: View {
                     }
                 }
 
+                CommandLineCard()
+
                 Text("Needs attention").font(.title2.bold())
                 GroupBox {
                     let items = attention
@@ -146,5 +148,57 @@ struct DashboardView: View {
             items.append(Attention(severity: "info", text: "\(state.drafts.count) draft(s) waiting to be sealed: \(state.drafts.map(\.name).joined(separator: ", "))", action: "Open \(ArtifactKind.named(kind).title)", screen: .kind(kind)))
         }
         return items
+    }
+}
+
+/// Shown only while the terminal command needs the user: the app is running
+/// from Gatekeeper's temporary copy, the link failed, or `~/.local/bin` is
+/// not on `PATH`. Silent once `skillctl` works in a new terminal.
+struct CommandLineCard: View {
+    @Environment(AppState.self) private var state
+    @State private var message: String?
+
+    var body: some View {
+        switch state.commandLine {
+        case .notBundled, .linked(_, .some(true)):
+            EmptyView()
+        case .translocated:
+            GroupBox {
+                VStack(alignment: .leading, spacing: Metrics.tight) {
+                    Text("Move Skillctl to your Applications folder, then open it again.").bold()
+                    Text("macOS runs an app opened straight from a download from a temporary copy, so the skillctl command for the terminal could not be installed yet. After the move it is linked into ~/.local/bin on launch.")
+                        .foregroundStyle(.secondary)
+                }
+            }
+        case .failed(let reason):
+            GroupBox {
+                VStack(alignment: .leading, spacing: Metrics.tight) {
+                    Text("The skillctl command could not be installed for the terminal.").bold()
+                    Text(reason).foregroundStyle(.secondary).textSelection(.enabled)
+                    Button("Try again") { Task { await state.installCommandLineTool(force: true) } }
+                }
+            }
+        case .linked(let link, let onPath):
+            GroupBox {
+                VStack(alignment: .leading, spacing: Metrics.tight) {
+                    Text(onPath == false
+                         ? "skillctl is installed at \(link), but ~/.local/bin is not on your PATH."
+                         : "skillctl is installed at \(link). Check that ~/.local/bin is on your PATH.")
+                        .bold()
+                    Text(onPath == false
+                         ? "Add it once and every new terminal window finds the skillctl command."
+                         : "Run skillctl --version in a new terminal window. If it is not found, add the folder to PATH.")
+                        .foregroundStyle(.secondary)
+                    HStack {
+                        Button("Add ~/.local/bin to PATH") { Task { message = await state.addLocalBinToPath() } }
+                        Text("appends \(AppState.pathLines(shell: "/bin/zsh").trimmingCharacters(in: .whitespacesAndNewlines).split(separator: "\n").last ?? "") to your shell's startup file")
+                            .font(.caption).foregroundStyle(.secondary)
+                    }
+                    if let message {
+                        Text(message).font(.caption).textSelection(.enabled)
+                    }
+                }
+            }
+        }
     }
 }
