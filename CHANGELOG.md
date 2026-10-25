@@ -435,6 +435,7 @@ with a prebuilt universal macOS tarball attached to the GitHub release.
 - `-v/--verbose` has no effect yet, and `--dry-run` prints a summary rather than
   the full recorded action plan.
 
-[Unreleased]: https://github.com/abindran/skillctl/compare/v0.2.0...HEAD
+[Unreleased]: https://github.com/abindran/skillctl/compare/v0.2.1...HEAD
+[0.2.1]: https://github.com/abindran/skillctl/releases/tag/v0.2.1
 [0.2.0]: https://github.com/abindran/skillctl/releases/tag/v0.2.0
 [0.1.0]: https://github.com/abindran/skillctl/releases/tag/v0.1.0

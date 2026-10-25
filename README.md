@@ -106,7 +106,7 @@ skillctl --version
 ```
 
 ```
-skillctl 0.2.0 (commit 163dd34ae72a, registry schema 1)
+skillctl 0.2.1 (commit 548ab49a932e, registry schema 1)
 ```
 
 ```bash
@@ -909,10 +909,10 @@ Changes are tracked in [CHANGELOG.md](CHANGELOG.md) (Keep a Changelog format). A
 6. **Publish the crate** `skillctl-cli` to crates.io with `cargo publish --locked`, when the `CARGO_REGISTRY_TOKEN` secret is configured (a dry-run publish is part of the build step regardless).
 7. **Verify the crate** on another clean runner: `cargo install skillctl-cli --locked --version X.Y.Z`, then the same scenario again.
 
-To cut a release, move the **Unreleased** notes in `CHANGELOG.md` under a new `## [0.2.0] - YYYY-MM-DD` heading, then:
+To cut a release, move the **Unreleased** notes in `CHANGELOG.md` under a new `## [0.2.1] - YYYY-MM-DD` heading, then:
 
 ```bash
-sed -i '' 's/^version = ".*"/version = "0.2.0"/' Cargo.toml && cargo build --locked && scripts/release/changelog-notes.sh 0.2.0 && git commit -am "Release 0.2.0" && git tag v0.2.0 && git push origin main v0.2.0
+sed -i '' 's/^version = ".*"/version = "0.2.1"/' Cargo.toml && cargo build --locked && scripts/release/changelog-notes.sh 0.2.1 && git commit -am "Release 0.2.1" && git tag v0.2.1 && git push origin main v0.2.1
 ```
 
 Optional repository configuration:
@@ -926,7 +926,7 @@ Optional repository configuration:
 Without the signing secrets the release is unsigned, which is fine for `cargo install`; only binaries downloaded through a browser hit Gatekeeper quarantine. Without the crates.io token the GitHub release is still created and the crate job logs a warning; re-run the workflow for the tag after adding the token:
 
 ```bash
-gh workflow run release.yml --ref v0.2.0
+gh workflow run release.yml --ref v0.2.1
 ```
 
 Publishing by hand works too: `cargo login` once, then `cargo publish --locked` from the tagged commit.
@@ -934,7 +934,7 @@ Publishing by hand works too: `cargo login` once, then `cargo publish --locked` 
 The same steps run locally:
 
 ```bash
-scripts/release/build-universal.sh && scripts/release/package.sh 0.2.0 && scripts/release/smoke.sh dist/skillctl
+scripts/release/build-universal.sh && scripts/release/package.sh 0.2.1 && scripts/release/smoke.sh dist/skillctl
 ```
 
 ## Implementation status
